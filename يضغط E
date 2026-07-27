@@ -1,0 +1,264 @@
+--// SKY AUTO E
+--// Mobile + Draggable + Animated Border
+
+local Players = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+
+local Enabled = true
+local CurrentPrompt = nil
+
+--==================================================
+-- GUI
+--==================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SKY_AutoE"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 190, 0, 75)
+Main.Position = UDim2.new(0.5, -95, 0.5, -37)
+Main.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = Main
+
+--==================================================
+-- الحواف البنفسجية المتحركة
+--==================================================
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Thickness = 3
+Stroke.Parent = Main
+
+local Gradient = Instance.new("UIGradient")
+Gradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(80, 0, 180)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(180, 0, 255)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(80, 0, 180)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+})
+Gradient.Parent = Stroke
+
+task.spawn(function()
+    while Main.Parent do
+        Gradient.Rotation = 0
+        Gradient.Offset = Vector2.new(-1, 0)
+
+        local Tween = TweenService:Create(
+            Gradient,
+            TweenInfo.new(2, Enum.EasingStyle.Linear),
+            {
+                Offset = Vector2.new(1, 0)
+            }
+        )
+
+        Tween:Play()
+        Tween.Completed:Wait()
+    end
+end)
+
+--==================================================
+-- العنوان
+--==================================================
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 28)
+Title.Position = UDim2.new(0, 0, 0, 2)
+Title.BackgroundTransparency = 1
+Title.Text = "SKY  •  AUTO E"
+Title.TextColor3 = Color3.fromRGB(220, 190, 255)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Main
+
+--==================================================
+-- زر ON / OFF
+--==================================================
+
+local Button = Instance.new("TextButton")
+Button.Size = UDim2.new(0, 145, 0, 32)
+Button.Position = UDim2.new(0.5, -72, 0, 37)
+Button.BackgroundColor3 = Color3.fromRGB(45, 15, 70)
+Button.BorderSizePixel = 0
+Button.Text = "AUTO E  •  ON"
+Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+Button.TextSize = 14
+Button.Font = Enum.Font.GothamBold
+Button.Parent = Main
+
+local ButtonCorner = Instance.new("UICorner")
+ButtonCorner.CornerRadius = UDim.new(0, 9)
+ButtonCorner.Parent = Button
+
+local ButtonStroke = Instance.new("UIStroke")
+ButtonStroke.Thickness = 1.5
+ButtonStroke.Color = Color3.fromRGB(150, 0, 255)
+ButtonStroke.Parent = Button
+
+--==================================================
+-- تشغيل / إيقاف
+--==================================================
+
+Button.MouseButton1Click:Connect(function()
+
+    Enabled = not Enabled
+
+    if Enabled then
+
+        Button.Text = "AUTO E  •  ON"
+
+        TweenService:Create(
+            Button,
+            TweenInfo.new(0.25),
+            {
+                BackgroundColor3 = Color3.fromRGB(45, 15, 70)
+            }
+        ):Play()
+
+    else
+
+        Button.Text = "AUTO E  •  OFF"
+        CurrentPrompt = nil
+
+        TweenService:Create(
+            Button,
+            TweenInfo.new(0.25),
+            {
+                BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+            }
+        ):Play()
+
+    end
+
+end)
+
+--==================================================
+-- تحريك القائمة على الجوال
+--==================================================
+
+local Dragging = false
+local DragStart = nil
+local StartPosition = nil
+local DragInput = nil
+
+local function UpdateDrag(Input)
+
+    local Delta = Input.Position - DragStart
+
+    Main.Position = UDim2.new(
+        StartPosition.X.Scale,
+        StartPosition.X.Offset + Delta.X,
+
+        StartPosition.Y.Scale,
+        StartPosition.Y.Offset + Delta.Y
+    )
+
+end
+
+Main.InputBegan:Connect(function(Input)
+
+    if Input.UserInputType == Enum.UserInputType.Touch
+    or Input.UserInputType == Enum.UserInputType.MouseButton1 then
+
+        Dragging = true
+
+        DragStart = Input.Position
+        StartPosition = Main.Position
+
+        Input.Changed:Connect(function()
+
+            if Input.UserInputState == Enum.UserInputState.End then
+                Dragging = false
+            end
+
+        end)
+
+    end
+
+end)
+
+Main.InputChanged:Connect(function(Input)
+
+    if Input.UserInputType == Enum.UserInputType.Touch
+    or Input.UserInputType == Enum.UserInputType.MouseMovement then
+
+        DragInput = Input
+
+    end
+
+end)
+
+UserInputService.InputChanged:Connect(function(Input)
+
+    if Input == DragInput and Dragging then
+        UpdateDrag(Input)
+    end
+
+end)
+
+--==================================================
+-- AUTO PROXIMITY PROMPT
+--==================================================
+
+ProximityPromptService.PromptShown:Connect(function(Prompt)
+
+    if not Enabled then
+        return
+    end
+
+    if CurrentPrompt then
+        return
+    end
+
+    CurrentPrompt = Prompt
+
+    task.spawn(function()
+
+        if not Enabled then
+            CurrentPrompt = nil
+            return
+        end
+
+        if not Prompt:IsDescendantOf(game) then
+            CurrentPrompt = nil
+            return
+        end
+
+        -- التفاعل التلقائي
+        pcall(function()
+            fireproximityprompt(Prompt)
+        end)
+
+        -- انتظار مدة التفاعل
+        task.wait(Prompt.HoldDuration + 0.2)
+
+        -- رجوع للوضع الطبيعي
+        CurrentPrompt = nil
+
+    end)
+
+end)
+
+--==================================================
+-- عند اختفاء التفاعل
+--==================================================
+
+ProximityPromptService.PromptHidden:Connect(function(Prompt)
+
+    if CurrentPrompt == Prompt then
+        CurrentPrompt = nil
+    end
+
+end)
