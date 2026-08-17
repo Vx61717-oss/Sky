@@ -1,0 +1,165 @@
+-- Evade Smart & Random Rescue (Anti-Carry & 2s Return Delay)
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local ToggleBtn = Instance.new("TextButton")
+local CountdownLabel = Instance.new("TextLabel")
+
+-- القائمة الأصلية بنفس ألوانها ومقاساتها تماماً
+ScreenGui.Parent = game:GetService("CoreGui")
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.Position = UDim2.new(0.5, -60, 0.1, 0)
+MainFrame.Size = UDim2.new(0, 120, 0, 80)
+MainFrame.Active = true
+MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame)
+
+ToggleBtn.Parent = MainFrame
+ToggleBtn.Size = UDim2.new(0.9, 0, 0.5, 0)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.05, 0)
+ToggleBtn.Text = "RESCUE: OFF"
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", ToggleBtn)
+
+CountdownLabel.Parent = MainFrame
+CountdownLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
+CountdownLabel.Position = UDim2.new(0.05, 0, 0.57, 0)
+CountdownLabel.Text = ""
+CountdownLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+CountdownLabel.TextColor3 = Color3.fromRGB(255, 220, 0)
+CountdownLabel.Font = Enum.Font.GothamBold
+CountdownLabel.TextScaled = true
+Instance.new("UICorner", CountdownLabel)
+
+local Running = false
+local Player = game.Players.LocalPlayer
+
+-- دالة إرسال الإشعارات الأصلية من نظام روبلوكس
+local function sendNotification(title, text)
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "⚠️ " .. title,
+        Text = text,
+        Duration = 3
+    })
+end
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    Running = not Running
+    ToggleBtn.Text = Running and "RESCUE: ON" or "RESCUE: OFF"
+    ToggleBtn.BackgroundColor3 = Running and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    
+    if not Running then
+        CountdownLabel.Text = ""
+    end
+end)
+
+-- دالة متطورة للتحقق من حالة اللاعب (طايح، مو شايله أحد، ومو قريب)
+local function isValidTarget(targetPlayer, notifyIfCarried)
+    if targetPlayer and targetPlayer ~= Player and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local char = targetPlayer.Character
+        local myChar = Player.Character
+        
+        if myChar and myChar:FindFirstChild("HumanoidRootPart") then
+            -- 1. التحقق أنه طايح
+            local isDown = char:FindFirstChild("GameScript_Downed") or (char:FindFirstChild("Humanoid") and char.Humanoid.Health <= 1)
+            
+            if isDown then
+                -- 2. التحقق إن ما في أحد شايله
+                local isCarried = false
+                for _, obj in pairs(char:GetChildren()) do
+                    if obj:IsA("Weld") or obj:IsA("WeldConstraint") then
+                        if obj.Part1 and obj.Part1.Parent:FindFirstChild("Humanoid") and obj.Part1.Parent ~= char then
+                            isCarried = true
+                            break
+                        end
+                    end
+                end
+                
+                if char.HumanoidRootPart.Velocity.Magnitude > 5 and not char:FindFirstChild("Humanoid").Jump then
+                    isCarried = true
+                end
+
+                -- إذا كان محمول وهو هدفك، يرسل إشعار ويلغي الانتقال
+                if isCarried then
+                    if notifyIfCarried then
+                        sendNotification("تم الإلغاء", "اللاعب [" .. targetPlayer.Name .. "] شايله أحد!")
+                    end
+                    return false
+                end
+
+                -- 3. التحقق من المسافة (تجاهل القريبين جداً)
+                local distance = (char.HumanoidRootPart.Position - myChar.HumanoidRootPart.Position).Magnitude
+                local isFarEnough = distance > 25 
+
+                return isFarEnough
+            end
+        end
+    end
+    return false
+end
+
+task.spawn(function()
+    while true do
+        if Running and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            
+            -- جمع كل الأهداف الصالحة المتوفرة حالياً في السيرفر
+            local ValidTargets = {}
+            for _, v in pairs(game.Players:GetPlayers()) do
+                if isValidTarget(v, false) then
+                    table.insert(ValidTargets, v)
+                end
+            end
+
+            -- إذا لقى أهداف صالحة، يختار واحد منهم بشكل عشوائي تماماً
+            if #ValidTargets > 0 then
+                local ChosenTarget = ValidTargets[math.random(1, #ValidTargets)]
+                
+                -- حفظ مكانك الأصلي
+                local OriginalCFrame = Player.Character.HumanoidRootPart.CFrame
+                local Cancelled = false
+                
+                -- العداد الأول قبل الانتقال (تم تعديله إلى ثانيتين فقط بناءً على طلبك)
+                for i = 2, 1, -1 do
+                    if not Running or not isValidTarget(ChosenTarget, true) then 
+                        Cancelled = true; 
+                        break 
+                    end
+                    CountdownLabel.Text = "انتقال عشوائي: " .. i
+                    task.wait(1)
+                end
+
+                if Cancelled or not Running then
+                    CountdownLabel.Text = ""
+                else
+                    CountdownLabel.Text = ""
+
+                    -- الانتقال للهدف العشوائي المختار
+                    if Running and isValidTarget(ChosenTarget, true) and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                        local TargetRoot = ChosenTarget.Character.HumanoidRootPart
+                        local MyRoot = Player.Character.HumanoidRootPart
+
+                        -- طيران للهدف
+                        MyRoot.CFrame = TargetRoot.CFrame * CFrame.new(0, 2, 0)
+                        
+                        -- العداد الثاني: الانتظار عند الشخص (1.5 ثانية)
+                        CountdownLabel.Text = "جاري الإنقاذ..."
+                        task.wait(1.5)
+                        
+                        CountdownLabel.Text = ""
+
+                        -- العودة للموقع الأصلي
+                        if Running and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+                            Player.Character.HumanoidRootPart.CFrame = OriginalCFrame
+                        end
+                        
+                        -- انتظر ثانيتين كاملة بعد الرجوع للحماية
+                        task.wait(2)
+                    end
+                end
+            end
+        end
+        task.wait(0.4)
+    end
+end)
