@@ -1940,6 +1940,24 @@ end)
     UI.ActionBtnStroke.Thickness = 1.5
     UI.ActionBtnGlowGrad = AddMovingBorderGlow(UI.ActionBtnStroke, 1.5)
 
+    -- 💬 زر إعادة فتح الدردشة بعد تصغير القائمة، يظهر بجانب زر + فقط عند تصغير الدردشة
+    UI.ChatRestoreBtn = Instance.new("TextButton", UI.MainFrame)
+    UI.ChatRestoreBtn.Name = "ChatRestoreBtn"
+    UI.ChatRestoreBtn.Size = UDim2.new(0, 65, 0, 40)
+    UI.ChatRestoreBtn.Position = UDim2.new(1, -115, 0.5, -20)
+    UI.ChatRestoreBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    UI.ChatRestoreBtn.Text = "الدردشة"
+    UI.ChatRestoreBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
+    UI.ChatRestoreBtn.TextSize = 12
+    UI.ChatRestoreBtn.TextScaled = false
+    UI.ChatRestoreBtn.Font = Enum.Font.GothamBold
+    UI.ChatRestoreBtn.Visible = false
+    UI.ChatRestoreBtn.ZIndex = 7
+    Instance.new("UICorner", UI.ChatRestoreBtn).CornerRadius = UDim.new(0, 9)
+    UI.ChatRestoreBtnStroke = Instance.new("UIStroke", UI.ChatRestoreBtn)
+    UI.ChatRestoreBtnStroke.Thickness = 1.5
+    UI.ChatRestoreBtnGlowGrad = AddMovingBorderGlow(UI.ChatRestoreBtnStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
     -- 🗑️ زر مسح الإعدادات المحفوظة، نفس شكل ومقاس زر (-) بالظبط وجنبه — يختفي لما تاب الدردشة يكون مفتوح
     UI.ResetConfigBtn = Instance.new("TextButton", UI.MainFrame)
     UI.ResetConfigBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -2079,7 +2097,27 @@ end)
         local fullSize = UDim2.new(0, size, 0, size)
         shape.Size = UDim2.new(0, 0, 0, 0)
         shape.AnchorPoint = Vector2.new(0.5, 0.5)
-        shape.Position = UDim2.new(math_random(10, 90) / 100, 0, math_random(10, 90) / 100, 0)
+        local function offscreenPosition(edge)
+            if edge == 1 then -- من اليسار
+                return UDim2.new(-0.18, 0, math_random(8, 92) / 100, 0)
+            elseif edge == 2 then -- من اليمين
+                return UDim2.new(1.18, 0, math_random(8, 92) / 100, 0)
+            elseif edge == 3 then -- من الأعلى
+                return UDim2.new(math_random(8, 92) / 100, 0, -0.18, 0)
+            else -- من الأسفل
+                return UDim2.new(math_random(8, 92) / 100, 0, 1.18, 0)
+            end
+        end
+
+        local function oppositeEdge(edge)
+            if edge == 1 then return 2 end
+            if edge == 2 then return 1 end
+            if edge == 3 then return 4 end
+            return 3
+        end
+
+        local entryEdge = math_random(1, 4)
+        shape.Position = offscreenPosition(entryEdge)
         shape.Rotation = math_random(0, 360)
         shape.ZIndex = 3
 
@@ -2091,51 +2129,47 @@ end)
         end
 
         task.spawn(function()
-            local appear = {}
-            appear.Size = fullSize
-            if isTriangle then
-                appear.TextTransparency = 0.05
-            else
-                appear.BackgroundTransparency = 0.2
-            end
-            local appearTween = TweenService:Create(shape, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), appear)
-            appearTween:Play()
-            appearTween.Completed:Wait()
-
             while shape.Parent do
                 if BackgroundOverlay.Visible and not State.IsSuperMini then
-                    local edge = math_random(1, 4)
-                    local targetX, targetY
-                    if edge == 1 then
-                        targetX, targetY = -0.18, math_random(8, 92) / 100
-                    elseif edge == 2 then
-                        targetX, targetY = 1.18, math_random(8, 92) / 100
-                    elseif edge == 3 then
-                        targetX, targetY = math_random(8, 92) / 100, -0.18
+                    local exitEdge = oppositeEdge(entryEdge)
+                    local exitPosition = offscreenPosition(exitEdge)
+
+                    -- يظهر من خارج الشاشة ثم يعبر كامل المساحة بدون تلاشي داخلها.
+                    shape.Size = UDim2.new(0, 0, 0, 0)
+                    if isTriangle then
+                        shape.TextTransparency = 1
                     else
-                        targetX, targetY = math_random(8, 92) / 100, 1.18
+                        shape.BackgroundTransparency = 1
                     end
 
-                    local moveTween = TweenService:Create(shape, TweenInfo.new(math_random(28, 42) / 10, Enum.EasingStyle.Linear), {
-                        Position = UDim2.new(targetX, 0, targetY, 0),
+                    local appear = { Size = fullSize }
+                    if isTriangle then
+                        appear.TextTransparency = 0.05
+                    else
+                        appear.BackgroundTransparency = 0.2
+                    end
+                    local appearTween = TweenService:Create(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), appear)
+                    appearTween:Play()
+                    appearTween.Completed:Wait()
+                    if not shape.Parent then break end
+
+                    local moveTween = TweenService:Create(shape, TweenInfo.new(math_random(32, 46) / 10, Enum.EasingStyle.Linear), {
+                        Position = exitPosition,
                         Rotation = shape.Rotation + math_random(90, 270)
                     })
                     moveTween:Play()
                     moveTween.Completed:Wait()
+                    if not shape.Parent then break end
 
-                    local fade = {}
+                    -- يبدأ التلاشي بعد وصوله خارج الشاشة بالكامل.
+                    local fade = { Size = UDim2.new(0, 0, 0, 0) }
                     if isTriangle then fade.TextTransparency = 1 else fade.BackgroundTransparency = 1 end
-                    local fadeTween = TweenService:Create(shape, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fade)
+                    local fadeTween = TweenService:Create(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fade)
                     fadeTween:Play()
                     fadeTween.Completed:Wait()
 
-                    shape.Position = UDim2.new(math_random(8, 92) / 100, 0, math_random(8, 92) / 100, 0)
-                    local show = { Size = fullSize }
-                    if isTriangle then show.TextTransparency = 0.05 else show.BackgroundTransparency = 0.2 end
-                    local showTween = TweenService:Create(shape, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), show)
-                    shape.Size = UDim2.new(0, 0, 0, 0)
-                    showTween:Play()
-                    showTween.Completed:Wait()
+                    entryEdge = math_random(1, 4)
+                    shape.Position = offscreenPosition(entryEdge)
                 else
                     task.wait(0.5)
                 end
@@ -2165,17 +2199,14 @@ end)
                 TweenService:Create(child, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fadeGoals):Play()
             end
         end
-        task.delay(0.4, function()
-            for _, child in ipairs(shapes) do
-                if child and child.Parent then child:Destroy() end
-            end
-        end)
+        -- لا ندمر الأشكال هنا؛ نخفيها فقط حتى تعود عند فتح القائمة.
     end
 
     local function SetToSuperMiniMode()
+        local wasChatOpen = State._chatPageOpen
         State.IsSuperMini = true; State.IsMin = false
         State.MainUIVisible = false
-        State._wasChatOpenBeforeMin = State._chatPageOpen
+        State._wasChatOpenBeforeMin = wasChatOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
         UI.DeleteChatBtn.Visible = false
         UI.CopyChatBtn.Visible = false
@@ -2195,6 +2226,7 @@ end)
         UI.ActionBtn.Position = UDim2.new(1, -50, 0.5, -20)
         UI.ActionBtn.Size = UDim2.new(0, 40, 0, 40)
         UI.CloseBtn.Visible = false
+        UI.ChatRestoreBtn.Visible = wasChatOpen
         UI.SideBar.Visible = false
         UI.TabBar.Visible = false
         UI.Pages.Visible = false
@@ -2226,6 +2258,7 @@ end)
         UI.ActionBtn.Position = UDim2.new(1, -100, 0, 3)
         UI.ActionBtn.Size = UDim2.new(0, 45, 0, 45)
         UI.CloseBtn.Visible = true
+        UI.ChatRestoreBtn.Visible = false
         UI.SideBar.Visible = true
         UI.TabBar.Visible = true
         UI.Pages.Visible = true
@@ -2242,6 +2275,7 @@ end)
         UI.DeleteChatBtn.Visible = false
         UI.CopyChatBtn.Visible = false
         UI.ResetConfigBtn.Visible = false
+        UI.ChatRestoreBtn.Visible = false
         UI.FPSFrame.Visible = false
         UI.MainFrame:TweenSize(UDim2.new(0, 260, 0, 400), "Out", "Quad", 0.3, true) -- 🔧 زدنا الارتفاع شوي عشان تاب الإعدادات الجديد يبان كامل ما يقص
         UI.Title.Text = "S k y"
@@ -2258,7 +2292,20 @@ end)
 
     UI.ActionBtn.MouseButton1Click:Connect(function()
         playClick()
-        if State.IsSuperMini or State.IsMin then SetToFullMode() else SetToNormalMiniMode() end
+        if State.IsSuperMini or State.IsMin then
+            SetToFullMode()
+        elseif State._chatPageOpen then
+            -- زر - داخل الدردشة: نصغّر القائمة ونترك زر «الدردشة» بجانب +.
+            SetToSuperMiniMode()
+        else
+            SetToNormalMiniMode()
+        end
+    end)
+
+    UI.ChatRestoreBtn.MouseButton1Click:Connect(function()
+        playClick()
+        UI.ChatRestoreBtn.Visible = false
+        SetToFullMode()
     end)
 
     local function CreateTabBtn(name, pos)
@@ -4812,31 +4859,80 @@ UI.btn1.MouseButton1Click:Connect(function()
     
     UI.btn5.MouseButton1Click:Connect(function()
         playClick()
-        UI.Page1.Visible = false
-        UI.Page2.Visible = false
-        UI.Page3.Visible = false
-        UI.Page4.Visible = false
-        UI.Page5.Visible = true
-        UI.Page6.Visible = false
-        UI.Page7.Visible = false
-        UI.Page8.Visible = false
-        AnimatePage(UI.Page5)
-        MoveUnderline(1)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[5]}):Play()
-        SetGlowColor(UI.MainGlowGradient, UI.TabColors[5])
-        SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[5])
-        SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[5])
-        -- 📩 فتحت الدردشة = صفرنا العداد وخفينا البادج
-        State._chatPageOpen = true
-        -- الدردشة لها Scroll خاص بالرسائل فقط، مو Scroll للتاب كله.
+        SetToSuperMiniMode()
+
+        local ChatPanel = Instance.new("Frame")
+        ChatPanel.Name = "SkyChatPanel"
+        ChatPanel.Size = UDim2.new(0, 500, 0, 400)
+        ChatPanel.Position = UDim2.new(0.5, -240, 0.5, -185)
+        ChatPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        ChatPanel.BackgroundTransparency = 0
+        ChatPanel.BorderSizePixel = 0
+        ChatPanel.ClipsDescendants = true
+        ChatPanel.Active = true
+        ChatPanel.ZIndex = 6
+        ChatPanel.Parent = ScreenGui
+        Instance.new("UICorner", ChatPanel).CornerRadius = UDim.new(0, 15)
+
+        local ChatPanelStroke = Instance.new("UIStroke", ChatPanel)
+        ChatPanelStroke.Color = Color3.fromRGB(170, 0, 255)
+        ChatPanelStroke.Thickness = 2.5
+        ChatPanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(ChatPanelStroke, 1.5)
+        MakeDraggable(ChatPanel)
+
+        -- نقل صفحة الدردشة وأدواتها إلى اللوحة الحالية.
+        UI.Page5.Parent = ChatPanel
+        -- هذا سحاب صفحة الدردشة الخارجية؛ نخفيه فقط ونبقي chatLog الداخلي بسحابه.
+        UI.Page5.ScrollBarThickness = 0
         UI.Page5.ScrollingEnabled = false
-        UI.Page5.CanvasPosition = Vector2.new(0, 0)
-        UI.DeleteChatBtn.Visible = true
-        UI.ResetConfigBtn.Visible = false
-        UI.CopyChatBtn.Visible = true
+        UI.Page5.Position = UDim2.new(0, 8, 0, 58)
+        UI.Page5.Size = UDim2.new(1, -16, 1, -66)
+        UI.Page5.Visible = true
+        ChatInputBar.Parent = ChatPanel
+        ChatInputBar.Position = UDim2.new(0, 5, 1, -58)
+        ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
         ChatInputBar.Visible = true
-        UI.activeCounts[UI.Page5] = 0
-        UpdateBadge(UI.Page5)
+        UI.DeleteChatBtn.Parent = ChatPanel
+        UI.DeleteChatBtn.Position = UDim2.new(1, -112, 0, 5)
+        UI.DeleteChatBtn.ZIndex = 8
+        UI.DeleteChatBtn.Visible = true
+        UI.CopyChatBtn.Parent = ChatPanel
+        UI.CopyChatBtn.Position = UDim2.new(1, -172, 0, 5)
+        UI.CopyChatBtn.ZIndex = 8
+        UI.CopyChatBtn.Visible = true
+
+        -- زر X بنفس شكل زر إغلاق القائمة الأساسية.
+        local ChatCloseBtn = Instance.new("TextButton", ChatPanel)
+        ChatCloseBtn.Name = "ChatCloseBtn"
+        ChatCloseBtn.Size = UDim2.new(0, 45, 0, 45)
+        ChatCloseBtn.Position = UDim2.new(1, -55, 0, 5)
+        ChatCloseBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        ChatCloseBtn.Text = "X"
+        ChatCloseBtn.TextColor3 = Color3.new(1, 0, 0)
+        ChatCloseBtn.Font = Enum.Font.GothamBold
+        ChatCloseBtn.TextSize = 18
+        ChatCloseBtn.ZIndex = 9
+        Instance.new("UICorner", ChatCloseBtn)
+        local ChatCloseStroke = Instance.new("UIStroke", ChatCloseBtn)
+        ChatCloseStroke.Color = Color3.fromRGB(170, 0, 255)
+        ChatCloseStroke.Thickness = 1.5
+        AddMovingBorderGlow(ChatCloseStroke, 1.5)
+
+        ChatCloseBtn.MouseButton1Click:Connect(function()
+            playClick()
+            UI.Page5.Parent = UI.Pages
+            UI.Page5.ScrollBarThickness = 6
+            UI.Page5.ScrollingEnabled = true
+            UI.Page5.Visible = false
+            ChatInputBar.Parent = UI.Pages
+            ChatInputBar.Visible = false
+            UI.DeleteChatBtn.Parent = UI.MainFrame
+            UI.DeleteChatBtn.Visible = false
+            UI.CopyChatBtn.Parent = UI.MainFrame
+            UI.CopyChatBtn.Visible = false
+            ChatPanel:Destroy()
+        end)
     end)
 
     UI.btn6.MouseButton1Click:Connect(function()
@@ -4979,10 +5075,12 @@ end)
         chatList.SortOrder = Enum.SortOrder.LayoutOrder
 
         -- ⬇️ زر "آخر رسالة": يظهر فقط إذا المستخدم طالع فوق في الدردشة
-        local chatToBottomBtn = Instance.new("TextButton", chatContainer)
+        -- نضع الزر داخل الشريط الثابت أسفل الدردشة حتى لا تقصّه منطقة التمرير أو تخفيه خلف الرسائل.
+        local chatToBottomBtn = Instance.new("TextButton", ChatInputBar)
         chatToBottomBtn.Name = "ChatToBottomBtn"
         chatToBottomBtn.AnchorPoint = Vector2.new(0.5, 0.5)
-        chatToBottomBtn.Position = UDim2.new(0.5, 0, 1, -125)
+        -- رفع الزر قليلًا فوق شريط الكتابة.
+        chatToBottomBtn.Position = UDim2.new(0.5, 0, 0, -28)
         chatToBottomBtn.Size = UDim2.new(0, 38, 0, 30)
         chatToBottomBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 45)
         chatToBottomBtn.BackgroundTransparency = 0.08
@@ -5033,22 +5131,41 @@ end)
         chatToBottomBtn.MouseButton1Up:Connect(chatToBottomRelease)
 
         local function updateChatToBottomButton()
-            if not State._chatPageOpen then
+            -- نخفيه فقط إذا كانت صفحة الدردشة غير ظاهرة فعليًا.
+            if not parentPage.Visible or not ChatInputBar.Visible then
                 chatToBottomBtn.Visible = false
                 return
             end
 
             local currentY = chatLog.CanvasPosition.Y
             local visibleHeight = chatLog.AbsoluteSize.Y
-            local contentHeight = chatList.AbsoluteContentSize.Y
-            -- الزر يظهر فقط إذا كانت هناك رسائل فعلية أسفل الجزء الظاهر.
-            -- نتجاهل مساحة الـ500 بكسل الفاضية المضافة للسحاب.
-            local hasMessagesBelow = contentHeight > (currentY + visibleHeight + 8)
-            chatToBottomBtn.Visible = hasMessagesBelow
+            local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
+            local viewportBottom = chatLog.AbsolutePosition.Y + visibleHeight
+            local hiddenBelowCount = 0
+
+            -- نحسب الرسائل الفعلية الموجودة تحت الجزء الظاهر، وليس مساحة الفراغ.
+            for _, child in ipairs(chatLog:GetChildren()) do
+                if child:IsA("Frame") and child.Name == "MsgRow" then
+                    local rowBottom = child.AbsolutePosition.Y + child.AbsoluteSize.Y
+                    if rowBottom > viewportBottom + 4 then
+                        hiddenBelowCount = hiddenBelowCount + 1
+                    end
+                end
+            end
+
+            -- يظهر فقط إذا كانت أكثر من رسالتين مخفيتين تحت العرض.
+            chatToBottomBtn.Visible = hiddenBelowCount > 2 and maxY > 12
+            chatToBottomBtn.Active = chatToBottomBtn.Visible
         end
 
         chatLog:GetPropertyChangedSignal("CanvasPosition"):Connect(updateChatToBottomButton)
+        chatLog:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(function()
+            task.defer(updateChatToBottomButton)
+        end)
         chatList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            task.defer(updateChatToBottomButton)
+        end)
+        parentPage:GetPropertyChangedSignal("Visible"):Connect(function()
             task.defer(updateChatToBottomButton)
         end)
 
@@ -5068,8 +5185,15 @@ end)
                 TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                 {CanvasPosition = Vector2.new(0, targetY)}
             )
-            tween:Play()
+            -- نخفيه فور الضغط، ولا نعيد إظهاره إلا إذا صعد المستخدم من جديد
+            -- ووجدت أكثر من رسالتين مخفيتين.
             chatToBottomBtn.Visible = false
+            chatToBottomBtn.Active = false
+            tween:Play()
+            tween.Completed:Connect(function()
+                chatToBottomBtn.Visible = false
+                chatToBottomBtn.Active = false
+            end)
         end)
 
         -- ⬇️ نزلة بسيطة فوق، عشان أول رسالة ما تطلع نصها مخفي تحت الهيدر
