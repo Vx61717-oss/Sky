@@ -702,6 +702,9 @@ local function RunMyOriginalScript()
     State.MainUIVisible = true -- true بس لما القائمة تكون بكامل حجمها (مو مصغّرة)
     State._chatPageOpen = false -- true بس لما تاب الدردشة يكون مفتوح والقائمة بكامل حجمها
     State._wasChatOpenBeforeMin = false -- نتذكر فيها هل الدردشة كانت مفتوحة قبل ما نصغّر
+    State._chatPanelOpen = false -- لوحة الدردشة الحالية ما زالت مفتوحة حتى لو ظهرت القائمة الأساسية
+    State._chatPanel = nil -- مرجع لوحة الدردشة لإخفائها وإظهارها بزر X والاستعادة
+    State.UnreadChatCount = 0 -- عدد رسائل الآخرين غير المقروءة
     State.UltraZoomActive = false
     State.AntiFlingActive = false
 
@@ -1776,7 +1779,7 @@ end)
     -- نقطة خضراء نابضة جانب العنوان تدل إن السكربت شغّال
     UI.StatusDot = Instance.new("Frame", UI.MainFrame)
     UI.StatusDot.Size = UDim2.new(0, 8, 0, 8)
-    UI.StatusDot.Position = UDim2.new(0.05, 95, 0, 22)
+    UI.StatusDot.Position = UDim2.new(0.05, 85, 0, 22)
     UI.StatusDot.BackgroundColor3 = Color3.fromRGB(0, 230, 100)
     UI.StatusDot.BorderSizePixel = 0
     UI.StatusDot.ZIndex = 7
@@ -1943,12 +1946,13 @@ end)
     -- 💬 زر إعادة فتح الدردشة بعد تصغير القائمة، يظهر بجانب زر + فقط عند تصغير الدردشة
     UI.ChatRestoreBtn = Instance.new("TextButton", UI.MainFrame)
     UI.ChatRestoreBtn.Name = "ChatRestoreBtn"
-    UI.ChatRestoreBtn.Size = UDim2.new(0, 48, 0, 34)
-    UI.ChatRestoreBtn.Position = UDim2.new(1, -55, 0.5, -17)
+    -- مربع استعادة الدردشة يظهر مباشرة بجانب زر + في الوضع المصغّر.
+    UI.ChatRestoreBtn.Size = UDim2.new(0, 40, 0, 40)
+    UI.ChatRestoreBtn.Position = UDim2.new(1, -100, 0.5, -20)
     UI.ChatRestoreBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    UI.ChatRestoreBtn.Text = "الدردشة"
+    UI.ChatRestoreBtn.Text = "💬"
     UI.ChatRestoreBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
-    UI.ChatRestoreBtn.TextSize = 11
+    UI.ChatRestoreBtn.TextSize = 18
     UI.ChatRestoreBtn.TextScaled = false
     UI.ChatRestoreBtn.Font = Enum.Font.GothamBold
     UI.ChatRestoreBtn.Visible = false
@@ -2208,8 +2212,8 @@ end)
         State.MainUIVisible = false
         State._wasChatOpenBeforeMin = wasChatOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
-        UI.DeleteChatBtn.Visible = false
-        UI.CopyChatBtn.Visible = false
+        UI.DeleteChatBtn.Visible = State._chatPanelOpen
+        UI.CopyChatBtn.Visible = State._chatPanelOpen
         UI.ResetConfigBtn.Visible = false
         UI.MainFrame:TweenSize(UDim2.new(0, 220, 0, 48), "Out", "Quad", 0.3, true)
         UI.MainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
@@ -2226,11 +2230,15 @@ end)
         UI.ActionBtn.Position = UDim2.new(1, -50, 0.5, -20)
         UI.ActionBtn.Size = UDim2.new(0, 40, 0, 40)
         UI.CloseBtn.Visible = false
-        UI.ChatRestoreBtn.Visible = wasChatOpen
+        UI.ChatRestoreBtn.Visible = State._chatPanelOpen
+        UI.MiniChatBadge.Visible = State._chatPanelOpen and State.UnreadChatCount > 0
         UI.SideBar.Visible = false
         UI.TabBar.Visible = false
         UI.Pages.Visible = false
         UI.FPSFrame.Visible = false
+        -- تبقى أدوات الدردشة ظاهرة إذا كانت لوحة الدردشة مفتوحة، حتى بعد تصغير القائمة الأساسية.
+        UI.DeleteChatBtn.Visible = State._chatPanelOpen
+        UI.CopyChatBtn.Visible = State._chatPanelOpen
         HideAllSkyShapes()
         BackgroundOverlay.Visible = false 
         UpdateVisualEffects(false)
@@ -2258,7 +2266,9 @@ end)
         UI.ActionBtn.Position = UDim2.new(1, -100, 0, 3)
         UI.ActionBtn.Size = UDim2.new(0, 45, 0, 45)
         UI.CloseBtn.Visible = true
+        -- زر الدردشة يظهر فقط عند تصغير القائمة الأساسية.
         UI.ChatRestoreBtn.Visible = false
+        UI.MiniChatBadge.Visible = false
         UI.SideBar.Visible = true
         UI.TabBar.Visible = true
         UI.Pages.Visible = true
@@ -2305,7 +2315,19 @@ end)
     UI.ChatRestoreBtn.MouseButton1Click:Connect(function()
         playClick()
         UI.ChatRestoreBtn.Visible = false
-        SetToFullMode()
+        -- تصفير الرسائل الجديدة عند فتح الدردشة.
+        State.UnreadChatCount = 0
+        UI.MiniChatBadge.Text = "0"
+        UI.MiniChatBadge.Visible = false
+        -- فتح لوحة الدردشة فقط، بدون فتح القائمة الأساسية.
+        State._chatPageOpen = true
+        -- إعادة إظهار محتوى الدردشة الداخلي الذي قد يكون أخفاه التاب السابق.
+        UI.Page5.Visible = true
+        UI.Page5.ScrollingEnabled = false
+        ChatInputBar.Visible = true
+        if State._chatPanel and State._chatPanel.Parent then
+            State._chatPanel.Visible = true
+        end
     end)
 
     local function CreateTabBtn(name, pos)
@@ -2377,7 +2399,8 @@ UI.MiniChatBadge = Instance.new("TextLabel", UI.MainFrame)
 UI.MiniChatBadge.Name = "UI.MiniChatBadge"
 UI.MiniChatBadge.AnchorPoint = Vector2.new(0, 0)
 UI.MiniChatBadge.Size = UDim2.new(0, 18, 0, 18)
-UI.MiniChatBadge.Position = UDim2.new(0.05, 109, 0, 17)
+-- يظهر العداد فوق يمين مربع الدردشة بجانب زر + في الوضع المصغّر.
+UI.MiniChatBadge.Position = UDim2.new(1, -62, 0.5, -28)
 UI.MiniChatBadge.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
 UI.MiniChatBadge.BorderSizePixel = 0
 UI.MiniChatBadge.Text = "0"
@@ -2636,15 +2659,7 @@ end)
             info.badge.Visible = false
         end
 
-        -- 🔔 نفس الرقم ينعكس على البادج العائم فوق القائمة (يبان حتى في الوضع النحيف بعد X)
-        if parent == UI.Page5 then
-            if count > 0 then
-                UI.MiniChatBadge.Text = tostring(count)
-                UI.MiniChatBadge.Visible = true
-            else
-                UI.MiniChatBadge.Visible = false
-            end
-        end
+        -- عداد الرسائل الجديدة يُدار من نظام الدردشة، وليس من عداد الميزات المفعّلة.
     end
 
     -- ====================== 💾 نظام حفظ الإعدادات ======================
@@ -4860,13 +4875,21 @@ UI.btn1.MouseButton1Click:Connect(function()
     UI.btn5.MouseButton1Click:Connect(function()
         playClick()
         SetToSuperMiniMode()
+        -- نثبت أن لوحة الدردشة مفتوحة؛ حتى لا تعتبر دالة الرجوع أن أزرارها يجب أن تبقى مخفية.
+        State._chatPanelOpen = true
+        State._wasChatOpenBeforeMin = true
+        State._chatPageOpen = true
+        State.UnreadChatCount = 0
+        UI.MiniChatBadge.Text = "0"
+        UI.MiniChatBadge.Visible = false
 
         local ChatPanel = Instance.new("Frame")
         ChatPanel.Name = "SkyChatPanel"
+        State._chatPanel = ChatPanel
         ChatPanel.Size = UDim2.new(0, 500, 0, 400)
         ChatPanel.Position = UDim2.new(0.5, -240, 0.5, -185)
         ChatPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-        ChatPanel.BackgroundTransparency = 0
+        ChatPanel.BackgroundTransparency = 0.25
         ChatPanel.BorderSizePixel = 0
         ChatPanel.ClipsDescendants = true
         ChatPanel.Active = true
@@ -4912,11 +4935,12 @@ UI.btn1.MouseButton1Click:Connect(function()
             end
         end)
 
+        -- ⚫ إطار واحد فقط للوحة الدردشة، بدون تراكب أو توهج إضافي
         local ChatPanelStroke = Instance.new("UIStroke", ChatPanel)
-        ChatPanelStroke.Color = Color3.fromRGB(170, 0, 255)
-        ChatPanelStroke.Thickness = 2.5
+        ChatPanelStroke.Color = Color3.fromRGB(0, 0, 0)
+        ChatPanelStroke.Thickness = 2
+        ChatPanelStroke.Transparency = 0.05
         ChatPanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-        AddMovingBorderGlow(ChatPanelStroke, 1.5)
         MakeDraggable(ChatPanel)
 
         -- نقل صفحة الدردشة وأدواتها إلى اللوحة الحالية.
@@ -4932,13 +4956,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
         ChatInputBar.Visible = true
 
-        local ChatDivider = Instance.new("Frame")
-        ChatDivider.Size = UDim2.new(1, -20, 0, 2)
-        ChatDivider.Position = UDim2.new(0, 10, 1, -109)
-        ChatDivider.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
-        ChatDivider.BorderSizePixel = 0
-        ChatDivider.ZIndex = 8
-        ChatDivider.Parent = ChatPanel
+        -- أزيل الخط الفاصل البنفسجي من قائمة الدردشة.
 
         UI.DeleteChatBtn.Parent = ChatPanel
         UI.DeleteChatBtn.Position = UDim2.new(1, -112, 0, 5)
@@ -4968,17 +4986,11 @@ UI.btn1.MouseButton1Click:Connect(function()
 
         ChatCloseBtn.MouseButton1Click:Connect(function()
             playClick()
-            UI.Page5.Parent = UI.Pages
-            UI.Page5.ScrollBarThickness = 6
-            UI.Page5.ScrollingEnabled = true
-            UI.Page5.Visible = false
-            ChatInputBar.Parent = UI.Pages
-            ChatInputBar.Visible = false
-            UI.DeleteChatBtn.Parent = UI.MainFrame
-            UI.DeleteChatBtn.Visible = false
-            UI.CopyChatBtn.Parent = UI.MainFrame
-            UI.CopyChatBtn.Visible = false
-            ChatPanel:Destroy()
+            -- إخفاء لوحة الدردشة فعليًا مع حفظها، مثل تصغير القائمة الأساسية.
+            if State._chatPanel and State._chatPanel.Parent then
+                State._chatPanel.Visible = false
+            end
+            SetToSuperMiniMode()
         end)
     end)
 
@@ -5037,13 +5049,13 @@ end)
     end)
     
     -- أي تاب ثاني يتفتح = صفحة الدردشة مب ظاهرة
-    UI.btn1.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn2.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn3.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn4.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn6.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn7.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
-    UI.btn8.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false end)
+    UI.btn1.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn2.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn3.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn4.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn6.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn7.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn8.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
 
     -- 🔔 صوت خاص لإشعار الرسائل الجديدة (مثل تنبيه واتساب/سناب)
     local msgNotifySound = Instance.new("Sound")
@@ -5063,12 +5075,11 @@ end)
         -- بدون ما نغيّر حجم القائمة الرئيسية أو باقي التابات.
         chatContainer.Size = UDim2.new(1, -10, 1, -10)
         chatContainer.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        chatContainer.BackgroundTransparency = 1
         chatContainer.Position = UDim2.new(0, 5, 0, 5)
         chatContainer.ClipsDescendants = true
         Instance.new("UICorner", chatContainer)
-        local chatContainerStroke = Instance.new("UIStroke", chatContainer)
-        chatContainerStroke.Thickness = 1.5
-        AddTabGlow(chatContainerStroke, 1.5, parentPage)
+        -- لا نضيف إطارًا داخليًا؛ إطار ChatPanel الخارجي هو الحد الوحيد
 
         local chatHeader = Instance.new("TextLabel", chatContainer)
         chatHeader.Size = UDim2.new(0.5, 0, 0, 22)
@@ -5117,6 +5128,15 @@ end)
         chatLog.ScrollBarThickness = 4
         chatLog.CanvasSize = UDim2.new(0, 0, 0, 500)
         chatLog.ZIndex = 7
+
+        -- 🖤 حواف سوداء حول قائمة رسائل الدردشة
+        local chatLogCorner = Instance.new("UICorner", chatLog)
+        chatLogCorner.CornerRadius = UDim.new(0, 10)
+        local chatLogStroke = Instance.new("UIStroke", chatLog)
+        chatLogStroke.Color = Color3.fromRGB(0, 0, 0)
+        chatLogStroke.Thickness = 2
+        chatLogStroke.Transparency = 0
+        chatLogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         
         local chatList = Instance.new("UIListLayout", chatLog)
         chatList.Padding = UDim.new(0, 5)
@@ -5128,7 +5148,7 @@ end)
         chatToBottomBtn.Name = "ChatToBottomBtn"
         chatToBottomBtn.AnchorPoint = Vector2.new(0.5, 0.5)
         -- رفع الزر قليلًا فوق شريط الكتابة.
-        chatToBottomBtn.Position = UDim2.new(0.5, 0, 0, -28)
+        chatToBottomBtn.Position = UDim2.new(0.5, -45, 0, -28)
         chatToBottomBtn.Size = UDim2.new(0, 38, 0, 30)
         chatToBottomBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 45)
         chatToBottomBtn.BackgroundTransparency = 0.08
@@ -5312,7 +5332,7 @@ end)
         local inputBox = Instance.new("TextBox", ChatInputBar)
         inputBox.AnchorPoint = Vector2.new(1, 0)
         inputBox.Size = UDim2.new(0.45, 0, 1, 0)
-        inputBox.Position = UDim2.new(1, 0, 0, 0)
+        inputBox.Position = UDim2.new(1, -16, 0, 0) -- تحريك مربع كتابة الرسالة أكثر إلى اليسار
         inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
         inputBox.PlaceholderText = "اكتب رسالتك هنا..."
         inputBox.Text = ""
@@ -5578,6 +5598,9 @@ end)
             local edgeColor = isMine and COLOR_MINE or COLOR_OTHER
             local AVATAR_SIZE = 28
             local AVATAR_GAP = 6
+            -- إزاحة رسائلي قليلًا إلى اليسار حتى لا تدخل في الخط أو حافة القائمة.
+            local MY_MESSAGE_LEFT_SHIFT = 12
+            local FRIEND_MESSAGE_RIGHT_SHIFT = 12
 
             -- 📦 الصف اللي يحتوي الفقاعة (يمين لكلامي / يسار لكلام خويي)
             local row = Instance.new("Frame")
@@ -5607,10 +5630,10 @@ end)
                 avatarImg.Parent = row
                 if isMine then
                     avatarImg.AnchorPoint = Vector2.new(1, 0)
-                    avatarImg.Position = UDim2.new(1, -5, 0, 2)
+                    avatarImg.Position = UDim2.new(1, -(5 + MY_MESSAGE_LEFT_SHIFT), 0, 2)
                 else
                     avatarImg.AnchorPoint = Vector2.new(0, 0)
-                    avatarImg.Position = UDim2.new(0, 5, 0, 2)
+                    avatarImg.Position = UDim2.new(0, 5 + FRIEND_MESSAGE_RIGHT_SHIFT, 0, 2)
                 end
                 Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
                 local avStroke = Instance.new("UIStroke", avatarImg)
@@ -5682,12 +5705,12 @@ end)
             local targetPos
             if isMine then
                 bubble.AnchorPoint = Vector2.new(1, 0)
-                local rightOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP) or 5
+                local rightOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + MY_MESSAGE_LEFT_SHIFT) or (5 + MY_MESSAGE_LEFT_SHIFT)
                 targetPos = UDim2.new(1, -rightOffset, 0, 0)
                 bubble.Position = UDim2.new(1, 25, 0, 0) -- يبدأ خارج الحافة عشان الانميشن
             else
                 bubble.AnchorPoint = Vector2.new(0, 0)
-                local leftOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP) or 5
+                local leftOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + FRIEND_MESSAGE_RIGHT_SHIFT) or (5 + FRIEND_MESSAGE_RIGHT_SHIFT)
                 targetPos = UDim2.new(0, leftOffset, 0, 0)
                 bubble.Position = UDim2.new(0, leftOffset - 30, 0, 0)
             end
@@ -5715,7 +5738,7 @@ end)
                 local slideInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
                 local fadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                 TweenService:Create(bubble, slideInfo, {Position = targetPos}):Play()
-                TweenService:Create(bubble, fadeInfo, {BackgroundTransparency = 0}):Play()
+                TweenService:Create(bubble, fadeInfo, {BackgroundTransparency = 0.25}):Play()
                 TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
                 TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.25}):Play()
                 TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
@@ -5974,12 +5997,17 @@ end)
                             _lastSeenTimestamp = newestTimestamp
                         elseif newMsgsFromOthers > 0 then
                             _lastSeenTimestamp = newestTimestamp
-                            if not State._chatPageOpen or not State.MainUIVisible then
-                                -- 🔴 بادج رقمي فوق تاب الدردشة، بالضبط مثل واتساب
-                                UI.activeCounts[UI.Page5] = (UI.activeCounts[UI.Page5] or 0) + newMsgsFromOthers
-                                UpdateBadge(UI.Page5)
-
-                                -- 💬 بوب أب إشعار فوق يمين الشاشة حتى لو القائمة مقفولة/مصغّرة
+                            -- لا نعدّ الرسائل إذا كان المستخدم داخل الدردشة فعلًا.
+                            if State._chatPageOpen then
+                                State.UnreadChatCount = 0
+                                UI.MiniChatBadge.Text = "0"
+                                UI.MiniChatBadge.Visible = false
+                            else
+                                State.UnreadChatCount = State.UnreadChatCount + newMsgsFromOthers
+                                UI.MiniChatBadge.Text = tostring(State.UnreadChatCount)
+                                -- يظهر العداد فوق زر الدردشة فقط عندما تكون القائمة الأساسية مصغّرة.
+                                UI.MiniChatBadge.Visible = State._chatPanelOpen and not State.MainUIVisible
+                                -- 💬 بوب أب إشعار فقط عندما تكون خارج الدردشة.
                                 playMsgNotify()
                                 Notify("💬 " .. lastOtherMsg.sender, lastOtherMsg.text, Color3.fromRGB(170, 0, 255), true)
                             end
