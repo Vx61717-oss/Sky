@@ -1,4 +1,8 @@
 -- [[ FIREBASE CONFIG ]]
+local FIREBASE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chat.json"
+local TYPING_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/typing.json"
+local PRESENCE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/presence.json"
+local AUTH_TOKEN = ""
 -- 🌐 توافق مع مختلف برامج الإكسبلويت: كل وحد يسمي دالة الطلبات باسم مختلف
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
@@ -7,7 +11,13 @@ local State = {
     selectedPlayer = nil,
     AntiGrabActive = false,
     BombRunning = false,
-    BringAllRunning = false
+    BringAllRunning = false,
+    _chatPageOpen = false,
+    _wasChatOpenBeforeMin = false,
+    _chatPanelOpen = false,
+    _chatPanel = nil,
+    UnreadChatCount = 0,
+    MainUIVisible = true
 }
 local UI = {
     ConfigRegistry = {}
@@ -2602,6 +2612,64 @@ end)
     UI.ActionBtnStroke.Thickness = 1.5
     UI.ActionBtnGlowGrad = AddMovingBorderGlow(UI.ActionBtnStroke, 1.5)
 
+    -- 💬 زر استعادة الدردشة عند تصغير القائمة
+    UI.ChatRestoreBtn = Instance.new("TextButton", UI.MainFrame)
+    UI.ChatRestoreBtn.Name = "ChatRestoreBtn"
+    UI.ChatRestoreBtn.Size = UDim2.new(0, 40, 0, 40)
+    UI.ChatRestoreBtn.Position = UDim2.new(1, -100, 0.5, -20)
+    UI.ChatRestoreBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    UI.ChatRestoreBtn.Text = "💬"
+    UI.ChatRestoreBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
+    UI.ChatRestoreBtn.TextSize = 18
+    UI.ChatRestoreBtn.Font = Enum.Font.GothamBold
+    UI.ChatRestoreBtn.Visible = false
+    UI.ChatRestoreBtn.ZIndex = 20
+    Instance.new("UICorner", UI.ChatRestoreBtn).CornerRadius = UDim.new(0, 9)
+    UI.ChatRestoreBtnStroke = Instance.new("UIStroke", UI.ChatRestoreBtn)
+    UI.ChatRestoreBtnStroke.Thickness = 1.5
+    UI.ChatRestoreBtnGlowGrad = AddMovingBorderGlow(UI.ChatRestoreBtnStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+    -- 🗑️ أزرار الحذف والنسخ الخاصة بالدردشة
+    UI.DeleteChatBtn = Instance.new("TextButton", UI.MainFrame)
+    UI.DeleteChatBtn.Size = UDim2.new(0, 45, 0, 45)
+    UI.DeleteChatBtn.Position = UDim2.new(1, -150, 0, 3)
+    UI.DeleteChatBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    UI.DeleteChatBtn.Text = "حذف"
+    UI.DeleteChatBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+    UI.DeleteChatBtn.TextSize = 13
+    UI.DeleteChatBtn.Font = Enum.Font.GothamBold
+    UI.DeleteChatBtn.Visible = false
+    UI.DeleteChatBtn.ZIndex = 20
+    Instance.new("UICorner", UI.DeleteChatBtn)
+    UI.DeleteChatBtnStroke = Instance.new("UIStroke", UI.DeleteChatBtn)
+    UI.DeleteChatBtnStroke.Thickness = 1.5
+    UI.DeleteChatBtnGlowGrad = AddMovingBorderGlow(UI.DeleteChatBtnStroke, 1.5, Color3.fromRGB(255, 60, 60))
+
+    UI.CopyChatBtn = Instance.new("TextButton", UI.MainFrame)
+    UI.CopyChatBtn.Size = UDim2.new(0, 45, 0, 45)
+    UI.CopyChatBtn.Position = UDim2.new(1, -200, 0, 3)
+    UI.CopyChatBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    UI.CopyChatBtn.Text = "نسخ"
+    UI.CopyChatBtn.TextColor3 = Color3.fromRGB(80, 170, 255)
+    UI.CopyChatBtn.TextSize = 13
+    UI.CopyChatBtn.Font = Enum.Font.GothamBold
+    UI.CopyChatBtn.Visible = false
+    UI.CopyChatBtn.ZIndex = 20
+    Instance.new("UICorner", UI.CopyChatBtn)
+    UI.CopyChatBtnStroke = Instance.new("UIStroke", UI.CopyChatBtn)
+    UI.CopyChatBtnStroke.Thickness = 1.5
+    UI.CopyChatBtnGlowGrad = AddMovingBorderGlow(UI.CopyChatBtnStroke, 1.5, Color3.fromRGB(0, 140, 255))
+
+    local ChatInputBar = Instance.new("Frame", UI.Pages)
+    ChatInputBar.Name = "ChatInputBar"
+    ChatInputBar.AnchorPoint = Vector2.new(0, 1)
+    ChatInputBar.Position = UDim2.new(0, 5, 1, -58)
+    ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
+    ChatInputBar.BackgroundTransparency = 1
+    ChatInputBar.Active = true
+    ChatInputBar.ZIndex = 100
+    ChatInputBar.Visible = false
+
     -- 🗑️ زر مسح الإعدادات المحفوظة، نفس شكل ومقاس زر (-) بالظبط وجنبه — يختفي لما تاب الدردشة يكون مفتوح
     UI.ResetConfigBtn = Instance.new("TextButton", UI.MainFrame)
     UI.ResetConfigBtn.Size = UDim2.new(0, 45, 0, 45)
@@ -2696,6 +2764,10 @@ end)
         State.IsSuperMini = true; State.IsMin = false
         State.MainUIVisible = false
         UI.ResetConfigBtn.Visible = false
+        if UI.ChatRestoreBtn then UI.ChatRestoreBtn.Visible = State._chatPanelOpen and not State._chatPageOpen end
+        if ChatInputBar then ChatInputBar.Visible = false end
+        if UI.DeleteChatBtn then UI.DeleteChatBtn.Visible = false end
+        if UI.CopyChatBtn then UI.CopyChatBtn.Visible = false end
         UI.MainFrame:TweenSize(UDim2.new(0, 220, 0, 48), "Out", "Quad", 0.3, true)
         UI.MainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
         UI.MainStroke.Thickness = 2
@@ -2723,6 +2795,7 @@ end)
         State.IsMin = false; State.IsSuperMini = false
         State.MainUIVisible = true
         UI.ResetConfigBtn.Visible = true
+        if UI.ChatRestoreBtn then UI.ChatRestoreBtn.Visible = false end
         UI.MainFrame:TweenSize(UDim2.new(0, 500, 0, 450), "Out", "Quad", 0.35, true)
         UI.MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
         UI.MainStroke.Thickness = 3
@@ -2792,6 +2865,7 @@ UI.btn1 = CreateTabBtn("✈️ المميزات", 0)
 UI.btn2 = CreateTabBtn("😈 تخريب", 0.2)
 UI.btn3 = CreateTabBtn("🛠️ مساعده", 0.4)
 UI.btn4 = CreateTabBtn("🎵 الموسيقى", 0.6)
+UI.btn5 = CreateTabBtn("💬 الدردشة", 0.8)
 -- 🔔 رقم صغير (Badge) فوق كل تاب يبين عدد العناصر فيه
 local function CreateTabBadge(tabBtn)
     local badge = Instance.new("TextLabel", tabBtn)
@@ -2818,6 +2892,25 @@ UI.tabBadge1 = CreateTabBadge(UI.btn1)
 UI.tabBadge2 = CreateTabBadge(UI.btn2)
 UI.tabBadge3 = CreateTabBadge(UI.btn3)
 UI.tabBadge4 = CreateTabBadge(UI.btn4)
+UI.tabBadge5 = CreateTabBadge(UI.btn5)
+
+-- 🔔 عداد الرسائل الجديدة حتى أثناء تصغير القائمة
+UI.MiniChatBadge = Instance.new("TextLabel", UI.MainFrame)
+UI.MiniChatBadge.Name = "UI.MiniChatBadge"
+UI.MiniChatBadge.Size = UDim2.new(0, 18, 0, 18)
+UI.MiniChatBadge.Position = UDim2.new(1, -62, 0.5, -28)
+UI.MiniChatBadge.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+UI.MiniChatBadge.BorderSizePixel = 0
+UI.MiniChatBadge.Text = "0"
+UI.MiniChatBadge.TextColor3 = Color3.new(1, 1, 1)
+UI.MiniChatBadge.Font = Enum.Font.GothamBold
+UI.MiniChatBadge.TextScaled = true
+UI.MiniChatBadge.ZIndex = 25
+UI.MiniChatBadge.Visible = false
+Instance.new("UICorner", UI.MiniChatBadge).CornerRadius = UDim.new(1, 0)
+local _miniBadgeStroke = Instance.new("UIStroke", UI.MiniChatBadge)
+_miniBadgeStroke.Color = Color3.fromRGB(0, 0, 0)
+_miniBadgeStroke.Thickness = 1
 
 -- 🎨 لون حدود مختلف لكل تاب
 UI.TabColors = {
@@ -2825,6 +2918,7 @@ UI.TabColors = {
     [2] = Color3.fromRGB(255, 60, 60),  -- تخريب
     [3] = Color3.fromRGB(0, 170, 255),  -- مساعدة
     [4] = Color3.fromRGB(255, 200, 0), -- الموسيقى
+    [5] = Color3.fromRGB(170, 0, 255), -- الدردشة
 }-- 📌 نسخة أصلية من الألوان الافتراضية (تستخدمها زر "استرجاع الألوان الافتراضية" بتاب الإعدادات)
 UI.DefaultTabColors = {}
 for k, v in pairs(UI.TabColors) do UI.DefaultTabColors[k] = v end
@@ -2899,7 +2993,7 @@ local function BlendColor3(base, tint, amount)
     )
 end
 
-UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4}
+UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5}
 
 -- عند الضغط على تاب: زره ياخذ لون التاب (ممزوج مع الأساس)، والباقي يرجعون للون الأساسي
 local function SetActiveTabButton(activeIndex)
@@ -2913,6 +3007,7 @@ UI.btn1.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn2.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn3.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn4.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
+UI.btn5.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 
 -- 🌈 كل زر تاب ياخذ توهجه الخاص (أسود + لون التاب) بشكل دائم وواضح
 -- 🎨 نخزن كل توهج بجدول UI.tabGlowGrad عشان تاب الإعدادات يقدر يحدثه فورًا لو تغيّر اللون
@@ -2925,6 +3020,8 @@ UI.btn3Stroke = Instance.new("UIStroke", UI.btn3); UI.btn3Stroke.Thickness = 1.4
 UI.tabGlowGrad[3] = AddTabButtonBorderGlow(UI.btn3Stroke, 1.5, UI.TabColors[3])
 UI.btn4Stroke = Instance.new("UIStroke", UI.btn4); UI.btn4Stroke.Thickness = 1.4; UI.btn4Stroke.Transparency = 0; UI.btn4Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 UI.tabGlowGrad[4] = AddTabButtonBorderGlow(UI.btn4Stroke, 1.5, UI.TabColors[4])
+UI.btn5Stroke = Instance.new("UIStroke", UI.btn5); UI.btn5Stroke.Thickness = 1.4; UI.btn5Stroke.Transparency = 0; UI.btn5Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UI.tabGlowGrad[5] = AddTabButtonBorderGlow(UI.btn5Stroke, 1.5, UI.TabColors[5])
 
 UI.Underline = Instance.new("Frame")
 UI.Underline.Parent = UI.SideBar
@@ -2978,17 +3075,20 @@ end
     UI.Page2 = CreatePage()
     UI.Page3 = CreatePage()
     UI.Page4 = CreatePage()
+    UI.Page5 = CreatePage()
 
     -- 🎨 الحين صفحات التابات موجودة فعليًا، نربط كل وحدة بلونها ورقمها
     UI.PageGlowColor[UI.Page1] = UI.TabColors[1]
     UI.PageGlowColor[UI.Page2] = UI.TabColors[2]
     UI.PageGlowColor[UI.Page3] = UI.TabColors[3]
     UI.PageGlowColor[UI.Page4] = UI.TabColors[4]
+    UI.PageGlowColor[UI.Page5] = UI.TabColors[5]
 
     UI.PageIndexOf[UI.Page1] = 1
     UI.PageIndexOf[UI.Page2] = 2
     UI.PageIndexOf[UI.Page3] = 3
     UI.PageIndexOf[UI.Page4] = 4
+    UI.PageIndexOf[UI.Page5] = 5
     
     -- 🔢 عداد العناصر المفعّلة في كل صفحة + ربطها بزر التاب وبادجه
     UI.PageTabMap = {
@@ -2996,8 +3096,9 @@ end
         [UI.Page2] = {btn = UI.btn2, badge = UI.tabBadge2},
         [UI.Page3] = {btn = UI.btn3, badge = UI.tabBadge3},
         [UI.Page4] = {btn = UI.btn4, badge = UI.tabBadge4},
+        [UI.Page5] = {btn = UI.btn5, badge = UI.tabBadge5},
     }
-    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0}
+    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0, [UI.Page5] = 0}
 
     local function UpdateBadge(parent)
         local info = UI.PageTabMap[parent]
@@ -3723,17 +3824,17 @@ local function UpdatePlayerList()
         TogglePlankUI(s)
     end, ControlsArea)
 
-    NewItem("fling", "Button", function(s)
+    NewItem("الوو", "Button", function(s)
         State.MasterFlingActive = s
         if not s then State._wooGrabbedActive = false end
         if s then
-            OK("✅ fling : مفعل")
+            OK("✅ الوو: مفعل")
         else
-            OK("🔒 fling : معطل")
+            OK("🔒 الوو: معطل")
         end
     end, ControlsArea)
 
-    -- ⚡ منطق "fling" (Anti-Grab Fling): لو حد قرّب منك أو مسكك، يطيّره بسرعة عشان يسيبك
+    -- ⚡ منطق "الوو" (Anti-Grab Fling): لو حد قرّب منك أو مسكك، يطيّره بسرعة عشان يسيبك
     do
         local _wooLastTrigger = 0
         local _wooCooldown = 0.05
@@ -5065,6 +5166,1169 @@ UI.btn1.MouseButton1Click:Connect(function()
 
 
 
+    UI.btn5.MouseButton1Click:Connect(function()
+        playClick()
+        State._chatPanelOpen = true
+        State._chatPageOpen = true
+        State._wasChatOpenBeforeMin = true
+        State.UnreadChatCount = 0
+        UI.MiniChatBadge.Text = "0"
+        UI.MiniChatBadge.Visible = false
+
+        -- تصغير القائمة الأساسية أولاً ثم فتح لوحة الدردشة بنفس أسلوب Sk
+        SetToSuperMiniMode()
+
+        local old = State._chatPanel
+        if old and old.Parent then old:Destroy() end
+
+        local ChatPanel = Instance.new("Frame")
+        ChatPanel.Name = "SkyChatPanel"
+        State._chatPanel = ChatPanel
+        ChatPanel.Size = UDim2.new(0, 500, 0, 400)
+        ChatPanel.Position = UDim2.new(0.5, -240, 0.5, -185)
+        ChatPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        ChatPanel.BackgroundTransparency = 0.25
+        ChatPanel.BorderSizePixel = 0
+        ChatPanel.ClipsDescendants = true
+        ChatPanel.Active = true
+        ChatPanel.ZIndex = 30
+        ChatPanel.Parent = ScreenGui
+        Instance.new("UICorner", ChatPanel).CornerRadius = UDim.new(0, 15)
+
+        local ChatTitle = Instance.new("TextLabel", ChatPanel)
+        ChatTitle.Size = UDim2.new(0, 170, 0, 36)
+        ChatTitle.Position = UDim2.new(0, 18, 0, 6)
+        ChatTitle.BackgroundTransparency = 1
+        ChatTitle.Text = "S  k  y"
+        ChatTitle.TextColor3 = Color3.fromRGB(255,255,255)
+        ChatTitle.TextSize = 21
+        ChatTitle.Font = Enum.Font.GothamBold
+        ChatTitle.TextXAlignment = Enum.TextXAlignment.Left
+        ChatTitle.ZIndex = 32
+
+        local dot = Instance.new("Frame", ChatPanel)
+        dot.Size = UDim2.new(0,8,0,8); dot.Position = UDim2.new(0,108,0,20)
+        dot.BackgroundColor3 = Color3.fromRGB(0,230,100); dot.BorderSizePixel = 0; dot.ZIndex = 32
+        Instance.new("UICorner", dot).CornerRadius = UDim.new(1,0)
+        task.spawn(function()
+            while dot and dot.Parent do
+                TweenService:Create(dot,TweenInfo.new(0.9,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{BackgroundTransparency=0.7}):Play()
+                task.wait(0.9)
+                if not dot or not dot.Parent then break end
+                TweenService:Create(dot,TweenInfo.new(0.9,Enum.EasingStyle.Sine,Enum.EasingDirection.InOut),{BackgroundTransparency=0}):Play()
+                task.wait(0.9)
+            end
+        end)
+
+        local panelStroke = Instance.new("UIStroke", ChatPanel)
+        panelStroke.Color = Color3.fromRGB(0,0,0); panelStroke.Thickness = 2; panelStroke.Transparency = 0.05
+        MakeDraggable(ChatPanel)
+
+        UI.Page5.Parent = ChatPanel
+        UI.Page5.ScrollBarThickness = 0
+        UI.Page5.ScrollingEnabled = false
+        UI.Page5.Position = UDim2.new(0,8,0,58)
+        UI.Page5.Size = UDim2.new(1,-16,1,-66)
+        UI.Page5.Visible = true
+        UI.Page5.ZIndex = 31
+        ChatInputBar.Parent = ChatPanel
+        ChatInputBar.Position = UDim2.new(0,5,1,-55)
+        ChatInputBar.Size = UDim2.new(1,-10,0,44)
+        ChatInputBar.Visible = true
+
+        UI.DeleteChatBtn.Parent = ChatPanel
+        UI.DeleteChatBtn.Position = UDim2.new(1,-112,0,5)
+        UI.DeleteChatBtn.ZIndex = 33; UI.DeleteChatBtn.Visible = true
+        UI.CopyChatBtn.Parent = ChatPanel
+        UI.CopyChatBtn.Position = UDim2.new(1,-172,0,5)
+        UI.CopyChatBtn.ZIndex = 33; UI.CopyChatBtn.Visible = true
+
+        local closeBtn = Instance.new("TextButton", ChatPanel)
+        closeBtn.Size = UDim2.new(0,45,0,45); closeBtn.Position = UDim2.new(1,-55,0,5)
+        closeBtn.BackgroundColor3 = Color3.fromRGB(30,30,30); closeBtn.Text = "X"
+        closeBtn.TextColor3 = Color3.new(1,0,0); closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 18; closeBtn.ZIndex = 34
+        Instance.new("UICorner", closeBtn)
+        local cs = Instance.new("UIStroke", closeBtn); cs.Color = Color3.fromRGB(170,0,255); cs.Thickness = 1.5
+        AddMovingBorderGlow(cs,1.5)
+        closeBtn.MouseButton1Click:Connect(function()
+            playClick()
+            State._chatPageOpen = false
+            State._chatPanelOpen = true
+            if State._chatPanel and State._chatPanel.Parent then State._chatPanel.Visible = false end
+            ChatInputBar.Visible = false
+            UI.DeleteChatBtn.Visible = false
+            UI.CopyChatBtn.Visible = false
+            UI.ChatRestoreBtn.Visible = true
+            SetToSuperMiniMode()
+        end)
+    end)
+
+    UI.ChatRestoreBtn.MouseButton1Click:Connect(function()
+        if not State._chatPanel or not State._chatPanel.Parent then return end
+        playClick()
+        State._chatPanel.Visible = true
+        State._chatPageOpen = true
+        State._chatPanelOpen = true
+        State.UnreadChatCount = 0
+        UI.MiniChatBadge.Text = "0"
+        UI.MiniChatBadge.Visible = false
+        UI.ChatRestoreBtn.Visible = false
+        ChatInputBar.Visible = true
+        UI.DeleteChatBtn.Visible = true
+        UI.CopyChatBtn.Visible = true
+    end)
+
+
+    for _, otherBtn in ipairs({UI.btn1, UI.btn2, UI.btn3, UI.btn4}) do
+        otherBtn.MouseButton1Click:Connect(function()
+            State._chatPageOpen = false
+            if State._chatPanel and State._chatPanel.Parent then State._chatPanel.Visible = false end
+            UI.ChatRestoreBtn.Visible = false
+            UI.DeleteChatBtn.Visible = false
+            UI.CopyChatBtn.Visible = false
+            ChatInputBar.Visible = false
+            UI.ResetConfigBtn.Visible = true
+            if UI.Page5.Parent ~= UI.Pages then UI.Page5.Parent = UI.Pages end
+            UI.Page5.Visible = false
+            UI.Page5.ScrollingEnabled = true
+        end)
+    end
+
+    -- 💬 نظام الدردشة الكامل المنقول من Sk
+    local msgNotifySound = Instance.new("Sound")
+    msgNotifySound.SoundId = "rbxassetid://6895079853"
+    msgNotifySound.Volume = 1
+    msgNotifySound.Parent = SoundService
+    _ownSounds[msgNotifySound] = true
+    local function playMsgNotify() msgNotifySound:Play() end
+
+    local function setupChatPage(parentPage, deleteBtn, ChatInputBar, copyBtn)
+        local chatContainer = Instance.new("Frame", parentPage)
+        -- 📱 الدردشة فقط: نخلي لوحة الدردشة تستغل مساحة التاب كاملة،
+        -- بدون ما نغيّر حجم القائمة الرئيسية أو باقي التابات.
+        chatContainer.Size = UDim2.new(1, -10, 1, -10)
+        chatContainer.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        chatContainer.BackgroundTransparency = 1
+        chatContainer.Position = UDim2.new(0, 5, 0, 5)
+        chatContainer.ClipsDescendants = true
+        chatContainer.ZIndex = 31
+        Instance.new("UICorner", chatContainer)
+        -- لا نضيف إطارًا داخليًا؛ إطار ChatPanel الخارجي هو الحد الوحيد
+
+        local chatHeader = Instance.new("TextLabel", chatContainer)
+        chatHeader.Size = UDim2.new(0.5, 0, 0, 22)
+        chatHeader.Position = UDim2.new(0, 8, 0, 4)
+        chatHeader.BackgroundTransparency = 1
+        chatHeader.Text = "💬 الدردشة"
+        chatHeader.TextColor3 = Color3.fromRGB(200, 200, 200)
+        chatHeader.Font = Enum.Font.GothamBold
+        chatHeader.TextSize = 14
+        chatHeader.TextXAlignment = Enum.TextXAlignment.Left
+        chatHeader.ZIndex = 7
+
+        -- 🟢 يبان لما خويك يكون فاتح تاب الدردشة عنده
+        local onlineLabel = Instance.new("TextLabel", chatContainer)
+        onlineLabel.Name = "OnlineLabel"
+        onlineLabel.Size = UDim2.new(0.45, -8, 0, 22)
+        onlineLabel.Position = UDim2.new(0.55, 0, 0, 4)
+        onlineLabel.BackgroundTransparency = 1
+        onlineLabel.Text = ""
+        onlineLabel.TextColor3 = Color3.fromRGB(0, 230, 100)
+        onlineLabel.Font = Enum.Font.GothamBold
+        onlineLabel.TextSize = 12
+        onlineLabel.TextXAlignment = Enum.TextXAlignment.Right
+        onlineLabel.ZIndex = 7
+
+        -- ✍️ يبان لما خويك يكون قاعد يكتب
+        local typingLabel = Instance.new("TextLabel", chatContainer)
+        typingLabel.Name = "TypingLabel"
+        typingLabel.Size = UDim2.new(1, -16, 0, 14)
+        typingLabel.Position = UDim2.new(0, 8, 0, 26)
+        typingLabel.BackgroundTransparency = 1
+        typingLabel.Text = ""
+        typingLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
+        typingLabel.Font = Enum.Font.GothamBold
+        typingLabel.TextSize = 11
+        typingLabel.TextXAlignment = Enum.TextXAlignment.Right
+        typingLabel.ZIndex = 7
+        
+        local chatLog = Instance.new("ScrollingFrame", chatContainer)
+        -- 💬 مساحة الرسائل تكبر تلقائيًا مع لوحة الدردشة
+        -- ونترك مكان ثابت أسفلها لمربع الكتابة.
+        chatLog.Size = UDim2.new(1, -10, 1, -140)
+        chatLog.Position = UDim2.new(0, 5, 0, 42)
+        chatLog.BackgroundTransparency = 1
+        chatLog.ClipsDescendants = true
+        chatLog.ScrollBarThickness = 4
+        chatLog.CanvasSize = UDim2.new(0, 0, 0, 500)
+        chatLog.ZIndex = 32
+
+        -- 🖤 حواف سوداء حول قائمة رسائل الدردشة
+        local chatLogCorner = Instance.new("UICorner", chatLog)
+        chatLogCorner.CornerRadius = UDim.new(0, 10)
+        local chatLogStroke = Instance.new("UIStroke", chatLog)
+        chatLogStroke.Color = Color3.fromRGB(0, 0, 0)
+        chatLogStroke.Thickness = 2
+        chatLogStroke.Transparency = 0
+        chatLogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        
+        local chatList = Instance.new("UIListLayout", chatLog)
+        chatList.Padding = UDim.new(0, 5)
+        chatList.SortOrder = Enum.SortOrder.LayoutOrder
+
+        -- ⬇️ زر "آخر رسالة": يظهر فقط إذا المستخدم طالع فوق في الدردشة
+        -- نضع الزر داخل الشريط الثابت أسفل الدردشة حتى لا تقصّه منطقة التمرير أو تخفيه خلف الرسائل.
+        local chatToBottomBtn = Instance.new("TextButton", ChatInputBar)
+        chatToBottomBtn.Name = "ChatToBottomBtn"
+        chatToBottomBtn.AnchorPoint = Vector2.new(0.5, 0.5)
+        -- رفع الزر قليلًا فوق شريط الكتابة.
+        chatToBottomBtn.Position = UDim2.new(0.5, -45, 0, -28)
+        chatToBottomBtn.Size = UDim2.new(0, 38, 0, 30)
+        chatToBottomBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 45)
+        chatToBottomBtn.BackgroundTransparency = 0.08
+        chatToBottomBtn.BorderSizePixel = 0
+        chatToBottomBtn.Text = "⬇"
+        chatToBottomBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        chatToBottomBtn.Font = Enum.Font.GothamBold
+        chatToBottomBtn.TextSize = 18
+        chatToBottomBtn.AutoButtonColor = false
+        chatToBottomBtn.Visible = false
+        chatToBottomBtn.ZIndex = 30
+
+        local chatToBottomCorner = Instance.new("UICorner", chatToBottomBtn)
+        chatToBottomCorner.CornerRadius = UDim.new(0, 10)
+
+        -- 🟣⚫ حواف مزدوجة بنفسجي + أسود
+        local chatToBottomOuterStroke = Instance.new("UIStroke", chatToBottomBtn)
+        chatToBottomOuterStroke.Color = Color3.fromRGB(0, 0, 0)
+        chatToBottomOuterStroke.Thickness = 4
+        chatToBottomOuterStroke.Transparency = 0.05
+
+        local chatToBottomStroke = Instance.new("UIStroke", chatToBottomBtn)
+        chatToBottomStroke.Color = Color3.fromRGB(170, 0, 255)
+        chatToBottomStroke.Thickness = 2
+        chatToBottomStroke.Transparency = 0.05
+
+        -- ✨ نفس إحساس أزرار القائمة: حركة خفيفة عند الضغط/اللمس
+        local chatToBottomNormalSize = chatToBottomBtn.Size
+        local chatToBottomPressSize = UDim2.new(0, 34, 0, 27)
+
+        local function chatToBottomPress()
+            TweenService:Create(
+                chatToBottomBtn,
+                TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Size = chatToBottomPressSize}
+            ):Play()
+        end
+
+        local function chatToBottomRelease()
+            TweenService:Create(
+                chatToBottomBtn,
+                TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                {Size = chatToBottomNormalSize}
+            ):Play()
+        end
+
+        chatToBottomBtn.MouseButton1Down:Connect(chatToBottomPress)
+        chatToBottomBtn.MouseButton1Up:Connect(chatToBottomRelease)
+
+        local function updateChatToBottomButton()
+            -- نخفيه فقط إذا كانت صفحة الدردشة غير ظاهرة فعليًا.
+            if not parentPage.Visible or not ChatInputBar.Visible then
+                chatToBottomBtn.Visible = false
+                return
+            end
+
+            local currentY = chatLog.CanvasPosition.Y
+            local visibleHeight = chatLog.AbsoluteSize.Y
+            local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
+            local viewportBottom = chatLog.AbsolutePosition.Y + visibleHeight
+            local hiddenBelowCount = 0
+
+            -- نحسب الرسائل الفعلية الموجودة تحت الجزء الظاهر، وليس مساحة الفراغ.
+            for _, child in ipairs(chatLog:GetChildren()) do
+                if child:IsA("Frame") and child.Name == "MsgRow" then
+                    local rowBottom = child.AbsolutePosition.Y + child.AbsoluteSize.Y
+                    if rowBottom > viewportBottom + 4 then
+                        hiddenBelowCount = hiddenBelowCount + 1
+                    end
+                end
+            end
+
+            -- يظهر فقط إذا كانت أكثر من رسالتين مخفيتين تحت العرض.
+            chatToBottomBtn.Visible = hiddenBelowCount > 2 and maxY > 12
+            chatToBottomBtn.Active = chatToBottomBtn.Visible
+        end
+
+        chatLog:GetPropertyChangedSignal("CanvasPosition"):Connect(updateChatToBottomButton)
+        chatLog:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(function()
+            task.defer(updateChatToBottomButton)
+        end)
+        chatList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            task.defer(updateChatToBottomButton)
+        end)
+        parentPage:GetPropertyChangedSignal("Visible"):Connect(function()
+            task.defer(updateChatToBottomButton)
+        end)
+
+        chatToBottomBtn.MouseButton1Click:Connect(function()
+            -- 🎯 ينزل عند آخر رسالة فعلية، وليس عند نهاية السحاب الفاضي
+            local contentHeight = chatList.AbsoluteContentSize.Y
+            local visibleHeight = chatLog.AbsoluteSize.Y
+            local extraReveal = 70
+            local targetY = math.max(0, contentHeight - visibleHeight + extraReveal)
+
+            -- نمنع النزول إلى مساحة الـ500 بكسل الفارغة
+            local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
+            targetY = math.min(targetY, maxY)
+
+            local tween = TweenService:Create(
+                chatLog,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {CanvasPosition = Vector2.new(0, targetY)}
+            )
+            -- نخفيه فور الضغط، ولا نعيد إظهاره إلا إذا صعد المستخدم من جديد
+            -- ووجدت أكثر من رسالتين مخفيتين.
+            chatToBottomBtn.Visible = false
+            chatToBottomBtn.Active = false
+            tween:Play()
+            tween.Completed:Connect(function()
+                chatToBottomBtn.Visible = false
+                chatToBottomBtn.Active = false
+            end)
+        end)
+
+        -- ⬇️ نزلة بسيطة فوق، عشان أول رسالة ما تطلع نصها مخفي تحت الهيدر
+        local chatLogTopPad = Instance.new("UIPadding", chatLog)
+        chatLogTopPad.PaddingTop = UDim.new(0, 10)
+
+        -- 🎨 لون الحوافي: بنفسجي لكلامي أنا، أزرق لكلام خويي (نفس الشي عند الطرفين)
+        local COLOR_MINE = Color3.fromRGB(170, 0, 255)
+        local COLOR_OTHER = Color3.fromRGB(0, 140, 255)
+
+        -- 🗑️ وضع تحديد الحذف: نشغّله بزر "حذف" جنب X
+        -- يشتغل بس على رسايلي أنا (تحمر حوافها) — رسايل خويي ما تتحدد ولا تنحذف
+        local _deleteModeActive = false
+        -- 📋 وضع تحديد النسخ: نشغّله بزر "نسخ" جنب X — يشتغل على كل الرسايل (لي ولخويي)
+        local _copyModeActive = false
+
+        local function refreshRowColors()
+            for _, row in pairs(chatLog:GetChildren()) do
+                if row:IsA("Frame") and row.Name == "MsgRow" then
+                    local isMine = row:GetAttribute("IsMine")
+                    local bubble = row:FindFirstChild("Bubble")
+                    local bStroke = bubble and bubble:FindFirstChildOfClass("UIStroke")
+                    if bStroke then
+                        local targetColor
+                        if _copyModeActive then
+                            targetColor = Color3.fromRGB(0, 140, 255)
+                        elseif _deleteModeActive and isMine then
+                            targetColor = Color3.fromRGB(255, 50, 50)
+                        else
+                            targetColor = isMine and COLOR_MINE or COLOR_OTHER
+                        end
+                        TweenService:Create(bStroke, TweenInfo.new(0.2), {Color = targetColor}):Play()
+                    end
+                end
+            end
+        end
+
+        if deleteBtn then
+            deleteBtn.MouseButton1Click:Connect(function()
+                _deleteModeActive = not _deleteModeActive
+                if _deleteModeActive then _copyModeActive = false end
+                playClick()
+                refreshRowColors()
+                if _deleteModeActive then
+                    Notify("🗑️ وضع الحذف", "دوس على أي رسالة منك عشان تحذفها", Color3.fromRGB(255, 60, 60))
+                else
+                    Notify("🗑️ وضع الحذف", "تم الإيقاف", Color3.fromRGB(150, 150, 150))
+                end
+            end)
+        end
+
+        if copyBtn then
+            copyBtn.MouseButton1Click:Connect(function()
+                _copyModeActive = not _copyModeActive
+                if _copyModeActive then _deleteModeActive = false end
+                playClick()
+                refreshRowColors()
+                if _copyModeActive then
+                    Notify("📋 وضع النسخ", "دوس على أي رسالة عشان تنسخها", Color3.fromRGB(0, 140, 255))
+                else
+                    Notify("📋 وضع النسخ", "تم الإيقاف", Color3.fromRGB(150, 150, 150))
+                end
+            end)
+        end
+        
+
+        -- 📌 شريط الإرسال ثابت دايم تحت (مرّ لنا من بره كباراميتر) — كذا ما يروح معاك لو سحبت لفوق أو تحت
+        local inputBox = Instance.new("TextBox", ChatInputBar)
+        inputBox.AnchorPoint = Vector2.new(1, 0)
+        inputBox.Size = UDim2.new(0.45, 0, 1, 0)
+        inputBox.Position = UDim2.new(1, -16, 0, 0) -- تحريك مربع كتابة الرسالة أكثر إلى اليسار
+        inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        inputBox.PlaceholderText = "اكتب رسالتك هنا..."
+        inputBox.Text = ""
+        inputBox.ClearTextOnFocus = false
+        inputBox.TextEditable = true
+        inputBox.Selectable = true
+        inputBox.MultiLine = false
+        inputBox.TextWrapped = false
+        inputBox.Active = true
+        inputBox.TextColor3 = Color3.new(1,1,1)
+        inputBox.Font = Enum.Font.Gotham
+        inputBox.TextSize = 14
+        inputBox.ZIndex = 100
+        Instance.new("UICorner", inputBox).CornerRadius = UDim.new(1, 0)
+        local inputBoxStroke = Instance.new("UIStroke", inputBox)
+        inputBoxStroke.Thickness = 3
+        AddMovingBorderGlow(inputBoxStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+        -- ✍️ نبلّغ فايربيس إذا كنت قاعد تكتب (مع تهدئة عشان ما نرسل كل حرف)
+        local _lastTypingSent = 0
+        local function setTypingStatus(isTypingNow)
+            task.spawn(function()
+                pcall(function()
+                    request({
+                        Url = TYPING_URL .. "?auth=" .. AUTH_TOKEN,
+                        Method = "PUT",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = game:GetService("HttpService"):JSONEncode(
+                            isTypingNow and {name = game.Players.LocalPlayer.Name, ts = os.time()} or {}
+                        )
+                    })
+                end)
+            end)
+        end
+        inputBox:GetPropertyChangedSignal("Text"):Connect(function()
+            local now = os.time()
+            if inputBox.Text == "" then
+                setTypingStatus(false)
+                _lastTypingSent = now
+            elseif now - _lastTypingSent >= 2 then
+                setTypingStatus(true)
+                _lastTypingSent = now
+            end
+        end)
+        
+        local TweenService = game:GetService("TweenService")
+        local TextService = game:GetService("TextService")
+
+        local function calcBubbleWidth(text)
+            local ok, size = pcall(function()
+                return TextService:GetTextSize(text, 14, Enum.Font.Gotham, Vector2.new(1000, 1000))
+            end)
+            local w = (ok and size and (size.X + 26)) or 120
+            if w < 70 then w = 70 end
+            if w > 220 then w = 220 end
+            return w
+        end
+
+        local function deleteMsgFromServer(id)
+            task.spawn(function()
+                local deleteUrl = FIREBASE_URL:gsub("%.json$", "/" .. id .. ".json") .. "?auth=" .. AUTH_TOKEN
+                local ok, res = pcall(function()
+                    return request({Url = deleteUrl, Method = "DELETE"})
+                end)
+                if not ok then
+                    WARN("فشل حذف الرسالة: " .. tostring(res))
+                elseif res and res.StatusCode and res.StatusCode ~= 200 then
+                    WARN("فايربيس رفض الحذف (" .. tostring(res.StatusCode) .. "): " .. tostring(res.Body))
+                end
+            end)
+        end
+
+        -- ==================== قائمة تحديد الرسالة (حذف / الرجوع) — تصميم Fly menu ====================
+        local RED_SELECTED = Color3.fromRGB(255, 60, 60)
+
+        local selectOverlay = Instance.new("Frame", chatContainer)
+        selectOverlay.Name = "SelectOverlay"
+        selectOverlay.Size = UDim2.new(1, 0, 1, 0)
+        selectOverlay.Position = UDim2.new(0, 0, 0, 0)
+        selectOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
+        selectOverlay.BackgroundTransparency = 1
+        selectOverlay.Visible = false
+        selectOverlay.Active = true
+        selectOverlay.ZIndex = 50
+
+        local backdropBtn = Instance.new("TextButton", selectOverlay)
+        backdropBtn.Size = UDim2.new(1, 0, 1, 0)
+        backdropBtn.BackgroundTransparency = 1
+        backdropBtn.Text = ""
+        backdropBtn.ZIndex = 50
+
+        local selectMenu = Instance.new("Frame", selectOverlay)
+        selectMenu.Name = "SelectMenu"
+        selectMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+        selectMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
+        selectMenu.Size = UDim2.new(0, 170, 0, 96)
+        selectMenu.BackgroundColor3 = Color3.fromRGB(26, 20, 34)
+        selectMenu.ZIndex = 51
+        Instance.new("UICorner", selectMenu).CornerRadius = UDim.new(0, 12)
+        local selMenuStroke = Instance.new("UIStroke", selectMenu)
+        selMenuStroke.Thickness = 2
+        AddMovingBorderGlow(selMenuStroke, 1.5, Color3.fromRGB(170, 0, 255))
+        local selMenuScale = Instance.new("UIScale", selectMenu)
+        selMenuScale.Scale = 0.7
+
+        local deleteOpt = Instance.new("TextButton", selectMenu)
+        deleteOpt.Size = UDim2.new(1, -16, 0, 38)
+        deleteOpt.Position = UDim2.new(0, 8, 0, 8)
+        deleteOpt.BackgroundColor3 = Color3.fromRGB(45, 22, 26)
+        deleteOpt.Text = "🗑️ حذف"
+        deleteOpt.TextColor3 = Color3.fromRGB(255, 95, 95)
+        deleteOpt.Font = Enum.Font.GothamBold
+        deleteOpt.TextSize = 15
+        deleteOpt.ZIndex = 52
+        Instance.new("UICorner", deleteOpt).CornerRadius = UDim.new(0, 8)
+        local deleteOptStroke = Instance.new("UIStroke", deleteOpt)
+        deleteOptStroke.Thickness = 1.5
+        AddMovingBorderGlow(deleteOptStroke, 1.5, Color3.fromRGB(255, 60, 60))
+
+        local backOpt = Instance.new("TextButton", selectMenu)
+        backOpt.Size = UDim2.new(1, -16, 0, 38)
+        backOpt.Position = UDim2.new(0, 8, 0, 50)
+        backOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
+        backOpt.Text = "↩️ الرجوع"
+        backOpt.TextColor3 = Color3.new(1, 1, 1)
+        backOpt.Font = Enum.Font.GothamBold
+        backOpt.TextSize = 15
+        backOpt.ZIndex = 52
+        Instance.new("UICorner", backOpt).CornerRadius = UDim.new(0, 8)
+        local backOptStroke = Instance.new("UIStroke", backOpt)
+        backOptStroke.Thickness = 1.5
+        AddMovingBorderGlow(backOptStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+        local _selected = nil -- {stroke=, bubble=, label=, row=, id=}
+
+        local function closeSelectMenu(revertColor)
+            if revertColor and _selected then
+                TweenService:Create(_selected.stroke, TweenInfo.new(0.18), {Color = COLOR_MINE}):Play()
+            end
+            TweenService:Create(selectOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+            TweenService:Create(selMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
+            task.delay(0.15, function() selectOverlay.Visible = false end)
+            _selected = nil
+        end
+
+        local function openSelectMenu(bubble, stroke, label, row, id)
+            if _selected and _selected.stroke ~= stroke then
+                TweenService:Create(_selected.stroke, TweenInfo.new(0.15), {Color = COLOR_MINE}):Play()
+            end
+            _selected = {stroke = stroke, bubble = bubble, label = label, row = row, id = id}
+            TweenService:Create(stroke, TweenInfo.new(0.15), {Color = RED_SELECTED}):Play()
+
+            selectOverlay.Visible = true
+            selMenuScale.Scale = 0.7
+            TweenService:Create(selectOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
+            TweenService:Create(selMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        end
+
+        backdropBtn.MouseButton1Click:Connect(function() closeSelectMenu(true) end)
+        backOpt.MouseButton1Click:Connect(function() closeSelectMenu(true) end)
+        deleteOpt.MouseButton1Click:Connect(function()
+            local sel = _selected
+            closeSelectMenu(false)
+            if not sel or not sel.id then return end
+            local fastFade = TweenInfo.new(0.18)
+            TweenService:Create(sel.bubble, fastFade, {BackgroundTransparency = 1}):Play()
+            TweenService:Create(sel.stroke, fastFade, {Transparency = 1}):Play()
+            TweenService:Create(sel.label, fastFade, {TextTransparency = 1}):Play()
+            deleteMsgFromServer(sel.id)
+            task.delay(0.18, function()
+                if sel.row and sel.row.Parent then sel.row:Destroy() end
+                chatLog.CanvasSize = UDim2.new(0, 0, 0, chatList.AbsoluteContentSize.Y + 500)
+            end)
+        end)
+
+        -- 📋 قائمة "نسخ / الرجوع" — نفس فكرة قائمة الحذف بالضبط، بس تشتغل على أي رسالة (مو بس رسايلي)
+        local copyOverlay = Instance.new("Frame", chatContainer)
+        copyOverlay.Name = "CopyOverlay"
+        copyOverlay.Size = UDim2.new(1, 0, 1, 0)
+        copyOverlay.Position = UDim2.new(0, 0, 0, 0)
+        copyOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
+        copyOverlay.BackgroundTransparency = 1
+        copyOverlay.Visible = false
+        copyOverlay.Active = true
+        copyOverlay.ZIndex = 50
+
+        local copyBackdropBtn = Instance.new("TextButton", copyOverlay)
+        copyBackdropBtn.Size = UDim2.new(1, 0, 1, 0)
+        copyBackdropBtn.BackgroundTransparency = 1
+        copyBackdropBtn.Text = ""
+        copyBackdropBtn.ZIndex = 50
+
+        local copyMenu = Instance.new("Frame", copyOverlay)
+        copyMenu.Name = "CopyMenu"
+        copyMenu.AnchorPoint = Vector2.new(0.5, 0.5)
+        copyMenu.Position = UDim2.new(0.5, 0, 0.5, 0)
+        copyMenu.Size = UDim2.new(0, 170, 0, 96)
+        copyMenu.BackgroundColor3 = Color3.fromRGB(20, 24, 34)
+        copyMenu.ZIndex = 51
+        Instance.new("UICorner", copyMenu).CornerRadius = UDim.new(0, 12)
+        local copyMenuStroke = Instance.new("UIStroke", copyMenu)
+        copyMenuStroke.Thickness = 2
+        AddMovingBorderGlow(copyMenuStroke, 1.5, Color3.fromRGB(0, 140, 255))
+        local copyMenuScale = Instance.new("UIScale", copyMenu)
+        copyMenuScale.Scale = 0.7
+
+        local copyOpt = Instance.new("TextButton", copyMenu)
+        copyOpt.Size = UDim2.new(1, -16, 0, 38)
+        copyOpt.Position = UDim2.new(0, 8, 0, 8)
+        copyOpt.BackgroundColor3 = Color3.fromRGB(20, 30, 42)
+        copyOpt.Text = "📋 نسخ"
+        copyOpt.TextColor3 = Color3.fromRGB(120, 190, 255)
+        copyOpt.Font = Enum.Font.GothamBold
+        copyOpt.TextSize = 15
+        copyOpt.ZIndex = 52
+        Instance.new("UICorner", copyOpt).CornerRadius = UDim.new(0, 8)
+        local copyOptStroke = Instance.new("UIStroke", copyOpt)
+        copyOptStroke.Thickness = 1.5
+        AddMovingBorderGlow(copyOptStroke, 1.5, Color3.fromRGB(0, 140, 255))
+
+        local copyBackOpt = Instance.new("TextButton", copyMenu)
+        copyBackOpt.Size = UDim2.new(1, -16, 0, 38)
+        copyBackOpt.Position = UDim2.new(0, 8, 0, 50)
+        copyBackOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
+        copyBackOpt.Text = "↩️ الرجوع"
+        copyBackOpt.TextColor3 = Color3.new(1, 1, 1)
+        copyBackOpt.Font = Enum.Font.GothamBold
+        copyBackOpt.TextSize = 15
+        copyBackOpt.ZIndex = 52
+        Instance.new("UICorner", copyBackOpt).CornerRadius = UDim.new(0, 8)
+        local copyBackOptStroke = Instance.new("UIStroke", copyBackOpt)
+        copyBackOptStroke.Thickness = 1.5
+        AddMovingBorderGlow(copyBackOptStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+        local _copySelected = nil -- {label=}
+
+        local function closeCopyMenu()
+            TweenService:Create(copyOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+            TweenService:Create(copyMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
+            task.delay(0.15, function() copyOverlay.Visible = false end)
+            _copySelected = nil
+        end
+
+        local function openCopyMenu(label)
+            _copySelected = {label = label}
+            copyOverlay.Visible = true
+            copyMenuScale.Scale = 0.7
+            TweenService:Create(copyOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
+            TweenService:Create(copyMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+        end
+
+        copyBackdropBtn.MouseButton1Click:Connect(closeCopyMenu)
+        copyBackOpt.MouseButton1Click:Connect(closeCopyMenu)
+        copyOpt.MouseButton1Click:Connect(function()
+            local sel = _copySelected
+            closeCopyMenu()
+            if not sel or not sel.label then return end
+            if setClipboardText then
+                pcall(function() setClipboardText(sel.label.Text) end)
+                Notify("📋 الدردشة", "تم نسخ الرسالة", Color3.fromRGB(0, 140, 255))
+            else
+                WARN("⚠️ برنامج الإكسبلويت حقك ما يدعم setclipboard")
+            end
+        end)
+
+        local function addChatMsg(sender, text, id, userId, timestamp)
+            local myName = game.Players.LocalPlayer.Name
+            local isMine = (sender == myName)
+            local edgeColor = isMine and COLOR_MINE or COLOR_OTHER
+            local AVATAR_SIZE = 28
+            local AVATAR_GAP = 6
+            -- إزاحة رسائلي قليلًا إلى اليسار حتى لا تدخل في الخط أو حافة القائمة.
+            local MY_MESSAGE_LEFT_SHIFT = 12
+            local FRIEND_MESSAGE_RIGHT_SHIFT = 12
+
+            -- 📦 الصف اللي يحتوي الفقاعة (يمين لكلامي / يسار لكلام خويي)
+            local row = Instance.new("Frame")
+            row.Name = "MsgRow"
+            row.Size = UDim2.new(1, 0, 0, 0)
+            row.AutomaticSize = Enum.AutomaticSize.Y
+            row.BackgroundTransparency = 1
+            row.ZIndex = 33
+            row.Parent = chatLog
+            row:SetAttribute("IsMine", isMine)
+            row:SetAttribute("ChatId", id or "")
+            row:SetAttribute("ChatTimestamp", tonumber(timestamp) or 0)
+            row:SetAttribute("ChatSender", tostring(sender))
+            row:SetAttribute("ChatText", tostring(text))
+
+            -- 🖼️ صورة المرسل (تظهر يسار الفقاعة لكلام الغير، ويمينها لكلامك انت)
+            local avatarImg
+            if userId then
+                avatarImg = Instance.new("ImageLabel")
+                avatarImg.Name = "SenderAvatar"
+                avatarImg.Size = UDim2.new(0, AVATAR_SIZE, 0, AVATAR_SIZE)
+                avatarImg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                avatarImg.BackgroundTransparency = 0
+                avatarImg.ImageTransparency = 1 -- يبدأ شفاف عشان الانميشن
+                avatarImg.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=150&h=150"
+                avatarImg.ZIndex = 34
+                avatarImg.Parent = row
+                if isMine then
+                    avatarImg.AnchorPoint = Vector2.new(1, 0)
+                    avatarImg.Position = UDim2.new(1, -(5 + MY_MESSAGE_LEFT_SHIFT), 0, 2)
+                else
+                    avatarImg.AnchorPoint = Vector2.new(0, 0)
+                    avatarImg.Position = UDim2.new(0, 5 + FRIEND_MESSAGE_RIGHT_SHIFT, 0, 2)
+                end
+                Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
+                local avStroke = Instance.new("UIStroke", avatarImg)
+                avStroke.Thickness = 1.5
+                avStroke.Color = edgeColor
+                avStroke.Transparency = 1
+            end
+
+            -- 💬 الفقاعة نفسها: مربعة بحواف دايريه
+            local bubble = Instance.new("Frame")
+            bubble.Name = "Bubble"
+            bubble.BackgroundColor3 = Color3.fromRGB(24, 22, 30)
+            bubble.BackgroundTransparency = 1 -- يبدأ شفاف عشان الانميشن
+            bubble.BorderSizePixel = 0
+            bubble.AutomaticSize = Enum.AutomaticSize.Y
+            bubble.Size = UDim2.new(0, calcBubbleWidth(text), 0, 0)
+            bubble.ZIndex = 34
+            bubble.Parent = row
+
+            local corner = Instance.new("UICorner", bubble)
+            corner.CornerRadius = UDim.new(0, 14)
+
+            local stroke = Instance.new("UIStroke", bubble)
+            stroke.Thickness = 1.5
+            stroke.Color = _copyModeActive and Color3.fromRGB(0, 140, 255) or ((isMine and _deleteModeActive) and Color3.fromRGB(255, 50, 50) or edgeColor)
+            stroke.Transparency = 1 -- يبدأ شفاف عشان الانميشن
+
+            local pad = Instance.new("UIPadding", bubble)
+            pad.PaddingTop = UDim.new(0, 8)
+            pad.PaddingBottom = UDim.new(0, 8)
+            pad.PaddingLeft = UDim.new(0, 12)
+            pad.PaddingRight = UDim.new(0, 12)
+
+            local bubbleLayout = Instance.new("UIListLayout", bubble)
+            bubbleLayout.FillDirection = Enum.FillDirection.Vertical
+            bubbleLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            bubbleLayout.Padding = UDim.new(0, 2)
+
+            -- 👤 اسم المرسل فوق النص (بنفسجي لي، أزرق لخويي)
+            local nameLabel = Instance.new("TextLabel", bubble)
+            nameLabel.Name = "SenderName"
+            nameLabel.LayoutOrder = 1
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Size = UDim2.new(1, 0, 0, 14)
+            nameLabel.Text = sender
+            nameLabel.TextColor3 = edgeColor
+            nameLabel.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن مثل الباقي
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.TextSize = 11
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.ZIndex = 35
+
+            local label = Instance.new("TextLabel", bubble)
+            label.Name = "MsgText"
+            label.LayoutOrder = 2
+            label.BackgroundTransparency = 1
+            label.Size = UDim2.new(1, 0, 0, 0)
+            label.AutomaticSize = Enum.AutomaticSize.Y
+            label.Text = text
+            label.TextWrapped = true
+            label.TextColor3 = Color3.new(1, 1, 1)
+            label.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن
+            label.Font = Enum.Font.Gotham
+            label.TextSize = 14
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.ZIndex = 35
+
+            -- 📍 محاذاة: كلامي يمين، كلام خويي يسار (نفس الشي عند الطرفين لأنه مبني على isMine)
+            local targetPos
+            if isMine then
+                bubble.AnchorPoint = Vector2.new(1, 0)
+                local rightOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + MY_MESSAGE_LEFT_SHIFT) or (5 + MY_MESSAGE_LEFT_SHIFT)
+                targetPos = UDim2.new(1, -rightOffset, 0, 0)
+                bubble.Position = UDim2.new(1, 25, 0, 0) -- يبدأ خارج الحافة عشان الانميشن
+            else
+                bubble.AnchorPoint = Vector2.new(0, 0)
+                local leftOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + FRIEND_MESSAGE_RIGHT_SHIFT) or (5 + FRIEND_MESSAGE_RIGHT_SHIFT)
+                targetPos = UDim2.new(0, leftOffset, 0, 0)
+                bubble.Position = UDim2.new(0, leftOffset - 30, 0, 0)
+            end
+
+            -- نخلي السحاب فيه مساحة إضافية 500 بكسل، لكن ما نغيّر مكان المستخدم
+            -- عند وصول/تحميل الرسائل. التحريك لآخر رسالة يصير فقط عند إرسال رسالة من المستخدم.
+            chatLog.CanvasSize = UDim2.new(0, 0, 0, chatList.AbsoluteContentSize.Y + 500)
+
+            -- 👆 كل الرسايل قابلة للضغط: الحذف بس لرسايلي، النسخ لأي رسالة
+            -- (نخلي الفقاعة نفسها قابلة للنقر بدل ما نضيف عنصر جواها، عشان ما يصير تضارب بحساب الطول التلقائي)
+            bubble.Active = true
+            bubble.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                if _deleteModeActive and isMine then
+                    local liveId = row:GetAttribute("ChatId")
+                    if not liveId or liveId == "" then liveId = nil end
+                    openSelectMenu(bubble, stroke, label, row, liveId)
+                elseif _copyModeActive then
+                    openCopyMenu(label)
+                end
+            end)
+
+            -- ✨ انميشن الدخول: ما تجي فجأة، تدخل بحركة ناعمة (Back easing)
+            task.defer(function()
+                local slideInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                local fadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(bubble, slideInfo, {Position = targetPos}):Play()
+                TweenService:Create(bubble, fadeInfo, {BackgroundTransparency = 0}):Play()
+                TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
+                TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.25}):Play()
+                TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
+                if avatarImg then
+                    local avStroke = avatarImg:FindFirstChildOfClass("UIStroke")
+                    TweenService:Create(avatarImg, fadeInfo, {ImageTransparency = 0}):Play()
+                    if avStroke then TweenService:Create(avStroke, fadeInfo, {Transparency = 0}):Play() end
+                end
+            end)
+        end
+        
+        local function sendMsg()
+            local text = inputBox.Text
+            if text == "" then return end
+            local myName = game.Players.LocalPlayer.Name
+            local myUserId = game.Players.LocalPlayer.UserId
+            local data = {["sender"] = myName, ["text"] = text, ["timestamp"] = os.time(), ["userId"] = myUserId}
+            inputBox.Text = ""
+            -- ✅ نطلع الرسالة فورًا بالقائمة بدون ما ننتظر الرد من فايربيس
+            addChatMsg(myName, text, nil, myUserId, data.timestamp)
+
+            -- بعد الإرسال فقط: نوقف عند آخر رسالة فعلية، وليس عند نهاية المساحة الفارغة.
+            task.defer(function()
+                task.wait()
+                task.wait() -- ننتظر تحديث UIListLayout قبل حساب مكان آخر رسالة
+                local contentHeight = chatList.AbsoluteContentSize.Y
+                local visibleHeight = chatLog.AbsoluteSize.Y
+                -- نخلي آخر رسالة تنزل شوي زيادة عشان تكون كاملة وواضحة فوق شريط الكتابة،
+                -- لكن ما نوصل لنهاية الـ500 بكسل الفاضية.
+                local extraReveal = 70
+                local targetY = math.max(0, contentHeight - visibleHeight + extraReveal)
+                local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
+                targetY = math.min(targetY, maxY)
+                chatLog.CanvasPosition = Vector2.new(0, targetY)
+            end)
+
+            task.spawn(function()
+                local ok, res = pcall(function()
+                    return request({
+                        Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = game:GetService("HttpService"):JSONEncode(data)
+                    })
+                end)
+                if not ok then
+                    WARN("فشل إرسال الرسالة: " .. tostring(res))
+                elseif res and res.StatusCode and res.StatusCode ~= 200 then
+                    WARN("فايربيس رفض الإرسال (" .. tostring(res.StatusCode) .. "): " .. tostring(res.Body))
+                end
+            end)
+        end
+        
+        inputBox.FocusLost:Connect(function(enter)
+            if enter then
+                sendMsg()
+            end
+        end)
+        inputBox.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                task.defer(function()
+                    if inputBox and inputBox.Parent then
+                        inputBox:CaptureFocus()
+                    end
+                end)
+            end
+        end)
+        
+        if not request then
+            WARN("⚠️ برنامج الإكسبلويت حقك ما يدعم دالة request/http_request/syn.request — الدردشة ما راح تشتغل أبد على هذا البرنامج")
+        else
+            -- 🧹 نمسح تاريخ الدردشة القديم كل ما نشغل السكربت، يبدأ نظيف من جديد
+            task.spawn(function()
+                pcall(function()
+                    request({
+                        Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN,
+                        Method = "DELETE"
+                    })
+                end)
+            end)
+        end
+
+        -- ==================== صور مشغلي السكربت في Page8 ====================
+        local ScriptUsersScroll = Instance.new("ScrollingFrame", UI.Page8)
+        ScriptUsersScroll.Name = "ScriptUsersScroll"
+        ScriptUsersScroll.Size = UDim2.new(1, -20, 1, -20)
+        ScriptUsersScroll.Position = UDim2.new(0, 10, 0, 10)
+        ScriptUsersScroll.BackgroundTransparency = 1
+        ScriptUsersScroll.BorderSizePixel = 0
+        ScriptUsersScroll.ScrollBarThickness = 4
+        ScriptUsersScroll.ScrollBarImageColor3 = UI.TabColors[8]
+        ScriptUsersScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        ScriptUsersScroll.ZIndex = 6
+
+        local ScriptUsersGrid = Instance.new("UIGridLayout", ScriptUsersScroll)
+        ScriptUsersGrid.CellSize = UDim2.new(0, 118, 0, 142)
+        ScriptUsersGrid.CellPadding = UDim2.new(0, 10, 0, 10)
+        ScriptUsersGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+        ScriptUsersGrid.SortOrder = Enum.SortOrder.LayoutOrder
+
+        local ScriptUsersEmpty = Instance.new("TextLabel", ScriptUsersScroll)
+        ScriptUsersEmpty.Name = "NoScriptUsers"
+        ScriptUsersEmpty.LayoutOrder = -999
+        ScriptUsersEmpty.Size = UDim2.new(1, -20, 0, 60)
+        ScriptUsersEmpty.BackgroundTransparency = 1
+        ScriptUsersEmpty.Text = "لا يوجد أحد مشغل السكربت"
+        ScriptUsersEmpty.TextColor3 = Color3.fromRGB(190, 190, 190)
+        ScriptUsersEmpty.TextSize = 20
+        ScriptUsersEmpty.Font = Enum.Font.GothamBold
+        ScriptUsersEmpty.TextWrapped = true
+        ScriptUsersEmpty.ZIndex = 8
+
+        local function RefreshScriptUsers(presenceData)
+            for _, child in ipairs(ScriptUsersScroll:GetChildren()) do
+                if child:IsA("Frame") and child.Name == "ScriptUserCard" then
+                    child:Destroy()
+                end
+            end
+
+            local activeUsers = {}
+            local myName = LocalPlayer.Name
+            if type(presenceData) == "table" then
+                for userName, timestamp in pairs(presenceData) do
+                    if userName ~= myName and type(timestamp) == "number" and (os.time() - timestamp) < 12 then
+                        table.insert(activeUsers, tostring(userName))
+                    end
+                end
+            end
+            table.sort(activeUsers)
+            ScriptUsersEmpty.Visible = (#activeUsers == 0)
+
+            for index, userName in ipairs(activeUsers) do
+                local card = Instance.new("Frame", ScriptUsersScroll)
+                card.Name = "ScriptUserCard"
+                card.LayoutOrder = index
+                card.Size = UDim2.new(0, 118, 0, 142)
+                card.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                card.ZIndex = 7
+                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
+
+                local cardStroke = Instance.new("UIStroke", card)
+                cardStroke.Thickness = 1.2
+                cardStroke.Transparency = 0.1
+                AddTabGlow(cardStroke, 1.5, UI.Page8)
+
+                local avatar = Instance.new("ImageLabel", card)
+                avatar.Size = UDim2.new(0, 82, 0, 82)
+                avatar.Position = UDim2.new(0.5, -41, 0, 8)
+                avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                avatar.Image = ""
+                avatar.ZIndex = 8
+                Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+                local avatarStroke = Instance.new("UIStroke", avatar)
+                avatarStroke.Color = UI.TabColors[8]
+                avatarStroke.Thickness = 1.2
+
+                local okId, userId = pcall(function()
+                    return Players:GetUserIdFromNameAsync(userName)
+                end)
+                if okId and userId then
+                    avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=150&h=150"
+                end
+
+                local nameLabel = Instance.new("TextLabel", card)
+                nameLabel.Size = UDim2.new(1, -8, 0, 30)
+                nameLabel.Position = UDim2.new(0, 4, 0, 103)
+                nameLabel.BackgroundTransparency = 1
+                nameLabel.Text = userName
+                nameLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
+                nameLabel.TextSize = 13
+                nameLabel.Font = Enum.Font.GothamBold
+                nameLabel.TextWrapped = true
+                nameLabel.ZIndex = 8
+            end
+        end
+
+        local lastData = ""
+        local _lastSeenTimestamp = nil -- nil = أول تحميل، ما نبلّغ عن رسائل قديمة
+        local _debugChat = true -- 🐞 خله true لين نتأكد إن كل شي يشتغل تمام، بعدها تقدر تخليه false
+        task.spawn(function()
+            while true do
+                local success, response = pcall(function()
+                    return request({Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+                end)
+
+                if not success then
+                    -- ❌ فشل الطلب نفسه (مشكلة شبكة/إكسبلويت ما يدعم request)
+                    if _debugChat then WARN("فشل جلب الدردشة: " .. tostring(response)) end
+                elseif not response then
+                    if _debugChat then WARN("جلب الدردشة رجع بدون رد (response = nil)") end
+                elseif response.StatusCode and response.StatusCode ~= 200 then
+                    -- ❌ السيرفر رد لكن برمز خطأ (مثلاً 400 = رابط غلط، 401/403 = صلاحيات)
+                    if _debugChat then WARN("فايربيس رد بخطأ " .. tostring(response.StatusCode) .. ": " .. tostring(response.Body)) end
+                elseif response.Body and response.Body ~= lastData then
+                    lastData = response.Body
+                    local data = game:GetService("HttpService"):JSONDecode(response.Body)
+                    if data then
+                        local msgs = {}
+                        for k, v in pairs(data) do
+                            v.id = k -- 🔑 مفتاح فايربيس الفريد
+                            table.insert(msgs, v)
+                        end
+                        table.sort(msgs, function(a, b) return a.timestamp < b.timestamp end)
+                        -- 🔢 نحتفظ بآخر 15 رسالة
+                        while #msgs > 15 do table.remove(msgs, 1) end
+
+                        -- 🚫 لا نمسح ونعيد إنشاء الرسائل عند كل تحديث.
+                        -- نضيف فقط الرسائل الجديدة، حتى لا يحصل رعشة/إعادة ظهور للرسائل.
+                        local existing = {}
+                        for _, child in ipairs(chatLog:GetChildren()) do
+                            if child:IsA("Frame") and child.Name == "MsgRow" then
+                                local cid = child:GetAttribute("ChatId")
+                                local cts = child:GetAttribute("ChatTimestamp")
+                                local cs = child:GetAttribute("ChatSender")
+                                local ct = child:GetAttribute("ChatText")
+                                if cid and cid ~= "" then
+                                    existing["id:" .. cid] = true
+                                end
+                                if cts and cts ~= 0 then
+                                    existing["msg:" .. tostring(cts) .. ":" .. tostring(cs) .. ":" .. tostring(ct)] = true
+                                end
+                            end
+                        end
+
+                        for _, m in ipairs(msgs) do
+                            local key = "id:" .. tostring(m.id)
+                            local fallback = "msg:" .. tostring(m.timestamp) .. ":" .. tostring(m.sender) .. ":" .. tostring(m.text)
+                            if not existing[key] and not existing[fallback] then
+                                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp)
+                                existing[key] = true
+                                existing[fallback] = true
+                            elseif not existing[key] and existing[fallback] then
+                                -- 🔑 هذي رسالة رسمناها فورًا محلياً (بدون رقم)، وفايربيس رجع رقمها الحقيقي الحين.
+                                -- نحدّث الصف الموجود برقمه الصح عشان الحذف يشتغل عليه لاحقاً
+                                for _, child in ipairs(chatLog:GetChildren()) do
+                                    if child:IsA("Frame") and child.Name == "MsgRow" then
+                                        local cid = child:GetAttribute("ChatId")
+                                        local cts = child:GetAttribute("ChatTimestamp")
+                                        local cs = child:GetAttribute("ChatSender")
+                                        local ct = child:GetAttribute("ChatText")
+                                        if (not cid or cid == "") and tostring(cts) == tostring(m.timestamp) and cs == m.sender and ct == m.text then
+                                            child:SetAttribute("ChatId", m.id)
+                                            break
+                                        end
+                                    end
+                                end
+                                existing[key] = true
+                            end
+                        end
+
+                        -- 🔔 نظام إشعار الرسائل الجديدة (مثل واتساب/سناب)
+                        local myName = game.Players.LocalPlayer.Name
+                        local newestTimestamp = _lastSeenTimestamp
+                        local newMsgsFromOthers = 0
+                        local lastOtherMsg = nil
+
+                        for _, m in ipairs(msgs) do
+                            if not newestTimestamp or m.timestamp > newestTimestamp then
+                                newestTimestamp = m.timestamp
+                            end
+                            if _lastSeenTimestamp and m.timestamp > _lastSeenTimestamp and m.sender ~= myName then
+                                newMsgsFromOthers = newMsgsFromOthers + 1
+                                lastOtherMsg = m
+                            end
+                        end
+
+                        if _lastSeenTimestamp == nil then
+                            -- أول تحميل: نسجل آخر توقيت بس بدون ما نزعج المستخدم برسائل قديمة
+                            _lastSeenTimestamp = newestTimestamp
+                        elseif newMsgsFromOthers > 0 then
+                            _lastSeenTimestamp = newestTimestamp
+                            -- لا نعدّ الرسائل إذا كان المستخدم داخل الدردشة فعلًا.
+                            if State._chatPageOpen then
+                                State.UnreadChatCount = 0
+                                UI.MiniChatBadge.Text = "0"
+                                UI.MiniChatBadge.Visible = false
+                            else
+                                State.UnreadChatCount = State.UnreadChatCount + newMsgsFromOthers
+                                UI.MiniChatBadge.Text = tostring(State.UnreadChatCount)
+                                -- يظهر العداد فوق زر الدردشة فقط عندما تكون القائمة الأساسية مصغّرة.
+                                UI.MiniChatBadge.Visible = State._chatPanelOpen and not State.MainUIVisible
+                                -- 💬 بوب أب إشعار فقط عندما تكون خارج الدردشة.
+                                playMsgNotify()
+                                Notify("💬 " .. lastOtherMsg.sender, lastOtherMsg.text, Color3.fromRGB(170, 0, 255), true)
+                            end
+                        end
+                    end
+                end
+
+                -- 🟢 نبعت "أنا موجود بالدردشة" بس وتاب الدردشة يكون مفتوح عندي فعلاً
+                task.spawn(function()
+                        pcall(function()
+                            request({
+                                Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN,
+                                Method = "PATCH",
+                                Headers = {["Content-Type"] = "application/json"},
+                                Body = game:GetService("HttpService"):JSONEncode({
+                                    [game.Players.LocalPlayer.Name] = os.time()
+                                })
+                            })
+                        end)
+                    end)
+
+                -- ✍️ نجيب هل في حد يكتب الحين (غير نفسي)
+                do
+                    local okT, resT = pcall(function()
+                        return request({Url = TYPING_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+                    end)
+                    if okT and resT and resT.Body then
+                        local okD, typingData = pcall(function()
+                            return game:GetService("HttpService"):JSONDecode(resT.Body)
+                        end)
+                        local myName = game.Players.LocalPlayer.Name
+                        if okD and typingData and typingData.name and typingData.name ~= myName
+                            and typingData.ts and (os.time() - typingData.ts) < 6 then
+                            typingLabel.Text = typingData.name .. " : يكتب..."
+                        else
+                            typingLabel.Text = ""
+                        end
+                    end
+                end
+
+                -- 🟢 نجيب هل خويي متصل (فاتح تاب الدردشة عنده هو الحين)
+                do
+                    local okP, resP = pcall(function()
+                        return request({Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+                    end)
+                    if okP and resP and resP.Body then
+                        local okD, presenceData = pcall(function()
+                            return game:GetService("HttpService"):JSONDecode(resP.Body)
+                        end)
+                        local myName = game.Players.LocalPlayer.Name
+                        local friendOnline = false
+                        if okD and presenceData then
+                            RefreshScriptUsers(presenceData)
+                            for pname, pts in pairs(presenceData) do
+                                if pname ~= myName and type(pts) == "number" and (os.time() - pts) < 10 then
+                                    friendOnline = true
+                                end
+                            end
+                        end
+                        onlineLabel.Text = friendOnline and "🟢 متصل" or ""
+                    end
+                end
+
+                task.wait(3)
+            end
+        end)
+    end
+    setupChatPage(UI.Page5, UI.DeleteChatBtn, ChatInputBar, UI.CopyChatBtn)
 -- ====================== فتح القائمة ======================
     local fullSize = UI.MainFrame.Size
     local fullPos = UI.MainFrame.Position
