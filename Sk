@@ -1943,12 +1943,12 @@ end)
     -- 💬 زر إعادة فتح الدردشة بعد تصغير القائمة، يظهر بجانب زر + فقط عند تصغير الدردشة
     UI.ChatRestoreBtn = Instance.new("TextButton", UI.MainFrame)
     UI.ChatRestoreBtn.Name = "ChatRestoreBtn"
-    UI.ChatRestoreBtn.Size = UDim2.new(0, 65, 0, 40)
-    UI.ChatRestoreBtn.Position = UDim2.new(1, -115, 0.5, -20)
+    UI.ChatRestoreBtn.Size = UDim2.new(0, 48, 0, 34)
+    UI.ChatRestoreBtn.Position = UDim2.new(1, -55, 0.5, -17)
     UI.ChatRestoreBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     UI.ChatRestoreBtn.Text = "الدردشة"
     UI.ChatRestoreBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
-    UI.ChatRestoreBtn.TextSize = 12
+    UI.ChatRestoreBtn.TextSize = 11
     UI.ChatRestoreBtn.TextScaled = false
     UI.ChatRestoreBtn.Font = Enum.Font.GothamBold
     UI.ChatRestoreBtn.Visible = false
@@ -4874,6 +4874,44 @@ UI.btn1.MouseButton1Click:Connect(function()
         ChatPanel.Parent = ScreenGui
         Instance.new("UICorner", ChatPanel).CornerRadius = UDim.new(0, 15)
 
+        -- عنوان القائمة الأساسية أعلى يسار لوحة الدردشة
+        local ChatTitle = Instance.new("TextLabel", ChatPanel)
+        ChatTitle.Name = "ChatTitle"
+        ChatTitle.Size = UDim2.new(0, 170, 0, 36)
+        ChatTitle.Position = UDim2.new(0, 18, 0, 6)
+        ChatTitle.BackgroundTransparency = 1
+        ChatTitle.Text = "S  k  y"
+        ChatTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ChatTitle.TextSize = 21
+        ChatTitle.TextScaled = false
+        ChatTitle.Font = Enum.Font.GothamBold
+        ChatTitle.TextXAlignment = Enum.TextXAlignment.Left
+        ChatTitle.ZIndex = 9
+
+        local ChatStatusDot = Instance.new("Frame", ChatPanel)
+        ChatStatusDot.Name = "ChatStatusDot"
+        ChatStatusDot.Size = UDim2.new(0, 8, 0, 8)
+        ChatStatusDot.Position = UDim2.new(0, 108, 0, 20)
+        ChatStatusDot.BackgroundColor3 = Color3.fromRGB(0, 230, 100)
+        ChatStatusDot.BorderSizePixel = 0
+        ChatStatusDot.ZIndex = 9
+        Instance.new("UICorner", ChatStatusDot).CornerRadius = UDim.new(1, 0)
+
+        -- نبض النقطة الخضراء مثل نقطة القائمة الأساسية
+        task.spawn(function()
+            while ChatStatusDot and ChatStatusDot.Parent do
+                TweenService:Create(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    BackgroundTransparency = 0.7
+                }):Play()
+                task.wait(0.9)
+                if not ChatStatusDot or not ChatStatusDot.Parent then break end
+                TweenService:Create(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    BackgroundTransparency = 0
+                }):Play()
+                task.wait(0.9)
+            end
+        end)
+
         local ChatPanelStroke = Instance.new("UIStroke", ChatPanel)
         ChatPanelStroke.Color = Color3.fromRGB(170, 0, 255)
         ChatPanelStroke.Thickness = 2.5
@@ -4890,9 +4928,18 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page5.Size = UDim2.new(1, -16, 1, -66)
         UI.Page5.Visible = true
         ChatInputBar.Parent = ChatPanel
-        ChatInputBar.Position = UDim2.new(0, 5, 1, -58)
+        ChatInputBar.Position = UDim2.new(0, 5, 1, -55)
         ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
         ChatInputBar.Visible = true
+
+        local ChatDivider = Instance.new("Frame")
+        ChatDivider.Size = UDim2.new(1, -20, 0, 2)
+        ChatDivider.Position = UDim2.new(0, 10, 1, -109)
+        ChatDivider.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+        ChatDivider.BorderSizePixel = 0
+        ChatDivider.ZIndex = 8
+        ChatDivider.Parent = ChatPanel
+
         UI.DeleteChatBtn.Parent = ChatPanel
         UI.DeleteChatBtn.Position = UDim2.new(1, -112, 0, 5)
         UI.DeleteChatBtn.ZIndex = 8
@@ -5063,9 +5110,10 @@ end)
         local chatLog = Instance.new("ScrollingFrame", chatContainer)
         -- 💬 مساحة الرسائل تكبر تلقائيًا مع لوحة الدردشة
         -- ونترك مكان ثابت أسفلها لمربع الكتابة.
-        chatLog.Size = UDim2.new(1, -10, 1, -92)
+        chatLog.Size = UDim2.new(1, -10, 1, -140)
         chatLog.Position = UDim2.new(0, 5, 0, 42)
         chatLog.BackgroundTransparency = 1
+        chatLog.ClipsDescendants = true
         chatLog.ScrollBarThickness = 4
         chatLog.CanvasSize = UDim2.new(0, 0, 0, 500)
         chatLog.ZIndex = 7
@@ -5262,8 +5310,9 @@ end)
 
         -- 📌 شريط الإرسال ثابت دايم تحت (مرّ لنا من بره كباراميتر) — كذا ما يروح معاك لو سحبت لفوق أو تحت
         local inputBox = Instance.new("TextBox", ChatInputBar)
-        inputBox.Size = UDim2.new(1, 0, 1, 0)
-        inputBox.Position = UDim2.new(0, 0, 0, 0)
+        inputBox.AnchorPoint = Vector2.new(1, 0)
+        inputBox.Size = UDim2.new(0.45, 0, 1, 0)
+        inputBox.Position = UDim2.new(1, 0, 0, 0)
         inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
         inputBox.PlaceholderText = "اكتب رسالتك هنا..."
         inputBox.Text = ""
