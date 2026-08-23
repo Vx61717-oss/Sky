@@ -8,111 +8,127 @@ local AUTH_TOKEN = ""
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
--- Sky
+-- شاشة تحميل بسيطة بدل مقدمة S K Y
 local _TweenS = game:GetService("TweenService")
 
-local _IntroGui = Instance.new("ScreenGui")
-_IntroGui.Name = "SkyIntro"
-_IntroGui.IgnoreGuiInset = true
-_IntroGui.DisplayOrder = 99999
-_IntroGui.ResetOnSpawn = false
-_IntroGui.Parent = game.CoreGui
+local _LoadingGui = Instance.new("ScreenGui")
+_LoadingGui.Name = "SkyLoading"
+_LoadingGui.IgnoreGuiInset = true
+_LoadingGui.DisplayOrder = 99999
+_LoadingGui.ResetOnSpawn = false
+_LoadingGui.Parent = game.CoreGui
 
-local _IntroBG = Instance.new("Frame")
-_IntroBG.Size = UDim2.new(1, 0, 1, 0)
-_IntroBG.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-_IntroBG.BackgroundTransparency = 1
-_IntroBG.BorderSizePixel = 0
-_IntroBG.ZIndex = 1
-_IntroBG.Parent = _IntroGui
+local _LoadingBG = Instance.new("Frame")
+_LoadingBG.Size = UDim2.new(1, 0, 1, 0)
+_LoadingBG.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+_LoadingBG.BackgroundTransparency = 1
+_LoadingBG.BorderSizePixel = 0
+_LoadingBG.Parent = _LoadingGui
 
-local function _makeLetter(txt, posX)
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0, 120, 0, 140)
-    lbl.AnchorPoint = Vector2.new(0.5, 0.5)
-    lbl.Position = UDim2.new(0.5, posX, 0.5, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = txt
-    lbl.TextColor3 = Color3.fromRGB(170, 0, 255)
-    lbl.TextTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextScaled = true
-    lbl.ZIndex = 2
-    lbl.Parent = _IntroBG
-    return lbl
-end
+local _LoadingTitle = Instance.new("TextLabel")
+_LoadingTitle.Size = UDim2.new(1, 0, 0, 42)
+_LoadingTitle.Position = UDim2.new(0, 0, 0.42, 0)
+_LoadingTitle.BackgroundTransparency = 1
+_LoadingTitle.Text = "جاري التحميل"
+_LoadingTitle.TextColor3 = Color3.fromRGB(190, 50, 255)
+_LoadingTitle.TextTransparency = 1
+_LoadingTitle.Font = Enum.Font.GothamBold
+_LoadingTitle.TextSize = 25
+_LoadingTitle.Parent = _LoadingBG
 
-local _lblS = _makeLetter("S", -110)
-local _lblK = _makeLetter("K",    0)
-local _lblY = _makeLetter("Y",  110)
+local _LoadingStatus = Instance.new("TextLabel")
+_LoadingStatus.Size = UDim2.new(1, 0, 0, 24)
+_LoadingStatus.Position = UDim2.new(0, 0, 0.51, 0)
+_LoadingStatus.BackgroundTransparency = 1
+_LoadingStatus.Text = "تهيئة السكربت..."
+_LoadingStatus.TextColor3 = Color3.fromRGB(210, 210, 210)
+_LoadingStatus.TextTransparency = 1
+_LoadingStatus.Font = Enum.Font.Gotham
+_LoadingStatus.TextSize = 13
+_LoadingStatus.Parent = _LoadingBG
 
--- زر التخطي فوق اليمين
-local _skipBtn = Instance.new("TextButton")
-_skipBtn.Size = UDim2.new(0, 90, 0, 34)
-_skipBtn.Position = UDim2.new(1, -105, 0, 18)
-_skipBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-_skipBtn.BackgroundTransparency = 0.2
-_skipBtn.Text = "تخطي"
-_skipBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
-_skipBtn.Font = Enum.Font.GothamBold
-_skipBtn.TextSize = 13
-_skipBtn.ZIndex = 10
-_skipBtn.Parent = _IntroBG
-Instance.new("UICorner", _skipBtn).CornerRadius = UDim.new(0, 8)
-local _skipStroke = Instance.new("UIStroke", _skipBtn)
-_skipStroke.Color = Color3.fromRGB(17, 0, 255)
-_skipStroke.Thickness = 1.5
+local _LoadingBack = Instance.new("Frame")
+_LoadingBack.Size = UDim2.new(0, 260, 0, 6)
+_LoadingBack.AnchorPoint = Vector2.new(0.5, 0.5)
+_LoadingBack.Position = UDim2.new(0.5, 0, 0.60, 0)
+_LoadingBack.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+_LoadingBack.BackgroundTransparency = 1
+_LoadingBack.BorderSizePixel = 0
+_LoadingBack.Parent = _LoadingBG
+Instance.new("UICorner", _LoadingBack).CornerRadius = UDim.new(1, 0)
 
-local _skipped = false
-_skipBtn.MouseButton1Click:Connect(function()
-    _skipped = true
-end)
+local _LoadingBar = Instance.new("Frame")
+_LoadingBar.Size = UDim2.new(0, 0, 1, 0)
+_LoadingBar.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+_LoadingBar.BackgroundTransparency = 1
+_LoadingBar.BorderSizePixel = 0
+_LoadingBar.Parent = _LoadingBack
+Instance.new("UICorner", _LoadingBar).CornerRadius = UDim.new(1, 0)
 
-local function _waitOrSkip(t)
-    local elapsed = 0
-    while elapsed < t and not _skipped do
-        elapsed = elapsed + task.wait(0.05)
-    end
-end
+-- ظهور الخلفية أولًا، ثم عناصر التحميل واحدة تلو الأخرى.
+_TweenS:Create(_LoadingBG, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+task.wait(0.35)
+_TweenS:Create(_LoadingTitle, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+task.wait(0.25)
+_TweenS:Create(_LoadingStatus, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+_TweenS:Create(_LoadingBack, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+task.wait(0.2)
+_TweenS:Create(_LoadingBar, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+task.wait(0.35)
 
--- شاشة سوداء تتعتم
-_TweenS:Create(_IntroBG, TweenInfo.new(1.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-    BackgroundTransparency = 0
-}):Play()
-_waitOrSkip(1.5)
-
-if not _skipped then
-    -- S
-    _TweenS:Create(_lblS, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        TextTransparency = 0
+local function _LoadingStep(progress, duration, message)
+    _LoadingStatus.Text = message
+    _TweenS:Create(_LoadingBar, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(progress, 0, 1, 0)
     }):Play()
-    _waitOrSkip(2)
+    task.wait(duration)
 end
 
-if not _skipped then
-    -- K
-    _TweenS:Create(_lblK, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        TextTransparency = 0
-    }):Play()
-    _waitOrSkip(2)
+-- عدة تسلسلات تحميل؛ يتم اختيار تسلسل مختلف عشوائيًا عند كل تشغيل.
+local _LoadingSequences = {
+    {
+        {0.12, 0.40, "تهيئة السكربت...", 0.20},
+        {0.36, 0.55, "تحميل الواجهة...", 0.25},
+        {0.44, 0.25, "فحص الإعدادات...", 0.30},
+        {0.68, 0.70, "تحميل المكونات...", 0.25},
+        {0.80, 0.35, "تجهيز الصوت...", 0.20},
+        {0.94, 0.45, "اقتربنا من الانتهاء...", 0.25},
+        {1, 0.30, "تم التحميل", 0.35},
+    },
+    {
+        {0.08, 0.30, "الاتصال بالخدمات...", 0.35},
+        {0.25, 0.65, "قراءة الإعدادات...", 0.20},
+        {0.52, 0.80, "تجهيز العناصر...", 0.45},
+        {0.61, 0.25, "فحص الأداء...", 0.30},
+        {0.84, 0.60, "تحميل المؤثرات...", 0.25},
+        {0.96, 0.40, "اللمسات الأخيرة...", 0.30},
+        {1, 0.25, "تم التحميل", 0.35},
+    },
+    {
+        {0.18, 0.50, "بدء التشغيل...", 0.25},
+        {0.31, 0.35, "تجهيز الصوت...", 0.40},
+        {0.47, 0.70, "تحميل الواجهة...", 0.25},
+        {0.73, 0.55, "مزامنة الإعدادات...", 0.50},
+        {0.78, 0.20, "فحص أخير...", 0.35},
+        {0.92, 0.55, "تقريبًا انتهينا...", 0.20},
+        {1, 0.35, "جاهز", 0.35},
+    },
+}
+
+math.randomseed(os.time() + math.floor(os.clock() * 1000))
+local _selectedSequence = _LoadingSequences[math.random(1, #_LoadingSequences)]
+for _, stepData in ipairs(_selectedSequence) do
+    _LoadingStep(stepData[1], stepData[2], stepData[3])
+    task.wait(stepData[4])
 end
 
-if not _skipped then
-    -- Y
-    _TweenS:Create(_lblY, TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        TextTransparency = 0
-    }):Play()
-    _waitOrSkip(2)
-end
-
--- كل شي يختفي بسرعة لو تخطي وإلا عادي
-local _fadeTime = _skipped and 0.3 or 3
-_TweenS:Create(_IntroBG, TweenInfo.new(_fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
-_TweenS:Create(_lblS,    TweenInfo.new(_fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-_TweenS:Create(_lblK,    TweenInfo.new(_fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-_TweenS:Create(_lblY,    TweenInfo.new(_fadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-task.wait(_fadeTime)
-_IntroGui:Destroy()
+_TweenS:Create(_LoadingBG, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
+_TweenS:Create(_LoadingTitle, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+_TweenS:Create(_LoadingStatus, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+_TweenS:Create(_LoadingBack, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+_TweenS:Create(_LoadingBar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+task.wait(0.5)
+_LoadingGui:Destroy()
 
 -- ====================== الآن يشتغل السكريبت الأصلي ======================
 -- زر Fly يفتح ويغلق القائمة فقط | الطيران يُشغل من داخل القائمة | ✅ نظام إشعارات بنفسجي
