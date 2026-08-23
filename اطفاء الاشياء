@@ -1035,6 +1035,7 @@ local function RunMyOriginalScript()
     State.MainUIVisible = true -- true بس لما القائمة تكون بكامل حجمها (مو مصغّرة)
     State.UltraZoomActive = false
     State.AntiFlingActive = false
+    State.ProtectionActive = false
 
     -- Original Lighting State
     local _originalBrightness = game:GetService("Lighting").Brightness
@@ -1103,6 +1104,51 @@ local function RunMyOriginalScript()
     local Camera = workspace.CurrentCamera
     local LocalPlayer = Players.LocalPlayer
     local Workspace = game:GetService("Workspace")
+
+    -- ====================== 🛡️ حماية من دفع اللاعبين بالجسم ======================
+    -- تعطيل تصادم أجسام اللاعبين الآخرين محلياً يمنعهم من دفع شخصية المستخدم،
+    -- مع إبقاء تصادم شخصية المستخدم مع الأرض والأجزاء الثابتة كما هو.
+    local noPushOriginalCollision = {}
+    local noPushConnection = RunService.Heartbeat:Connect(function()
+        -- الحماية تعمل فقط عند تفعيل زر مانع الطيران.
+        if not State.AntiFlingActive then
+            for part, originalCanCollide in pairs(noPushOriginalCollision) do
+                if part and part.Parent then
+                    part.CanCollide = originalCanCollide
+                end
+                noPushOriginalCollision[part] = nil
+            end
+            return
+        end
+
+        local localCharacter = LocalPlayer.Character
+        local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+        if not localRoot then return end
+
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                for _, part in ipairs(player.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if noPushOriginalCollision[part] == nil then
+                            noPushOriginalCollision[part] = part.CanCollide
+                        end
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end
+
+        -- تخفيف الاندفاع المفاجئ عند تفعيل زر مانع الطيران.
+        if State.AntiFlingActive and not State.flying then
+            local velocity = localRoot.AssemblyLinearVelocity
+            if velocity.Magnitude > 90 then
+                local horizontal = Vector3.new(velocity.X, 0, velocity.Z) * 0.12
+                local y = math.clamp(velocity.Y, -60, 55)
+                localRoot.AssemblyLinearVelocity = Vector3.new(horizontal.X, y, horizontal.Z)
+                localRoot.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+    end)
 
     -- ====================== 🛡️ منطق محد يقدر يمسك ======================
     local lastTriggerTick = 0
@@ -1311,21 +1357,6 @@ local function RunMyOriginalScript()
             local rootPart = character:FindFirstChild("HumanoidRootPart")
             
             if humanoid and rootPart then
-                -- Anti-Fling Logic
-                if State.AntiFlingActive then
-                    for _, p in pairs(Players:GetPlayers()) do
-                        if p ~= LocalPlayer and p.Character then
-                            for _, part in pairs(p.Character:GetDescendants()) do
-                                if part:IsA("BasePart") then
-                                    part.CanCollide = false
-                                    part.Velocity = Vector3.new(0, 0, 0)
-                                    part.RotVelocity = Vector3.new(0, 0, 0)
-                                end
-                            end
-                        end
-                    end
-                end
-
                 if State.speedActive then
                     humanoid.WalkSpeed = State.targetSpeed
                     if humanoid.MoveDirection.Magnitude > 0 then
@@ -3754,6 +3785,20 @@ local function UpdatePlayerList()
         if s then OK("🛡️ محد يقدر يمسك: مفعل") else OK("🔓 محد يقدر يمسك: معطل") end
     end, ControlsArea)
 
+    NewItem("🛡️ حماية", "Button", function(s)
+        State.ProtectionActive = s
+        if not s then
+            State.RepeatedGrabActive = false
+            State._wooGrabbedActive = false
+            State.MasterFlingActive = false
+        end
+        if s then
+            Notify("🛡️ حماية", "تم تفعيل الحماية", Color3.fromRGB(0, 255, 150))
+        else
+            Notify("🔓 حماية", "تم إيقاف الحماية", Color3.fromRGB(0, 255, 150))
+        end
+    end, ControlsArea)
+
     NewItem("💣 يفجر الناس", "Button", function(s)
         if not State.selectedPlayer then
             OK("⚠️ اختر لاعباً أولاً!")
@@ -3774,6 +3819,114 @@ local function UpdatePlayerList()
     end, ControlsArea)
 
     local grabConnection = nil
+    local autoGrabTarget = nil
+    local autoGrabUntil = 0
+
+    local function fireRepeatedGrab(targetPlayer)
+        if not targetPlayer or targetPlayer == LocalPlayer then return end
+        local targetCharacter = targetPlayer.Character
+        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+        if not targetRoot then return end
+
+        pcall(function()
+            ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer(targetRoot, targetRoot.CFrame)
+            ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, targetRoot.CFrame)
+        end)
+    end
+
+    local function fireRepeatedGrabAll()
+        -- إرسال المسك لجميع اللاعبين في نفس الدورة، وليس لاعباً واحداً.
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                fireRepeatedGrab(player)
+            end
+        end
+    end
+
+    local function findClosestPlayer(maxDistance)
+        local character = LocalPlayer.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+        if not root then return nil end
+
+        local closestPlayer, shortestDistance = nil, maxDistance
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                if targetRoot then
+                    local distance = (root.Position - targetRoot.Position).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+        return closestPlayer
+    end
+
+    local autoGrabBusy = false
+
+    local function startAllCounterSequence(targetPlayer)
+        if autoGrabBusy then return end
+        autoGrabBusy = true
+
+        local character = LocalPlayer.Character
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        local originalCFrame = rootPart and rootPart.CFrame
+        local targetRoot = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        -- إذا كان الهدف بعيداً، ننتقل إليه مؤقتاً قبل تشغيل الزرين.
+        if rootPart and targetRoot and (rootPart.Position - targetRoot.Position).Magnitude > 8 then
+            rootPart.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+            task.wait(0.08)
+        end
+
+        -- هذه هي حالتا الزرين الفعليتان، وتبدآن معاً بعد الوصول للهدف.
+        State.RepeatedGrabActive = true
+        State._wooGrabbedActive = true
+        State.MasterFlingActive = true
+
+        local sequenceEnd = tick() + 0.5
+        task.spawn(function()
+            while State.ProtectionActive and tick() < sequenceEnd do
+                -- إعادة إرسال المسك للجميع أثناء استمرار الوو.
+                fireRepeatedGrabAll()
+                task.wait(0.05)
+            end
+
+            -- إيقاف الحالتين معاً فقط بعد انتهاء نصف الثانية.
+            State.RepeatedGrabActive = false
+            State._wooGrabbedActive = false
+            State.MasterFlingActive = false
+
+            -- إعادة المستخدم إلى مكانه الأصلي بعد اكتمال مدة الزرين.
+            if rootPart and rootPart.Parent and originalCFrame then
+                rootPart.CFrame = originalCFrame
+                rootPart.AssemblyLinearVelocity = Vector3.zero
+                rootPart.AssemblyAngularVelocity = Vector3.zero
+            end
+            autoGrabBusy = false
+        end)
+    end
+
+    local autoGrabMonitor = RunService.Heartbeat:Connect(function()
+        if not State.ProtectionActive or autoGrabBusy then return end
+
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not rootPart then return end
+
+        local isGrabbed = humanoid.PlatformStand or humanoid.Sit or rootPart.Anchored
+        -- نبحث في مدى واسع لأن الممسك قد يكون بعيداً عن موضع الشخصية الحالي.
+        local nearbyPlayer = findClosestPlayer(1000)
+        local stateLooksGrabbed = humanoid:GetState() == Enum.HumanoidStateType.Physics
+        if not isGrabbed and not stateLooksGrabbed then return end
+        if not nearbyPlayer then return end
+
+        -- الانتقال للهدف ثم تشغيل الزرين من نفس الدالة وفي نفس اللحظة.
+        startAllCounterSequence(nearbyPlayer)
+    end)
 
     NewItem("إمساك متكرر", "Button", function(s)
         if grabConnection then
@@ -3783,38 +3936,13 @@ local function UpdatePlayerList()
 
         if s then
             grabConnection = RunService.RenderStepped:Connect(function()
-                local localPlayer = Players.LocalPlayer
-                local character = localPlayer.Character
-                local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-                local maxDistance = 100
-
-                if not humanoidRootPart then return end
-
-                local closestPlayer = nil
-                local shortestDistance = maxDistance
-
-                for _, player in ipairs(Players:GetPlayers()) do
-                    if player ~= localPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-                        local targetRoot = player.Character.HumanoidRootPart
-                        local distance = (humanoidRootPart.Position - targetRoot.Position).Magnitude
-
-                        if distance < shortestDistance then
-                            shortestDistance = distance
-                            closestPlayer = player
-                        end
-                    end
+                local target = autoGrabTarget
+                if target and tick() > autoGrabUntil then
+                    autoGrabTarget = nil
+                    target = nil
                 end
-
-                if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    local targetRoot = closestPlayer.Character.HumanoidRootPart
-
-                    pcall(function()
-                        ReplicatedStorage.GrabEvents.CreateGrabLine:FireServer(targetRoot, targetRoot.CFrame)
-                        ReplicatedStorage.GrabEvents.SetNetworkOwner:FireServer(targetRoot, targetRoot.CFrame)
-                    end)
-                end
+                fireRepeatedGrab(target or findClosestPlayer(100))
             end)
-
             OK("إمساك متكرر: مفعل")
         else
             OK("إمساك متكرر: معطل")
@@ -3852,16 +3980,32 @@ local function UpdatePlayerList()
             end
         end
 
-        -- مراقبة أحداث الـ Grab: لو حد مسكك فعليًا، نفعّل الحماية تلقائيًا لثانية
+        -- عند الإمساك بنا: نحدد أقرب لاعب ملاصق باعتباره الممسك،
+        -- ثم نرسل المسك المتكرر إليه وحده، وبعدها نشغّل الوو عليه.
+        local function activateCounterGrabOnGrabber()
+            if not State.ProtectionActive then return end
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            if not humanoid or not rootPart then return end
+
+            local isGrabbed = humanoid.PlatformStand or humanoid.Sit or rootPart.Anchored
+            local stateLooksGrabbed = humanoid:GetState() == Enum.HumanoidStateType.Physics
+            if not isGrabbed and not stateLooksGrabbed then return end
+            local grabber = findClosestPlayer(1000)
+            if not grabber then return end
+
+            -- حدث الإمساك يستدعي التسلسل مع انتقال مؤقت للهدف البعيد.
+            startAllCounterSequence(grabber)
+        end
+
         pcall(function()
             local grabEvents = ReplicatedStorage:FindFirstChild("GrabEvents")
             if grabEvents then
                 for _, event in ipairs(grabEvents:GetChildren()) do
                     if event:IsA("RemoteEvent") then
                         event.OnClientEvent:Connect(function(...)
-                            if not State.MasterFlingActive then return end
-                            State._wooGrabbedActive = true
-                            task.delay(1, function() State._wooGrabbedActive = false end)
+                            activateCounterGrabOnGrabber()
                         end)
                     end
                 end
@@ -3876,12 +4020,27 @@ local function UpdatePlayerList()
             if not rootPart then return end
 
             pcall(function()
-                for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                local targetPlayers = {}
+                if State._wooGrabbedActive then
+                    -- أثناء التسلسل التلقائي: جميع اللاعبين هم الأهداف معاً.
+                    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                        if otherPlayer ~= LocalPlayer then
+                            targetPlayers[#targetPlayers + 1] = otherPlayer
+                        end
+                    end
+                else
+                    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                        if otherPlayer ~= LocalPlayer then
+                            targetPlayers[#targetPlayers + 1] = otherPlayer
+                        end
+                    end
+                end
+
+                for _, otherPlayer in ipairs(targetPlayers) do
                     if otherPlayer ~= LocalPlayer and otherPlayer.Character then
                         local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
                         if otherRoot then
                             local distance = (rootPart.Position - otherRoot.Position).Magnitude
-                            -- إذا لصق فيك أو تفعّل الإمساك عليك
                             if distance < 4 or State._wooGrabbedActive then
                                 otherRoot.AssemblyLinearVelocity = Vector3.new(math.random(-5000, 5000), 7000, math.random(-5000, 5000))
                                 otherRoot.AssemblyAngularVelocity = Vector3.new(math.random(-4000, 4000), 4000, math.random(-4000, 4000))
