@@ -47,6 +47,19 @@ _LoadingStatus.Font = Enum.Font.Gotham
 _LoadingStatus.TextSize = 13
 _LoadingStatus.Parent = _LoadingBG
 
+local _LoadingCredits = Instance.new("TextLabel")
+_LoadingCredits.Size = UDim2.new(1, -40, 0, 42)
+_LoadingCredits.AnchorPoint = Vector2.new(0.5, 0)
+_LoadingCredits.Position = UDim2.new(0.5, 0, 0.66, 0)
+_LoadingCredits.BackgroundTransparency = 1
+_LoadingCredits.Text = "المستخدم: AAbbooyi   |   المساعد: POS_9965"
+_LoadingCredits.TextColor3 = Color3.fromRGB(230, 210, 255)
+_LoadingCredits.TextTransparency = 1
+_LoadingCredits.Font = Enum.Font.GothamBold
+_LoadingCredits.TextSize = 14
+_LoadingCredits.TextWrapped = true
+_LoadingCredits.Parent = _LoadingBG
+
 local _LoadingBack = Instance.new("Frame")
 _LoadingBack.Size = UDim2.new(0, 260, 0, 6)
 _LoadingBack.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -71,6 +84,7 @@ task.wait(0.35)
 _TweenS:Create(_LoadingTitle, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
 task.wait(0.25)
 _TweenS:Create(_LoadingStatus, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+_TweenS:Create(_LoadingCredits, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
 _TweenS:Create(_LoadingBack, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
 task.wait(0.2)
 _TweenS:Create(_LoadingBar, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
@@ -125,10 +139,70 @@ end
 _TweenS:Create(_LoadingBG, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
 _TweenS:Create(_LoadingTitle, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
 _TweenS:Create(_LoadingStatus, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+_TweenS:Create(_LoadingCredits, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
 _TweenS:Create(_LoadingBack, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
 _TweenS:Create(_LoadingBar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
 task.wait(0.5)
 _LoadingGui:Destroy()
+
+-- ====================== قائمة اللغة ======================
+local _SelectedLanguage = "Arabic"
+local _LanguageChosen = false
+local _LanguageGui = Instance.new("ScreenGui")
+_LanguageGui.Name = "SkyLanguageSelect"
+_LanguageGui.IgnoreGuiInset = true
+_LanguageGui.DisplayOrder = 100000
+_LanguageGui.ResetOnSpawn = false
+_LanguageGui.Parent = game.CoreGui
+
+local _LanguageFrame = Instance.new("Frame")
+_LanguageFrame.Size = UDim2.new(0, 250, 0, 135)
+_LanguageFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+_LanguageFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+_LanguageFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
+_LanguageFrame.BorderSizePixel = 0
+_LanguageFrame.Parent = _LanguageGui
+Instance.new("UICorner", _LanguageFrame).CornerRadius = UDim.new(0, 12)
+
+local _LanguageStroke = Instance.new("UIStroke", _LanguageFrame)
+_LanguageStroke.Color = Color3.fromRGB(170, 0, 255)
+_LanguageStroke.Thickness = 1.5
+
+local _LanguageTitle = Instance.new("TextLabel", _LanguageFrame)
+_LanguageTitle.Size = UDim2.new(1, -20, 0, 32)
+_LanguageTitle.Position = UDim2.new(0, 10, 0, 8)
+_LanguageTitle.BackgroundTransparency = 1
+_LanguageTitle.Text = "اختر اللغة / Choose Language"
+_LanguageTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+_LanguageTitle.Font = Enum.Font.GothamBold
+_LanguageTitle.TextSize = 14
+_LanguageTitle.TextWrapped = true
+
+local function _AddLanguageButton(text, x, language)
+    local button = Instance.new("TextButton", _LanguageFrame)
+    button.Size = UDim2.new(0, 100, 0, 42)
+    button.Position = UDim2.new(0, x, 0, 70)
+    button.BackgroundColor3 = Color3.fromRGB(65, 12, 90)
+    button.BorderSizePixel = 0
+    button.Text = text
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 14
+    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+    button.MouseButton1Click:Connect(function()
+        _SelectedLanguage = language
+        _LanguageChosen = true
+        _LanguageGui:Destroy()
+    end)
+end
+
+_AddLanguageButton("عربي", 18, "Arabic")
+_AddLanguageButton("English", 132, "English")
+
+-- لا يتم إنشاء القائمة الرئيسية قبل اختيار اللغة.
+while not _LanguageChosen do
+    task.wait()
+end
 
 -- ====================== الآن يشتغل السكريبت الأصلي ======================
 -- زر Fly يفتح ويغلق القائمة فقط | الطيران يُشغل من داخل القائمة | ✅ نظام إشعارات بنفسجي
@@ -281,7 +355,165 @@ Instance.new("UIListLayout", NC).Padding = UDim.new(0, 5)
 
 local _currentNotification = nil
 
+-- مترجم مركزي للنصوص العربية التي تظهر أثناء التشغيل
+local _EnglishText = {
+    ["قوة القفز"] = "Jump Power",
+    ["إرجاع السرعة والنط الطبيعي"] = "Restore speed and jump",
+    ["القفز اللانهائي"] = "Infinite jump",
+    ["مانع الطيران"] = "Anti fling",
+    ["تشغيل الطيران"] = "Enable fly",
+    ["إيقاف الطيران"] = "Disable fly",
+    ["إرجاع السرعة والنط لوضع الماب الطبيعي"] = "Speed and jump restored",
+    ["قوة القفز:"] = "Jump power:",
+    ["طيران"] = "Fly",
+    ["تم تشغيل الطيران"] = "Fly enabled",
+    ["تم إيقاف الطيران"] = "Fly disabled",
+    ["فتح قائمة الطيران"] = "Fly menu opened",
+    ["إغلاق قائمة الطيران"] = "Fly menu closed",
+    ["قفز لانهائي: مفعل"] = "Infinite jump: Enabled",
+    ["قفز لانهائي: معطل"] = "Infinite jump: Disabled",
+    ["تم تفعيل مانع الطيران"] = "Anti fling enabled",
+    ["تم إيقاف مانع الطيران"] = "Anti fling disabled",
+    ["إرجاع السرعة والنط الطبيعي"] = "Restore speed and jump",
+    ["القفز"] = "Jump",
+    ["النط"] = "Jump",
+    ["تم تشغيل الموسيقى"] = "Music started",
+    ["تم إيقاف الموسيقى"] = "Music stopped",
+    ["تشغيل"] = "Play",
+    ["إيقاف"] = "Stop",
+    ["بانق: تشغيل"] = "Bang: On",
+    ["بانق: إيقاف"] = "Bang: Off",
+    ["فشل تحميل/تشغيل Auto E"] = "Failed to load/run Auto E",
+    ["تم تشغيل Auto E"] = "Auto E started",
+    ["إرجاع"] = "Restore",
+    ["القفز اللانهائي"] = "Infinite jump",
+    ["إلغاء ضرر السقوط"] = "Disable fall damage",
+    ["انتقال وملاحقة"] = "Teleport and follow",
+    ["تخفيف الجودة"] = "Reduce quality",
+    ["أجواء الماب"] = "Map atmosphere",
+    ["السيرفر"] = "Server",
+    ["سيرفر"] = "Server",
+    ["اختر اللون:"] = "Choose a color:",
+    ["صوت اللعبة"] = "Game volume",
+    ["لم يتم العثور على سيرفر"] = "No server found",
+    ["الكاميرا تتجاوز الجدران والأشياء"] = "Camera passes through walls and objects",
+    ["الزوم: عادي"] = "Zoom: Normal",
+    ["فتح قائمة الانتقال"] = "Teleport menu opened",
+    ["إغلاق قائمة الانتقال"] = "Teleport menu closed",
+    ["تم الانتقال لسيرفر فارغ!"] = "Moved to an empty server!",
+    ["رجع الجو الطبيعي"] = "Weather restored",
+    ["تم تخفيف الجودة (سريع)"] = "Quality reduced (fast)",
+    ["تم استعادة الجودة الأصلية"] = "Original quality restored",
+    ["تم إيقاف"] = "Stopped",
+    ["تم نسخ الرسالة"] = "Message copied",
+    ["تم حذف الحفظ وإعادة كل الإعدادات للأصل"] = "Saved settings deleted and all settings restored",
+    ["رجعت كل الألوان لوضعها الافتراضي"] = "All colors restored to default",
+    ["تم تغيير لون"] = "Color changed for",
+    ["تم تشغيل أغنية 2"] = "Song 2 started",
+    ["تم إيقاف أغنية 2"] = "Song 2 stopped",
+    ["تم تشغيل الأغنية 3"] = "Song 3 started",
+    ["تم إيقاف الأغنية 3"] = "Song 3 stopped",
+    ["تم تشغيل الأغنية 4"] = "Song 4 started",
+    ["تم إيقاف الأغنية 4"] = "Song 4 stopped",
+    ["تم تشغيل الأغنية 5"] = "Song 5 started",
+    ["تم إيقاف الأغنية 5"] = "Song 5 stopped",
+    ["تم تشغيل الأغنية 6"] = "Song 6 started",
+    ["تم إيقاف الأغنية 6"] = "Song 6 stopped",
+    ["تم تشغيل الأغنية 7"] = "Song 7 started",
+    ["تم إيقاف الأغنية 7"] = "Song 7 stopped",
+    ["تم تشغيل الأغنية 8"] = "Song 8 started",
+    ["تم إيقاف الأغنية 8"] = "Song 8 stopped",
+    ["تم تشغيل الموسيقى"] = "Music started",
+    ["تم إيقاف الموسيقى"] = "Music stopped",
+    ["فشل حذف الرسالة: "] = "Failed to delete message: ",
+    ["فايربيس رفض الحذف ("] = "Firebase rejected deletion (",
+    ["فشل إرسال الرسالة: "] = "Failed to send message: ",
+    ["فايربيس رفض الإرسال ("] = "Firebase rejected sending (",
+    ["فشل جلب الدردشة: "] = "Failed to fetch chat: ",
+    ["جلب الدردشة رجع بدون رد (response = nil)"] = "Chat fetch returned no response (response = nil)",
+    ["فايربيس رد بخطأ "] = "Firebase returned an error ",
+    ["برنامج الإكسبلويت حقك ما يدعم setclipboard"] = "Your executor does not support setclipboard",
+    ["برنامج الإكسبلويت حقك ما يدعم دالة request/http_request/syn.request — الدردشة ما راح تشتغل أبد على هذا البرنامج"] = "Your executor does not support request/http_request/syn.request — chat will not work on this executor",
+    ["اللاعب ["] = "Player [",
+    ["] غادر اللعبة!"] = "] left the game!",
+    ["جاري التحميل"] = "Loading",
+    ["تم استرجاع إعداداتك المحفوظة"] = "Your saved settings were restored",
+    ["جاهز وملء الشاشة بالكامل!"] = "Ready and full screen!",
+    ["السرعه"] = "Speed",
+    ["السرعة: "] = "Speed: ",
+    ["الزوم: عادي"] = "Zoom: Normal",
+    ["الكاميرا تتجاوز الجدران والأشياء"] = "Camera passes through walls and objects",
+    ["ترا يمديك تضغط 2 على الشاشة وتزيد السرعة حقت الكاميرا"] = "Press 2 on the screen to increase camera speed",
+    ["ترا يمديك تضغط 3 مرات وتنقص السرعة الطبيعية: 50"] = "Press 3 times to reduce normal speed: 50",
+    ["المناظرة"] = "View",
+    ["المنظور"] = "Perspective",
+    ["إضاءة عادية"] = "Normal lighting",
+    ["تنوير المكان"] = "Brighten area",
+    ["قائمة الانتقال"] = "Teleport menu",
+    ["انتقال "] = "Teleport ",
+    ["حفض موقعك"] = "Save your location",
+    ["مشاهدة اللاعب"] = "View player",
+    ["جلوس فوق رأسه"] = "Sit on their head",
+    ["تطيير اللاعب"] = "Fling player",
+    ["ايم بوت"] = "Aimbot",
+    ["🎯 ايم بوت"] = "🎯 Aimbot",
+    ["🔓 ايم بوت"] = "🔓 Aimbot",
+    ["نوكليب"] = "Noclip",
+    ["👻 نوكليب"] = "👻 Noclip",
+    ["🧱 نوكليب"] = "🧱 Noclip",
+    ["بانق"] = "Bang",
+    ["حذف"] = "Delete",
+    ["حفظ "] = "Save ",
+    ["خلاص عرفت"] = "Got it",
+    ["معلومة: "] = "Info: ",
+    ["متصل"] = "Online",
+    ["صديق دخل"] = "Friend joined",
+    ["صديق غادر"] = "Friend left",
+    ["غادر لاعب"] = "Player left",
+    ["جالس على: "] = "Sitting on: ",
+    ["توقف الجلوس"] = "Stop sitting",
+    ["حماية السقوط"] = "Fall protection",
+    ["ملاحقة"] = "Follow",
+    ["مشاهدة اللاعب"] = "View player",
+    ["تنوير"] = "Brighten",
+    ["منظور"] = "Perspective",
+    ["📷 منظور"] = "📷 Perspective",
+    ["🔭 منظور"] = "🔭 Perspective",
+    ["🌙 تنوير"] = "🌙 Brighten",
+    ["💡 تنوير"] = "💡 Brighten",
+    ["🪂 حماية السقوط"] = "🪂 Fall protection",
+    ["🪑 جالس على: "] = "🪑 Sitting on: ",
+    ["🔓 حماية"] = "🔓 Protection",
+    ["🛡️ حماية"] = "🛡️ Protection",
+    ["🌐 سيرفر"] = "🌐 Server",
+    ["🚀 طيران"] = "🚀 Fly",
+    ["🔓 طيران"] = "🔓 Fly",
+    ["📍 انتقال"] = "📍 Teleport",
+    ["🔒 انتقال"] = "🔒 Teleport",
+    ["💡 معلومة: "] = "💡 Info: ",
+    ["🔄 ريسبون"] = "🔄 Respawn",
+    ["🗑️ وضع الحذف"] = "🗑️ Delete mode",
+    ["📋 وضع النسخ"] = "📋 Copy mode",
+    ["⚠️ تنبيه"] = "⚠️ Warning",
+    ["✅ تم"] = "✅ Done",
+    ["تم استعادة الجودة الأصلية"] = "Original quality restored",
+    ["تم تشغيل Auto E"] = "Auto E started"
+}
+
+local function _TranslateText(value)
+    if type(value) ~= "string" or _SelectedLanguage ~= "English" then return value end
+    if _EnglishText[value] then return _EnglishText[value] end
+    for arabic, english in pairs(_EnglishText) do
+        if string.find(value, arabic, 1, true) then
+            value = string.gsub(value, arabic, english)
+        end
+    end
+    return value
+end
+
 function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
+    T = _TranslateText(T)
+    M = _TranslateText(M)
     -- ✅ نضمن ظهور إشعار واحد بس في نفس الوقت: أي إشعار سابق لسه ظاهر يتشال فورًا
     if _currentNotification and _currentNotification.Parent then
         _currentNotification:Destroy()
@@ -454,6 +686,7 @@ _infoTipSound.Parent = game:GetService("SoundService")
 _ownSounds[_infoTipSound] = true
 
 function FlyTipNotify(msg, showDismissBtn, onDismiss)
+    msg = _TranslateText(msg)
     _infoTipSound:Stop()
     _infoTipSound.TimePosition = 0
     _infoTipSound:Play()
@@ -999,7 +1232,7 @@ local function RunMyOriginalScript()
         closeBtn.MouseButton1Click:Connect(function()
             playClick()
             State.flyMainAct = false
-            if State.flyMainBtn then State.flyMainBtn.Text = "تشغيل" end
+            if State.flyMainBtn then State.flyMainBtn.Text = _TranslateText("تشغيل") end
             if State.flyMainStroke then State.flyMainStroke.Color = TOGGLE_OFF_COLOR end
             if State.flyMainGlowGrad then SetGlowColor(State.flyMainGlowGrad, TOGGLE_OFF_COLOR) end
             if State.flyPanel then
@@ -1018,7 +1251,7 @@ local function RunMyOriginalScript()
         State.toggleBtnFly.Position = UDim2.new(0.07, 0, 0, 40)
         State.toggleBtnFly.BackgroundColor3 = Color3.fromRGB(120, 0, 180)
         State.toggleBtnFly.BackgroundTransparency = 1
-        State.toggleBtnFly.Text = "تشغيل الطيران"
+        State.toggleBtnFly.Text = _TranslateText("تشغيل الطيران")
         State.toggleBtnFly.TextColor3 = Color3.new(1,1,1)
         State.toggleBtnFly.TextTransparency = 1
         State.toggleBtnFly.Font = Enum.Font.GothamBold
@@ -1041,7 +1274,7 @@ local function RunMyOriginalScript()
             ToggleFly()
             if State.flying then Notify("🚀 طيران", "تم تشغيل الطيران", Color3.fromRGB(0, 170, 255)) else Notify("🔓 طيران", "تم إيقاف الطيران", Color3.fromRGB(0, 170, 255)) end
             if State.toggleBtnFly then
-                State.toggleBtnFly.Text = State.flying and "إيقاف الطيران" or "تشغيل الطيران"
+                State.toggleBtnFly.Text = _TranslateText(State.flying and "إيقاف الطيران" or "تشغيل الطيران")
                 State.toggleBtnFly.BackgroundColor3 = State.flying and Color3.fromRGB(170, 0, 0) or Color3.fromRGB(120, 0, 180)
             end
         end)
@@ -1213,7 +1446,7 @@ local function RunMyOriginalScript()
         closeBtn.MouseButton1Click:Connect(function()
             playClick()
             State.tpMainAct = false
-            if State.tpMainBtn then State.tpMainBtn.Text = "تشغيل" end
+            if State.tpMainBtn then State.tpMainBtn.Text = _TranslateText("تشغيل") end
             if State.tpMainStroke then State.tpMainStroke.Color = TOGGLE_OFF_COLOR end
             if State.tpMainGlowGrad then SetGlowColor(State.tpMainGlowGrad, TOGGLE_OFF_COLOR) end
             if State.tpPanel then
@@ -2351,7 +2584,7 @@ end)
         local btn = Instance.new("TextButton", UI.TabBar)
         btn.Size = UDim2.new(1, -16, 0, 40)
         btn.Position = UDim2.new(0, 8, 0, idx * 48 + 6)
-        btn.Text = name
+        btn.Text = _TranslateText(name)
         btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         btn.TextColor3 = Color3.new(1,1,1)
         btn.Font = Enum.Font.GothamBold
@@ -2787,7 +3020,7 @@ end)
         local l = Instance.new("TextLabel", f)
         l.Size = UDim2.new(0.6, 0, 1, 0)
         l.Position = UDim2.new(0, 10, 0, 0)
-        l.Text = txt
+        l.Text = _TranslateText(txt)
         l.TextColor3 = Color3.new(1,1,1)
         l.BackgroundTransparency = 1
         l.TextXAlignment = "Left"
@@ -2855,7 +3088,7 @@ end)
             btn.Size = UDim2.new(0.3, 0, 0.7, 0)
             btn.Position = UDim2.new(0.65, 0, 0.15, 0)
             btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- لون خلفية أغمق ليتناسب مع الثيم
-            btn.Text = "تشغيل"
+            btn.Text = _TranslateText("تشغيل")
             btn.TextColor3 = Color3.new(1,1,1)
             btn.TextSize = 16
             btn.Font = Enum.Font.GothamBold
@@ -2892,7 +3125,7 @@ end)
             btn.Size = UDim2.new(0.3, 0, 0.7, 0)
             btn.Position = UDim2.new(0.65, 0, 0.15, 0)
             btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- لون خلفية أغمق ليتناسب مع الثيم
-            btn.Text = "تشغيل"
+            btn.Text = _TranslateText("تشغيل")
             btn.TextColor3 = Color3.new(1,1,1)
             btn.TextSize = 16
             btn.Font = Enum.Font.GothamBold
@@ -2934,7 +3167,7 @@ end)
             local function applyToggle(newAct)
                 act = newAct
                 local _onColor = GetTabColorForInstance(parent) -- 🎨 نجيب اللون الحالي وقت الضغط (مو محفوظ من قبل) عشان يطابق أي تغيير سويته من تاب الإعدادات
-                btn.Text = act and "إيقاف" or "تشغيل"
+                btn.Text = _TranslateText(act and "إيقاف" or "تشغيل")
                 stroke.Color = act and _onColor or TOGGLE_OFF_COLOR
                 stroke.Transparency = 0
                 SetGlowColor(_btnGlowGrad, act and _onColor or TOGGLE_OFF_COLOR) -- 🎨 نحدّث لون الحافة المتحركة نفسها
@@ -3956,7 +4189,7 @@ end)
     end
 
 -- 🔊 شريط صوت اللعبة (منفصل عن الموسيقى)
-NewSlider("صوت اللعبة", 0, 100, function(v) SetGameVolume(v / 100) end, UI.Page4, 100)
+NewSlider(_TranslateText("صوت اللعبة"), 0, 100, function(v) SetGameVolume(v / 100) end, UI.Page4, 100)
 
 -- كود زر الموسيقى المطابق تماماً لبقية الأزرار
 local f = Instance.new("Frame", UI.Page4)
@@ -3990,7 +4223,7 @@ local btn = Instance.new("TextButton", f)
 btn.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn.Text = "تشغيل"
+btn.Text = _TranslateText("تشغيل")
 btn.TextColor3 = Color3.new(1,1,1)
 btn.TextSize = 16
 btn.Font = Enum.Font.GothamBold
@@ -4008,7 +4241,7 @@ local act = false
 btn.MouseButton1Click:Connect(function() 
     playClick()
     act = not act
-    btn.Text = act and "إيقاف" or "تشغيل"
+    btn.Text = _TranslateText(act and "إيقاف" or "تشغيل")
     local onColor1 = GetTabColorForInstance(f)
     stroke.Color = act and onColor1 or TOGGLE_OFF_COLOR
     SetGlowColor(_mGlow1, act and onColor1 or TOGGLE_OFF_COLOR)
@@ -4054,7 +4287,7 @@ local btn2m = Instance.new("TextButton", f2)
 btn2m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn2m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn2m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn2m.Text = "تشغيل"
+btn2m.Text = _TranslateText("تشغيل")
 btn2m.TextColor3 = Color3.new(1,1,1)
 btn2m.TextSize = 16
 btn2m.Font = Enum.Font.GothamBold
@@ -4071,7 +4304,7 @@ local act2m = false
 btn2m.MouseButton1Click:Connect(function()
     playClick()
     act2m = not act2m
-    btn2m.Text = act2m and "إيقاف" or "تشغيل"
+    btn2m.Text = _TranslateText(act2m and "إيقاف" or "تشغيل")
     local onColor2 = GetTabColorForInstance(f2)
     stroke2m.Color = act2m and onColor2 or TOGGLE_OFF_COLOR
     SetGlowColor(_mGlow2, act2m and onColor2 or TOGGLE_OFF_COLOR)
@@ -4116,7 +4349,7 @@ local btn3m = Instance.new("TextButton", f3)
 btn3m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn3m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn3m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn3m.Text = "تشغيل"
+btn3m.Text = _TranslateText("تشغيل")
 btn3m.TextColor3 = Color3.new(1,1,1)
 btn3m.TextSize = 16
 btn3m.Font = Enum.Font.GothamBold
@@ -4134,7 +4367,7 @@ local act3m = false
 btn3m.MouseButton1Click:Connect(function()
     playClick()
     act3m = not act3m
-    btn3m.Text = act3m and "إيقاف" or "تشغيل"
+    btn3m.Text = _TranslateText(act3m and "إيقاف" or "تشغيل")
     local onColor3 = GetTabColorForInstance(f3)
     stroke3m.Color = act3m and onColor3 or TOGGLE_OFF_COLOR
     SetGlowColor(_mGlow3, act3m and onColor3 or TOGGLE_OFF_COLOR)
@@ -4180,7 +4413,7 @@ local btn4m = Instance.new("TextButton", f4)
 btn4m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn4m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn4m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn4m.Text = "تشغيل"
+btn4m.Text = _TranslateText("تشغيل")
 btn4m.TextColor3 = Color3.new(1,1,1)
 btn4m.TextSize = 16
 btn4m.Font = Enum.Font.GothamBold
@@ -4198,7 +4431,7 @@ local act4m = false
 btn4m.MouseButton1Click:Connect(function()
     playClick()
     act4m = not act4m
-    btn4m.Text = act4m and "إيقاف" or "تشغيل"
+    btn4m.Text = _TranslateText(act4m and "إيقاف" or "تشغيل")
     local onColor4 = GetTabColorForInstance(f4)
     stroke4m.Color = act4m and onColor4 or TOGGLE_OFF_COLOR
     SetGlowColor(_mGlow4, act4m and onColor4 or TOGGLE_OFF_COLOR)
@@ -4244,7 +4477,7 @@ local btn5m = Instance.new("TextButton", f5)
 btn5m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn5m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn5m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn5m.Text = "تشغيل"
+btn5m.Text = _TranslateText("تشغيل")
 btn5m.TextColor3 = Color3.new(1,1,1)
 btn5m.TextSize = 16
 btn5m.Font = Enum.Font.GothamBold
@@ -4264,7 +4497,7 @@ btn5m.MouseButton1Click:Connect(function()
     playClick()
     act5m = not act5m
 
-    btn5m.Text = act5m and "إيقاف" or "تشغيل"
+    btn5m.Text = _TranslateText(act5m and "إيقاف" or "تشغيل")
 
     local onColor5 = GetTabColorForInstance(f5)
     stroke5m.Color = act5m and onColor5 or TOGGLE_OFF_COLOR
@@ -4310,7 +4543,7 @@ local btn6m = Instance.new("TextButton", f6)
 btn6m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn6m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn6m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn6m.Text = "تشغيل"
+btn6m.Text = _TranslateText("تشغيل")
 btn6m.TextColor3 = Color3.new(1,1,1)
 btn6m.TextSize = 16
 btn6m.Font = Enum.Font.GothamBold
@@ -4330,7 +4563,7 @@ btn6m.MouseButton1Click:Connect(function()
     playClick()
     act6m = not act6m
 
-    btn6m.Text = act6m and "إيقاف" or "تشغيل"
+    btn6m.Text = _TranslateText(act6m and "إيقاف" or "تشغيل")
 
     local onColor6 = GetTabColorForInstance(f6)
     stroke6m.Color = act6m and onColor6 or TOGGLE_OFF_COLOR
@@ -4376,7 +4609,7 @@ local btn7m = Instance.new("TextButton", f7)
 btn7m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn7m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn7m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn7m.Text = "تشغيل"
+btn7m.Text = _TranslateText("تشغيل")
 btn7m.TextColor3 = Color3.new(1,1,1)
 btn7m.TextSize = 16
 btn7m.Font = Enum.Font.GothamBold
@@ -4396,7 +4629,7 @@ btn7m.MouseButton1Click:Connect(function()
     playClick()
     act7m = not act7m
 
-    btn7m.Text = act7m and "إيقاف" or "تشغيل"
+    btn7m.Text = _TranslateText(act7m and "إيقاف" or "تشغيل")
 
     local onColor7 = GetTabColorForInstance(f7)
     stroke7m.Color = act7m and onColor7 or TOGGLE_OFF_COLOR
@@ -4442,7 +4675,7 @@ local btn8m = Instance.new("TextButton", f8)
 btn8m.Size = UDim2.new(0.3, 0, 0.7, 0)
 btn8m.Position = UDim2.new(0.65, 0, 0.15, 0)
 btn8m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn8m.Text = "تشغيل"
+btn8m.Text = _TranslateText("تشغيل")
 btn8m.TextColor3 = Color3.new(1,1,1)
 btn8m.TextSize = 16
 btn8m.Font = Enum.Font.GothamBold
@@ -4462,7 +4695,7 @@ btn8m.MouseButton1Click:Connect(function()
     playClick()
     act8m = not act8m
 
-    btn8m.Text = act8m and "إيقاف" or "تشغيل"
+    btn8m.Text = _TranslateText(act8m and "إيقاف" or "تشغيل")
 
     local onColor8 = GetTabColorForInstance(f8)
     stroke8m.Color = act8m and onColor8 or TOGGLE_OFF_COLOR
@@ -5708,7 +5941,7 @@ end)
             label.BackgroundTransparency = 1
             label.Size = UDim2.new(1, 0, 0, 0)
             label.AutomaticSize = Enum.AutomaticSize.Y
-            label.Text = text
+            label.Text = _TranslateText(text)
             label.TextWrapped = true
             label.TextColor3 = Color3.new(1, 1, 1)
             label.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن
@@ -6092,6 +6325,83 @@ end)
         end)
     end
     setupChatPage(UI.Page5, UI.DeleteChatBtn, ChatInputBar, UI.CopyChatBtn)
+
+-- ====================== ترجمة اختيارية للواجهة ======================
+    if _SelectedLanguage == "English" then
+        pcall(function()
+            local translations = {
+                ["✈️ المميزات"] = "✈️ Features",
+                ["😈 تخريب"] = "😈 Trolling",
+                ["🛠️ مساعده"] = "🛠️ Tools",
+                ["🎵 الموسيقى"] = "🎵 Music",
+                ["💬 الدردشة"] = "💬 Chat",
+                ["❓ السكربت"] = "❓ Script",
+                ["⚙️ الإعدادات"] = "⚙️ Settings",
+                ["👥 المشغلين"] = "👥 Players",
+                ["تشغيل"] = "Play",
+                ["إيقاف"] = "Stop",
+                ["حفظ"] = "Save",
+                ["إغلاق"] = "Close",
+                ["حذف"] = "Delete",
+                ["نسخ"] = "Copy",
+                ["الرجوع"] = "Back",
+                ["مفعل"] = "Enabled",
+                ["معطل"] = "Disabled",
+                ["اكتب رسالتك هنا..."] = "Type your message here...",
+                ["لا يوجد أحد مشغل السكربت"] = "No one is running the script",
+                ["متصل"] = "Online",
+                ["يكتب..."] = "is typing...",
+                ["💬 الشات"] = "💬 Chat",
+                ["الموسيقى"] = "Music",
+                ["موسيقى2"] = "Music 2",
+                ["موسيقى 3"] = "Music 3",
+                ["موسيقى 4"] = "Music 4",
+                ["موسيقى 5"] = "Music 5",
+                ["موسيقى 6"] = "Music 6",
+                ["موسيقى 7"] = "Music 7",
+                ["موسيقى 8"] = "Music 8",
+                ["اختر تاب ثم لون لحوافه"] = "Choose a tab and its border color",
+                ["اختر اللون:"] = "Choose a color:",
+                ["استرجاع الألوان الافتراضية"] = "Restore default colors",
+                ["🎨 اختر تاب ثم لون لحوافه"] = "🎨 Choose a tab and its border color",
+                ["🔄 استرجاع الألوان الافتراضية"] = "🔄 Restore default colors",
+                ["🗑️ حذف"] = "🗑️ Delete",
+                ["↩️ الرجوع"] = "↩️ Back",
+                ["📋 نسخ"] = "📋 Copy",
+                ["تم الإيقاف"] = "Stopped",
+                ["تم نسخ الرسالة"] = "Message copied",
+                ["وضع الحذف"] = "Delete mode",
+                ["وضع النسخ"] = "Copy mode",
+                ["دوس على أي رسالة منك عشان تحذفها"] = "Tap one of your messages to delete it",
+                ["دوس على أي رسالة عشان تنسخها"] = "Tap a message to copy it",
+                ["تم تغيير لون"] = "Color changed for",
+                ["أجواء الماب"] = "Map atmosphere",
+                ["الفضاء"] = "Space",
+                ["الغروب"] = "Sunset",
+                ["الليل البنفسجي"] = "Purple night",
+                ["رجع الجو الطبيعي"] = "Weather restored",
+                ["تخفيف الجودة"] = "Reduce quality",
+                ["سيرفر"] = "Server",
+                ["انتقال وملاحقة"] = "Teleport and follow",
+                ["إلغاء ضرر السقوط"] = "Disable fall damage",
+                ["ملاحقة"] = "Follow",
+                ["جودة"] = "Quality",
+                ["انتقال"] = "Teleport",
+                ["فتح قائمة الانتقال"] = "Teleport menu opened",
+                ["إغلاق قائمة الانتقال"] = "Teleport menu closed",
+                ["تم تخفيف الجودة (سريع)"] = "Quality reduced (fast)",
+                ["تم استعادة الجودة الأصلية"] = "Original quality restored",
+                ["تم الانتقال لسيرفر فارغ!"] = "Moved to an empty server!"
+            }
+            for _, object in ipairs(ScreenGui:GetDescendants()) do
+                if object:IsA("TextLabel") or object:IsA("TextButton") then
+                    object.Text = translations[object.Text] or object.Text
+                elseif object:IsA("TextBox") then
+                    object.PlaceholderText = translations[object.PlaceholderText] or object.PlaceholderText
+                end
+            end
+        end)
+    end
 
 -- ====================== فتح القائمة ======================
     local fullSize = UI.MainFrame.Size
