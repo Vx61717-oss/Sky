@@ -260,6 +260,47 @@ end
 
 createMusic("MyMenuMusic", "78491121983806")
 
+-- صوت فتح القائمة الأساسية مع تدرّج ناعم بدل التشغيل المفاجئ.
+local _MainMenuSound = SoundService:FindFirstChild("SkyMainMenuOpenSound") or Instance.new("Sound")
+_MainMenuSound.Name = "SkyMainMenuOpenSound"
+_MainMenuSound.SoundId = "rbxassetid://1848354536"
+_MainMenuSound.Looped = true
+_MainMenuSound.Volume = 0
+_MainMenuSound.Parent = SoundService
+local _MainMenuSoundTween
+
+local function _SetMainMenuSound(open)
+    if _MainMenuSoundTween then
+        _MainMenuSoundTween:Cancel()
+        _MainMenuSoundTween = nil
+    end
+
+    if open then
+        if not _MainMenuSound.IsPlaying then
+            _MainMenuSound:Play()
+        end
+        _MainMenuSoundTween = _TweenS:Create(
+            _MainMenuSound,
+            TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+            {Volume = 1}
+        )
+        _MainMenuSoundTween:Play()
+    else
+        _MainMenuSoundTween = _TweenS:Create(
+            _MainMenuSound,
+            TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
+            {Volume = 0}
+        )
+        local tween = _MainMenuSoundTween
+        tween.Completed:Connect(function()
+            if tween == _MainMenuSoundTween and not State.MainUIVisible then
+                _MainMenuSound:Stop()
+            end
+        end)
+        tween:Play()
+    end
+end
+
 local function playClick()
     clickSound:Play()
 end
@@ -289,6 +330,7 @@ local _ownSounds = {
     [clickSound] = true,
     [okSound] = true,
     [warnSound] = true,
+    [_MainMenuSound] = true,
 
     [MusicTracks[1]] = true,
     [MusicTracks[2]] = true,
@@ -693,7 +735,7 @@ _FlyTipGui.Parent = game.CoreGui
 -- 🔔 صوت المعلومة: يشتغل كل مرة تظهر فيها نافذة "💡 معلومة"
 local _infoTipSound = Instance.new("Sound")
 _infoTipSound.Name = "SkyInfoTipSound"
-_infoTipSound.SoundId = "rbxassetid://7361207035"
+_infoTipSound.SoundId = "rbxassetid://106696662444015"
 _infoTipSound.Volume = 1
 _infoTipSound.Looped = false
 _infoTipSound.Parent = game:GetService("SoundService")
@@ -817,6 +859,7 @@ local function RunMyOriginalScript()
     
     -- 🛠️ تعريف الدوال مسبقاً لتكون متاحة في كامل السكربت (Forward Declaration)
     local ResetConfig, SaveConfig, LoadConfig, ApplyTabColor, RefreshTabPickerHighlight
+    local UpdatePlayerCard
 
     -- ✨ توهج متحرك يدور على حواف أي إطار (أسود دائمًا + لون ثاني متغير حسب التاب)
     local function AddMovingBorderGlow(stroke, speed, color)
@@ -2025,6 +2068,7 @@ end)
             _disconnectSelectedDeathHooks()
             WARN("🔴 اللاعب ["..player.Name.."] غادر اللعبة!")
             State.selectedPlayer = nil
+            if UpdatePlayerCard then UpdatePlayerCard(LocalPlayer) end
             State.sittingOnHead = false
             State.hmmActive = false
             State.flingEnabled = false
@@ -2079,10 +2123,10 @@ end)
     MakeDraggable(UI.MainFrame)
 
     UI.Title.Parent = UI.MainFrame
-    UI.Title.Size = UDim2.new(0.4, 0, 0, 45)
-    UI.Title.Position = UDim2.new(0.05, 0, 0, 5)
+    UI.Title.Size = UDim2.new(0, 92, 0, 45)
+    UI.Title.Position = UDim2.new(0, 292, 0, 5)
     UI.Title.BackgroundTransparency = 1
-    UI.Title.Text = "S    K    Y"
+    UI.Title.Text = ""
     UI.Title.TextColor3 = Color3.fromRGB(170, 0, 255)
     UI.Title.Font = Enum.Font.GothamBold
     UI.Title.TextSize = 19
@@ -2096,7 +2140,7 @@ end)
     UI.StatusDot.Position = UDim2.new(0.05, 85, 0, 22)
     UI.StatusDot.BackgroundColor3 = Color3.fromRGB(0, 230, 100)
     UI.StatusDot.BorderSizePixel = 0
-    UI.StatusDot.ZIndex = 7
+    UI.StatusDot.ZIndex = 20
     Instance.new("UICorner", UI.StatusDot).CornerRadius = UDim.new(1, 0)
     task.spawn(function()
         while UI.StatusDot and UI.StatusDot.Parent do
@@ -2110,6 +2154,75 @@ end)
             task.wait(0.9)
         end
     end)
+
+    -- 👤 بطاقة اللاعب في أعلى يسار القائمة: تعرض اللاعب المحلي أو اللاعب المحدد.
+    UI.PlayerCard = Instance.new("Frame", UI.MainFrame)
+    UI.PlayerCard.Name = "SkyPlayerCard"
+    UI.PlayerCard.Size = UDim2.new(0, 176, 0, 46)
+    UI.PlayerCard.Position = UDim2.new(0, 10, 0, 7)
+    UI.PlayerCard.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    UI.PlayerCard.BackgroundTransparency = 0.08
+    UI.PlayerCard.BorderSizePixel = 0
+    UI.PlayerCard.ZIndex = 8
+    Instance.new("UICorner", UI.PlayerCard).CornerRadius = UDim.new(0, 12)
+    UI.PlayerCardStroke = Instance.new("UIStroke", UI.PlayerCard)
+    UI.PlayerCardStroke.Color = Color3.fromRGB(170, 0, 255)
+    UI.PlayerCardStroke.Thickness = 1.5
+    UI.PlayerCardStroke.Transparency = 0.1
+    UI.PlayerCardGlowGrad = AddMovingBorderGlow(UI.PlayerCardStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+    UI.PlayerAvatar = Instance.new("ImageLabel", UI.PlayerCard)
+    UI.PlayerAvatar.Name = "Avatar"
+    UI.PlayerAvatar.Size = UDim2.new(0, 34, 0, 34)
+    UI.PlayerAvatar.Position = UDim2.new(0, 6, 0.5, -17)
+    UI.PlayerAvatar.BackgroundColor3 = Color3.fromRGB(40, 40, 52)
+    UI.PlayerAvatar.BackgroundTransparency = 0
+    UI.PlayerAvatar.BorderSizePixel = 0
+    UI.PlayerAvatar.ZIndex = 9
+    Instance.new("UICorner", UI.PlayerAvatar).CornerRadius = UDim.new(1, 0)
+    UI.PlayerAvatarStroke = Instance.new("UIStroke", UI.PlayerAvatar)
+    UI.PlayerAvatarStroke.Color = Color3.fromRGB(170, 0, 255)
+    UI.PlayerAvatarStroke.Thickness = 1.8
+    UI.PlayerAvatarGlowGrad = AddMovingBorderGlow(UI.PlayerAvatarStroke, 2.2, Color3.fromRGB(170, 0, 255))
+
+    UI.PlayerName = Instance.new("TextLabel", UI.PlayerCard)
+    UI.PlayerName.Name = "DisplayName"
+    UI.PlayerName.Size = UDim2.new(1, -52, 0, 19)
+    UI.PlayerName.Position = UDim2.new(0, 48, 0, 5)
+    UI.PlayerName.BackgroundTransparency = 1
+    UI.PlayerName.Text = "جاري التحميل..."
+    UI.PlayerName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UI.PlayerName.Font = Enum.Font.GothamBold
+    UI.PlayerName.TextSize = 12
+    UI.PlayerName.TextXAlignment = Enum.TextXAlignment.Left
+    UI.PlayerName.TextTruncate = Enum.TextTruncate.AtEnd
+    UI.PlayerName.ZIndex = 9
+
+    UI.PlayerUsername = Instance.new("TextLabel", UI.PlayerCard)
+    UI.PlayerUsername.Name = "Username"
+    UI.PlayerUsername.Size = UDim2.new(1, -52, 0, 15)
+    UI.PlayerUsername.Position = UDim2.new(0, 48, 0, 24)
+    UI.PlayerUsername.BackgroundTransparency = 1
+    UI.PlayerUsername.Text = "@player"
+    UI.PlayerUsername.TextColor3 = Color3.fromRGB(175, 175, 195)
+    UI.PlayerUsername.Font = Enum.Font.Gotham
+    UI.PlayerUsername.TextSize = 10
+    UI.PlayerUsername.TextXAlignment = Enum.TextXAlignment.Left
+    UI.PlayerUsername.TextTruncate = Enum.TextTruncate.AtEnd
+    UI.PlayerUsername.ZIndex = 9
+
+    UpdatePlayerCard = function(player)
+        player = player or LocalPlayer
+        if not UI.PlayerCard or not UI.PlayerCard.Parent or not player then return end
+        UI.PlayerName.Text = tostring(player.DisplayName or player.Name)
+        UI.PlayerUsername.Text = "@" .. tostring(player.Name or "player")
+        UI.PlayerAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=150&h=150"
+        local isTarget = player ~= LocalPlayer
+        -- يبقى إطار بطاقة الملف الشخصي بنفسجيًا وأسودًا مثل بقية الواجهة.
+        UI.PlayerCardStroke.Color = Color3.fromRGB(170, 0, 255)
+        UI.PlayerAvatarStroke.Color = Color3.fromRGB(170, 0, 255)
+    end
+    UpdatePlayerCard(LocalPlayer)
 
     -- 📊 عداد FPS + البنق: صار جوه القائمة نفسها جنب اسم S K Y (قبل كان صندوق منفصل يتحرك براحته)
     UI.FPSFrame = Instance.new("Frame")
@@ -2524,15 +2637,18 @@ end)
         local wasChatOpen = State._chatPageOpen
         State.IsSuperMini = true; State.IsMin = false
         State.MainUIVisible = false
+        _SetMainMenuSound(false)
         State._wasChatOpenBeforeMin = wasChatOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
         UI.DeleteChatBtn.Visible = State._chatPanelOpen
         UI.CopyChatBtn.Visible = State._chatPanelOpen
         UI.ResetConfigBtn.Visible = false
+        if UI.PlayerCard then UI.PlayerCard.Visible = false end
         UI.MainFrame:TweenSize(UDim2.new(0, 220, 0, 48), "Out", "Quad", 0.3, true)
         UI.MainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
         UI.MainStroke.Thickness = 2
-        UI.Title.Text = "S  k  y"
+        -- يظهر اسم Sky فقط في القائمة المصغّرة التي تظهر بعد الضغط على X.
+        UI.Title.Text = "S   k   y"
         UI.Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         UI.Title.TextSize = 18
         UI.Title.TextScaled = false
@@ -2561,19 +2677,21 @@ end)
     local function SetToFullMode()
         State.IsMin = false; State.IsSuperMini = false
         State.MainUIVisible = true
+        _SetMainMenuSound(true)
         State._chatPageOpen = State._wasChatOpenBeforeMin -- رجعنا للحجم الكامل، لو تاب الدردشة كان مفتوح نرجّعه يعتبر مفتوح
         UI.DeleteChatBtn.Visible = State._chatPageOpen
         UI.CopyChatBtn.Visible = State._chatPageOpen
         UI.ResetConfigBtn.Visible = not State._chatPageOpen
+        if UI.PlayerCard then UI.PlayerCard.Visible = true end
         UI.MainFrame:TweenSize(UDim2.new(0, 500, 0, 420), "Out", "Quad", 0.35, true)
         UI.MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
         UI.MainStroke.Thickness = 3
-        UI.Title.Text = "S    K    Y"
+        UI.Title.Text = ""
         UI.Title.TextColor3 = Color3.fromRGB(170, 0, 255)
         UI.Title.TextSize = 19
         UI.Title.TextScaled = false
-        UI.Title.Position = UDim2.new(0.05, 0, 0, 5)
-        UI.Title.Size = UDim2.new(0.4, 0, 0, 45)
+        UI.Title.Position = UDim2.new(0, 292, 0, 5)
+        UI.Title.Size = UDim2.new(0, 92, 0, 45)
         UI.ActionBtn.Text = "-"
         UI.ActionBtn.TextColor3 = Color3.new(1,1,1)
         UI.ActionBtn.TextScaled = false
@@ -2594,6 +2712,7 @@ end)
     local function SetToNormalMiniMode()
         State.IsMin = true; State.IsSuperMini = false
         State.MainUIVisible = false
+        _SetMainMenuSound(false)
         State._wasChatOpenBeforeMin = State._chatPageOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
         UI.DeleteChatBtn.Visible = false
@@ -2601,8 +2720,9 @@ end)
         UI.ResetConfigBtn.Visible = false
         UI.ChatRestoreBtn.Visible = false
         UI.FPSFrame.Visible = false
+        if UI.PlayerCard then UI.PlayerCard.Visible = false end
         UI.MainFrame:TweenSize(UDim2.new(0, 260, 0, 400), "Out", "Quad", 0.3, true) -- 🔧 زدنا الارتفاع شوي عشان تاب الإعدادات الجديد يبان كامل ما يقص
-        UI.Title.Text = "S k y"
+        UI.Title.Text = ""
         UI.Title.TextSize = 19
         UI.Title.TextScaled = true
         UI.ActionBtn.Text = "+"
@@ -2613,6 +2733,13 @@ end)
     end
 
     UI.CloseBtn.MouseButton1Click:Connect(function() playClick() SetToSuperMiniMode() end)
+
+    -- القائمة تبدأ مفتوحة، لذلك يبدأ الصوت بتدرّج بعد اكتمال إنشاء الواجهة.
+    task.defer(function()
+        if State.MainUIVisible then
+            _SetMainMenuSound(true)
+        end
+    end)
 
     UI.ActionBtn.MouseButton1Click:Connect(function()
         playClick()
@@ -2977,14 +3104,19 @@ end)
     end
 
     -- ====================== 💾 نظام حفظ الإعدادات ======================
+    -- 💾 حفظ مستقل لكل ماب حسب PlaceId
     local CONFIG_FOLDER = "SkyConfig"
-    local CONFIG_FILE = CONFIG_FOLDER .. "/config.json"
+    local PLACE_CONFIG_FOLDER = CONFIG_FOLDER .. "/Place_" .. tostring(game.PlaceId)
+    local CONFIG_FILE = PLACE_CONFIG_FOLDER .. "/config.json"
     local _configLoading = false -- عشان وقت التحميل ما يعيد يحفظ فوق نفسه كل ما يغير قيمة
 
     local function EnsureConfigFolder()
         pcall(function()
             if not isfolder(CONFIG_FOLDER) then
                 makefolder(CONFIG_FOLDER)
+            end
+            if not isfolder(PLACE_CONFIG_FOLDER) then
+                makefolder(PLACE_CONFIG_FOLDER)
             end
         end)
     end
@@ -3564,6 +3696,7 @@ local function UpdatePlayerList()
                 pBtn.MouseButton1Click:Connect(function()
                     playClick()
                     State.selectedPlayer = p
+                    if UpdatePlayerCard then UpdatePlayerCard(p) end
                     _hookSelectedPlayerDeath(p)
                     EVIL_NOTIFY("تم اختيار: "..p.Name)
                     UpdatePlayerList()
