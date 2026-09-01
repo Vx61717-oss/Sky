@@ -175,12 +175,29 @@ _LanguageFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 _LanguageFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 _LanguageFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
 _LanguageFrame.BorderSizePixel = 0
+_LanguageFrame.ZIndex = 1
 _LanguageFrame.Parent = _LanguageGui
 Instance.new("UICorner", _LanguageFrame).CornerRadius = UDim.new(0, 12)
 
+-- نفس الـ Glow المستخدم في أزرار السكربت: بنفسجي + أسود ويتحرك حول الحواف
 local _LanguageStroke = Instance.new("UIStroke", _LanguageFrame)
 _LanguageStroke.Color = Color3.fromRGB(170, 0, 255)
 _LanguageStroke.Thickness = 1.5
+
+local _LanguageGlowGrad = Instance.new("UIGradient")
+_LanguageGlowGrad.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 0, 255)),
+})
+_LanguageGlowGrad.Parent = _LanguageStroke
+
+task.spawn(function()
+    while _LanguageStroke and _LanguageStroke.Parent do
+        _LanguageGlowGrad.Rotation = (_LanguageGlowGrad.Rotation + 2) % 360
+        task.wait(0.03)
+    end
+end)
 
 local _LanguageTitle = Instance.new("TextLabel", _LanguageFrame)
 _LanguageTitle.Size = UDim2.new(1, -20, 0, 32)
@@ -2068,7 +2085,7 @@ end)
             _disconnectSelectedDeathHooks()
             WARN("🔴 اللاعب ["..player.Name.."] غادر اللعبة!")
             State.selectedPlayer = nil
-            if UpdatePlayerCard then UpdatePlayerCard(LocalPlayer) end
+            if UpdatePlayerCard then UpdatePlayerCard() end
             State.sittingOnHead = false
             State.hmmActive = false
             State.flingEnabled = false
@@ -2211,18 +2228,19 @@ end)
     UI.PlayerUsername.TextTruncate = Enum.TextTruncate.AtEnd
     UI.PlayerUsername.ZIndex = 9
 
-    UpdatePlayerCard = function(player)
-        player = player or LocalPlayer
+    -- 👤 بطاقة الملف الشخصي الرئيسية تعرض صاحب السكربت فقط.
+    -- اختيار لاعب من تاب "😈 تخريب" لا يغيّر صورة البطاقة.
+    UpdatePlayerCard = function()
+        local player = LocalPlayer
         if not UI.PlayerCard or not UI.PlayerCard.Parent or not player then return end
         UI.PlayerName.Text = tostring(player.DisplayName or player.Name)
         UI.PlayerUsername.Text = "@" .. tostring(player.Name or "player")
         UI.PlayerAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(player.UserId) .. "&w=150&h=150"
-        local isTarget = player ~= LocalPlayer
         -- يبقى إطار بطاقة الملف الشخصي بنفسجيًا وأسودًا مثل بقية الواجهة.
         UI.PlayerCardStroke.Color = Color3.fromRGB(170, 0, 255)
         UI.PlayerAvatarStroke.Color = Color3.fromRGB(170, 0, 255)
     end
-    UpdatePlayerCard(LocalPlayer)
+    UpdatePlayerCard()
 
     -- 📊 عداد FPS + البنق: صار جوه القائمة نفسها جنب اسم S K Y (قبل كان صندوق منفصل يتحرك براحته)
     UI.FPSFrame = Instance.new("Frame")
@@ -3696,7 +3714,7 @@ local function UpdatePlayerList()
                 pBtn.MouseButton1Click:Connect(function()
                     playClick()
                     State.selectedPlayer = p
-                    if UpdatePlayerCard then UpdatePlayerCard(p) end
+                    -- لا نغيّر بطاقة الملف الشخصي عند اختيار لاعب.
                     _hookSelectedPlayerDeath(p)
                     EVIL_NOTIFY("تم اختيار: "..p.Name)
                     UpdatePlayerList()
@@ -5535,7 +5553,8 @@ end)
         chatLogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         
         local chatList = Instance.new("UIListLayout", chatLog)
-        chatList.Padding = UDim.new(0, 5)
+        -- مسافة بسيطة بين كل رسالة والثانية
+        chatList.Padding = UDim.new(0, 10)
         chatList.SortOrder = Enum.SortOrder.LayoutOrder
 
         -- ⬇️ زر "آخر رسالة": يظهر فقط إذا المستخدم طالع فوق في الدردشة
@@ -6034,8 +6053,11 @@ end)
                 Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
                 local avStroke = Instance.new("UIStroke", avatarImg)
                 avStroke.Thickness = 1.5
-                avStroke.Color = edgeColor
+                local avatarGlowColor = isMine and COLOR_MINE or COLOR_OTHER
+                avStroke.Color = avatarGlowColor
                 avStroke.Transparency = 1
+                -- نفس الـGlow: بنفسجي لي وأزرق لخويي
+                AddMovingBorderGlow(avStroke, 1.5, avatarGlowColor)
             end
 
             -- 💬 الفقاعة نفسها: مربعة بحواف دايريه
@@ -6054,8 +6076,18 @@ end)
 
             local stroke = Instance.new("UIStroke", bubble)
             stroke.Thickness = 1.5
-            stroke.Color = _copyModeActive and Color3.fromRGB(0, 140, 255) or ((isMine and _deleteModeActive) and Color3.fromRGB(255, 50, 50) or edgeColor)
+            local bubbleGlowColor
+            if _copyModeActive then
+                bubbleGlowColor = Color3.fromRGB(0, 140, 255)
+            elseif isMine and _deleteModeActive then
+                bubbleGlowColor = Color3.fromRGB(255, 50, 50)
+            else
+                bubbleGlowColor = isMine and COLOR_MINE or COLOR_OTHER
+            end
+            stroke.Color = bubbleGlowColor
             stroke.Transparency = 1 -- يبدأ شفاف عشان الانميشن
+            -- نفس Glow المتحرك المستخدم في أزرار السكربت
+            AddMovingBorderGlow(stroke, 1.5, bubbleGlowColor)
 
             local pad = Instance.new("UIPadding", bubble)
             pad.PaddingTop = UDim.new(0, 8)
@@ -6068,18 +6100,20 @@ end)
             bubbleLayout.SortOrder = Enum.SortOrder.LayoutOrder
             bubbleLayout.Padding = UDim.new(0, 2)
 
-            -- 👤 اسم المرسل فوق النص (بنفسجي لي، أزرق لخويي)
+            -- 👤 اسم المرسل: لون هادئ حتى ما يخرب شكل الـGlow
             local nameLabel = Instance.new("TextLabel", bubble)
             nameLabel.Name = "SenderName"
             nameLabel.LayoutOrder = 1
             nameLabel.BackgroundTransparency = 1
-            nameLabel.Size = UDim2.new(1, 0, 0, 14)
+            nameLabel.Size = UDim2.new(1, 0, 0, 12)
             nameLabel.Text = sender
-            nameLabel.TextColor3 = edgeColor
+            nameLabel.TextColor3 = Color3.fromRGB(205, 205, 210)
             nameLabel.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن مثل الباقي
-            nameLabel.Font = Enum.Font.GothamBold
-            nameLabel.TextSize = 11
+            nameLabel.Font = Enum.Font.GothamMedium
+            nameLabel.TextSize = 9
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            nameLabel.TextStrokeTransparency = 0.65
             nameLabel.ZIndex = 10
 
             local label = Instance.new("TextLabel", bubble)
@@ -6136,7 +6170,7 @@ end)
                 TweenService:Create(bubble, slideInfo, {Position = targetPos}):Play()
                 TweenService:Create(bubble, fadeInfo, {BackgroundTransparency = 0.25}):Play()
                 TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
-                TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.25}):Play()
+                TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
                 TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
                 if avatarImg then
                     local avStroke = avatarImg:FindFirstChildOfClass("UIStroke")
