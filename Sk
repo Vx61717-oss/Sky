@@ -52,7 +52,7 @@ _LoadingCredits.Size = UDim2.new(1, -40, 0, 42)
 _LoadingCredits.AnchorPoint = Vector2.new(0.5, 0)
 _LoadingCredits.Position = UDim2.new(0.5, 0, 0.66, 0)
 _LoadingCredits.BackgroundTransparency = 1
-_LoadingCredits.Text = "المطور  : AAbbooyi   |   المساعد  : POS_9965"
+_LoadingCredits.Text = "المطور  : AAbbooyi"
 _LoadingCredits.TextColor3 = Color3.fromRGB(230, 210, 255)
 _LoadingCredits.TextTransparency = 1
 _LoadingCredits.Font = Enum.Font.GothamBold
@@ -685,7 +685,7 @@ _infoTipSound.Looped = false
 _infoTipSound.Parent = game:GetService("SoundService")
 _ownSounds[_infoTipSound] = true
 
-function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration)
+function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFadeDuration)
     displayDuration = tonumber(displayDuration) or 3
     msg = _TranslateText(msg)
     _infoTipSound:Stop()
@@ -777,12 +777,12 @@ function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration)
     _FlyTipTweenS:Create(stroke, TweenInfo.new(0.45), {Transparency = 0}):Play()
 
     -- ⏱️ مدة الرسالة محسوبة من بداية ظهورها إلى اختفائها بالكامل
-    local fadeDuration = math.min(0.25, displayDuration * 0.2)
+    local fadeDuration = tonumber(customFadeDuration) or math.min(0.25, displayDuration * 0.2)
     task.wait(math.max(0, displayDuration - 0.45 - fadeDuration))
 
     if not (frame and frame.Parent) then return end -- انسكرت مسبقًا بضغطة "خلاص عرفت"
 
-    -- 🔼 تلاشي سريع حتى يكون إجمالي مدة الرسالة هو displayDuration
+    -- 🔼 تلاشي تدريجي حتى يكون إجمالي مدة الرسالة هو displayDuration
     _FlyTipTweenS:Create(frame, TweenInfo.new(fadeDuration, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {
         BackgroundTransparency = 1,
         Position = frame.Position + UDim2.new(0, 0, 0, -20)
@@ -798,6 +798,7 @@ local function RunMyOriginalScript()
     local State = {}
     local UI = {}
     UI.ConfigRegistry = {} -- 💾 [اسم العنصر] = {apply=function(value, skipCall), get=function()}
+    UI._LoadedConfig = nil
     local TweenService = game:GetService("TweenService")
     
     -- 🛠️ تعريف الدوال مسبقاً لتكون متاحة في كامل السكربت (Forward Declaration)
@@ -1006,18 +1007,53 @@ local function RunMyOriginalScript()
     local function MakeDraggable(ui)
         local UserInputService = game:GetService("UserInputService")
         local dragging, dragInput, dragStart, startPos
+
+        -- تسجيل موضع النافذة داخل نفس ملف config المستخدم للإعدادات.
+        local positionKey = "__Position_" .. ui.Name
+        local defaultPosition = ui.Position
+        UI.ConfigRegistry[positionKey] = {
+            default = {
+                xs = defaultPosition.X.Scale, xo = defaultPosition.X.Offset,
+                ys = defaultPosition.Y.Scale, yo = defaultPosition.Y.Offset
+            },
+            get = function()
+                local p = ui.Position
+                return {xs = p.X.Scale, xo = p.X.Offset, ys = p.Y.Scale, yo = p.Y.Offset}
+            end,
+            apply = function(value)
+                if type(value) ~= "table" then return end
+                if type(value.xs) ~= "number" or type(value.xo) ~= "number"
+                    or type(value.ys) ~= "number" or type(value.yo) ~= "number" then return end
+                ui.Position = UDim2.new(value.xs, value.xo, value.ys, value.yo)
+            end
+        }
+
+        -- إذا كانت النافذة أُنشئت بعد تحميل config، طبّق موضعها المحفوظ فوراً.
+        if UI._LoadedConfig and UI._LoadedConfig[positionKey] then
+            pcall(function() UI.ConfigRegistry[positionKey].apply(UI._LoadedConfig[positionKey]) end)
+        end
+
         ui.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = true; dragStart = input.Position; startPos = ui.Position
-                input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+                input.Changed:Connect(function()
+                    if input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                        if SaveConfig then SaveConfig() end
+                    end
+                end)
             end
         end)
-        ui.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
-        UserInputService.InputChanged:Connect(function(input) 
-            if input == dragInput and dragging then 
+        ui.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                dragInput = input
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if input == dragInput and dragging then
                 local delta = input.Position - dragStart
-                ui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) 
-            end 
+                ui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end
         end)
     end
 
@@ -1199,6 +1235,12 @@ local function RunMyOriginalScript()
         task.spawn(function() task.wait(0.6) State.flyPanel.ClipsDescendants = false end)
 
         MakeDraggable(State.flyPanel)
+        task.delay(0.7, function()
+            if State.flyPanel and UI._LoadedConfig then
+                local saved = UI._LoadedConfig["__Position_" .. State.flyPanel.Name]
+                if saved then pcall(function() UI.ConfigRegistry["__Position_" .. State.flyPanel.Name].apply(saved) end) end
+            end
+        end)
 
         local titleFrame = Instance.new("Frame")
         titleFrame.Size = UDim2.new(1, 0, 0, 32)
@@ -1409,6 +1451,12 @@ local function RunMyOriginalScript()
         task.spawn(function() task.wait(0.6) State.tpPanel.ClipsDescendants = false end)
 
         MakeDraggable(State.tpPanel)
+        task.delay(0.7, function()
+            if State.tpPanel and UI._LoadedConfig then
+                local saved = UI._LoadedConfig["__Position_" .. State.tpPanel.Name]
+                if saved then pcall(function() UI.ConfigRegistry["__Position_" .. State.tpPanel.Name].apply(saved) end) end
+            end
+        end)
 
         local titleFrame = Instance.new("Frame")
         titleFrame.Size = UDim2.new(1, 0, 0, 32)
@@ -1971,6 +2019,7 @@ end)
 
     -- ====================== بناء الواجهة البنفسجية الرئيسية ======================
     UI.MainFrame.Parent = ScreenGui
+    UI.MainFrame.Name = "SkyMainFrame"
     UI.MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     UI.MainFrame.Position = UDim2.new(0.5, -240, 0.5, -185)
     UI.MainFrame.Size = UDim2.new(0, 500, 0, 420)
@@ -2940,6 +2989,11 @@ end)
         return ok
     end
 
+    -- يستعمله نظام إعادة المواضع الموجود خارج RunMyOriginalScript.
+    _G.SkySaveConfig = function()
+        if SaveConfig then return SaveConfig() end
+    end
+
     LoadConfig = function()
         if not (readfile and isfile) then return false end
         if not isfile(CONFIG_FILE) then return false end
@@ -2947,6 +3001,7 @@ end)
             return game:GetService("HttpService"):JSONDecode(readfile(CONFIG_FILE))
         end)
         if not ok or type(data) ~= "table" then return false end
+        UI._LoadedConfig = data
 
         _configLoading = true
         for name, value in pairs(data) do
@@ -3182,14 +3237,19 @@ end)
             btn.MouseButton1Click:Connect(function() 
                 playClick()
                 applyToggle(not act)
-                SaveConfig()
+                -- زر السيرفر أمر لحظي، ولا يتم حفظ حالته أبداً.
+                if txt ~= "سيرفر" then
+                    SaveConfig()
+                end
             end)
-            -- 💾 تسجيل هذا الزر في نظام حفظ الإعدادات
-            UI.ConfigRegistry[txt] = {
-                get = function() return act end,
-                default = false,
-                apply = function(value) applyToggle(value == true) end
-            }
+            -- 💾 تسجيل الأزرار في نظام الحفظ، باستثناء زر السيرفر لأنه أمر لحظي.
+            if txt ~= "سيرفر" then
+                UI.ConfigRegistry[txt] = {
+                    get = function() return act end,
+                    default = false,
+                    apply = function(value) applyToggle(value == true) end
+                }
+            end
             -- 🎨 نسجّل هذا الزر عشان لو غيّرنا لون التاب من تاب الإعدادات وهو مفعّل حاليًا، يتحدث لونه فورًا بدون ما نحتاج نضغط عليه
             do
                 local idxForWatch = GetTabIndexForInstance(parent)
@@ -4384,70 +4444,6 @@ btn3m.MouseButton1Click:Connect(function()
 end)    
 end
 
--- زر الأغنية الرابعة
-local f4 = Instance.new("Frame", UI.Page4)
-f4.Size = UDim2.new(1, -10, 0, 65)
-f4.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Instance.new("UICorner", f4)
-f4.ZIndex = 6
-local fStroke4 = Instance.new("UIStroke", f4)
-fStroke4.Thickness = 1
-fStroke4.Transparency = 0.4
-AddTabGlow(fStroke4, 1.5, f4)
-
-local l4 = Instance.new("TextLabel", f4)
-l4.Size = UDim2.new(0.6, 0, 1, 0)
-l4.Position = UDim2.new(0, 10, 0, 0)
-l4.Text = "موسيقى 4"
-l4.TextColor3 = Color3.new(1,1,1)
-l4.BackgroundTransparency = 1
-l4.TextXAlignment = Enum.TextXAlignment.Left
-l4.Font = Enum.Font.GothamMedium
-l4.TextScaled = true
-l4.ZIndex = 7
-
-local uip4 = Instance.new("UITextSizeConstraint", l4)
-uip4.MaxTextSize = 18
-uip4.MinTextSize = 10
-
-do
-local btn4m = Instance.new("TextButton", f4)
-btn4m.Size = UDim2.new(0.3, 0, 0.7, 0)
-btn4m.Position = UDim2.new(0.65, 0, 0.15, 0)
-btn4m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-btn4m.Text = _TranslateText("تشغيل")
-btn4m.TextColor3 = Color3.new(1,1,1)
-btn4m.TextSize = 16
-btn4m.Font = Enum.Font.GothamBold
-Instance.new("UICorner", btn4m)
-btn4m.ZIndex = 7
-
-local stroke4m = Instance.new("UIStroke", btn4m)
-stroke4m.Thickness = 3
-stroke4m.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-stroke4m.Color = TOGGLE_OFF_COLOR
-local _mGlow4 = AddMovingBorderGlow(stroke4m, 1.5, TOGGLE_OFF_COLOR)
-
-local act4m = false
-
-btn4m.MouseButton1Click:Connect(function()
-    playClick()
-    act4m = not act4m
-    btn4m.Text = _TranslateText(act4m and "إيقاف" or "تشغيل")
-    local onColor4 = GetTabColorForInstance(f4)
-    stroke4m.Color = act4m and onColor4 or TOGGLE_OFF_COLOR
-    SetGlowColor(_mGlow4, act4m and onColor4 or TOGGLE_OFF_COLOR)
-
-    if act4m then
-        MusicTracks[4]:Play()
-        OK("🎵 تم تشغيل الأغنية 4")
-    else
-        MusicTracks[4]:Stop()
-        OK("🔇 تم إيقاف الأغنية 4")
-    end
-end)
-end
-
 -- زر الأغنية الخامسة
 local f5 = Instance.new("Frame", UI.Page4)
 f5.Size = UDim2.new(1, -10, 0, 65)
@@ -4463,7 +4459,7 @@ AddTabGlow(fStroke5, 1.5, f5)
 local l5 = Instance.new("TextLabel", f5)
 l5.Size = UDim2.new(0.6, 0, 1, 0)
 l5.Position = UDim2.new(0, 10, 0, 0)
-l5.Text = "موسيقى 5"
+l5.Text = "موسيقى 4"
 l5.TextColor3 = Color3.new(1,1,1)
 l5.BackgroundTransparency = 1
 l5.TextXAlignment = Enum.TextXAlignment.Left
@@ -4507,10 +4503,10 @@ btn5m.MouseButton1Click:Connect(function()
 
     if act5m then
         MusicTracks[5]:Play()
-        OK("🎵 تم تشغيل الأغنية 5")
+        OK("🎵 تم تشغيل الأغنية 4")
     else
         MusicTracks[5]:Stop()
-        OK("🔇 تم إيقاف الأغنية 5")
+        OK("🔇 تم إيقاف الأغنية 4")
     end
 end)
     
@@ -4529,7 +4525,7 @@ AddTabGlow(fStroke6, 1.5, f6)
 local l6 = Instance.new("TextLabel", f6)
 l6.Size = UDim2.new(0.6, 0, 1, 0)
 l6.Position = UDim2.new(0, 10, 0, 0)
-l6.Text = "موسيقى 6"
+l6.Text = "موسيقى 5"
 l6.TextColor3 = Color3.new(1,1,1)
 l6.BackgroundTransparency = 1
 l6.TextXAlignment = Enum.TextXAlignment.Left
@@ -4573,10 +4569,10 @@ btn6m.MouseButton1Click:Connect(function()
 
     if act6m then
         MusicTracks[6]:Play()
-        OK("🎵 تم تشغيل الأغنية 6")
+        OK("🎵 تم تشغيل الأغنية 5")
     else
         MusicTracks[6]:Stop()
-        OK("🔇 تم إيقاف الأغنية 6")
+        OK("🔇 تم إيقاف الأغنية 5")
     end
 end)
     
@@ -4595,7 +4591,7 @@ AddTabGlow(fStroke7, 1.5, f7)
 local l7 = Instance.new("TextLabel", f7)
 l7.Size = UDim2.new(0.6, 0, 1, 0)
 l7.Position = UDim2.new(0, 10, 0, 0)
-l7.Text = "موسيقى 7"
+l7.Text = "موسيقى 6"
 l7.TextColor3 = Color3.new(1,1,1)
 l7.BackgroundTransparency = 1
 l7.TextXAlignment = Enum.TextXAlignment.Left
@@ -4639,10 +4635,10 @@ btn7m.MouseButton1Click:Connect(function()
 
     if act7m then
         MusicTracks[7]:Play()
-        OK("🎵 تم تشغيل الأغنية 7")
+        OK("🎵 تم تشغيل الأغنية 6")
     else
         MusicTracks[7]:Stop()
-        OK("🔇 تم إيقاف الأغنية 7")
+        OK("🔇 تم إيقاف الأغنية 6")
     end
 end)
     
@@ -4661,7 +4657,7 @@ AddTabGlow(fStroke8, 1.5, f8)
 local l8 = Instance.new("TextLabel", f8)
 l8.Size = UDim2.new(0.6, 0, 1, 0)
 l8.Position = UDim2.new(0, 10, 0, 0)
-l8.Text = "موسيقى 8"
+l8.Text = "موسيقى 7"
 l8.TextColor3 = Color3.new(1,1,1)
 l8.BackgroundTransparency = 1
 l8.TextXAlignment = Enum.TextXAlignment.Left
@@ -4705,10 +4701,10 @@ btn8m.MouseButton1Click:Connect(function()
 
     if act8m then
         MusicTracks[8]:Play()
-        OK("🎵 تم تشغيل الأغنية 8")
+        OK("🎵 تم تشغيل الأغنية 7")
     else
         MusicTracks[8]:Stop()
-        OK("🔇 تم إيقاف الأغنية 8")
+        OK("🔇 تم إيقاف الأغنية 7")
     end
 end)
     
@@ -5310,7 +5306,7 @@ end)
 
     -- 🔔 صوت خاص لإشعار الرسائل الجديدة (مثل تنبيه واتساب/سناب)
     local msgNotifySound = Instance.new("Sound")
-    msgNotifySound.SoundId = "rbxassetid://6895079853"
+    msgNotifySound.SoundId = "rbxassetid://119896940405402"
     msgNotifySound.Volume = 1
     msgNotifySound.Parent = SoundService
     _ownSounds[msgNotifySound] = true
@@ -6361,7 +6357,6 @@ end)
                 ["موسيقى 5"] = "Music 5",
                 ["موسيقى 6"] = "Music 6",
                 ["موسيقى 7"] = "Music 7",
-                ["موسيقى 8"] = "Music 8",
                 ["اختر تاب ثم لون لحوافه"] = "Choose a tab and its border color",
                 ["اختر اللون:"] = "Choose a color:",
                 ["استرجاع الألوان الافتراضية"] = "Restore default colors",
@@ -6531,7 +6526,7 @@ local function fastRespawn()
 end
 
 local function showTouchRespawnTip()
-	FlyTipNotify("اضغط زر R لإعادة إحياء الشخصية", false, nil, 1.5)
+	FlyTipNotify("اضغط زر R لإعادة إحياء الشخصية", false, nil, 4.0, 1.0)
 end
 
 respawnButton.Active = true
@@ -6655,5 +6650,115 @@ button.MouseButton1Click:Connect(function()
 	end
 end)
 
--- 💡 معلومة زر R: تظهر مرة واحدة عند تشغيل النظام وتختفي بالكامل بعد 1.5 ثانية
+-- 💡 معلومة زر R: تظهر 4 ثوانٍ ثم تختفي تدريجيًا وببطء
 task.delay(0.8, showTouchRespawnTip)
+
+
+-- ====================== إعادة القوائم بالضغط المطوّل ======================
+-- ضغطة مطوّلة على مكان فارغ في الشاشة تعيد كل النوافذ إلى أماكنها الطبيعية.
+do
+    local LONG_PRESS_TIME = 0.8
+    local MAX_LONG_PRESS_MOVEMENT = 12
+    local resetPressId = 0
+
+    local function ResetAllUIPositions()
+        -- القائمة الرئيسية
+        local mainFrame = ScreenGui and ScreenGui:FindFirstChild("SkyMainFrame", true)
+        if mainFrame then
+            mainFrame.Position = UDim2.new(0.5, -240, 0.5, -185)
+        end
+
+        -- لوحات Fly و Teleport العائمة
+        local coreGui = game:GetService("CoreGui")
+        local flyPanel = coreGui:FindFirstChild("DeltaFlyPanel", true)
+        local teleportPanel = coreGui:FindFirstChild("TeleportPanel", true)
+        if flyPanel then
+            flyPanel.Position = UDim2.new(0.5, 265, 0.42, 0)
+        end
+        if teleportPanel then
+            teleportPanel.Position = UDim2.new(0.5, 265, 0.42, 0)
+        end
+
+        -- لوحة الدردشة
+        local chatPanel = ScreenGui and ScreenGui:FindFirstChild("SkyChatPanel", true)
+        if chatPanel then
+            chatPanel.Position = UDim2.new(0.5, -240, 0.5, -185)
+        end
+
+        -- الأزرار العائمة الموجودة في نهاية السكربت
+        if respawnButton then
+            respawnButton.Position = UDim2.new(0.5, -27, 0.5, -27)
+        end
+        if button then
+            button.Position = UDim2.new(0.5, -22.5, 0.8, 0)
+        end
+
+        -- إلغاء أي حركة تجميلية معلّقة قد تعيد الموضع القديم.
+        if mainFrame then
+            pcall(function() mainFrame:TweenPosition(UDim2.new(0.5, -240, 0.5, -185), "Out", "Quad", 0.15, true) end)
+        end
+
+        pcall(function()
+            -- بعد الإرجاع، احفظ المواضع الجديدة حتى لا تعود القديمة عند إعادة التشغيل.
+            if _G.SkySaveConfig then _G.SkySaveConfig() end
+            if OK then
+                OK("تمت إعادة كل القوائم إلى أماكنها الطبيعية")
+            end
+        end)
+    end
+
+    -- لا نضع زرّاً شفافاً فوق الشاشة؛ لأن ذلك يمنع سحب الكاميرا في الجوال.
+    -- نراقب اللمس فقط من UserInputService بدون حجب اللمسة عن اللعبة.
+    local UserInputService = game:GetService("UserInputService")
+    local GuiService = game:GetService("GuiService")
+
+    local function TouchStartedOnInteractiveGui(position)
+        local ok, guiObjects = pcall(function()
+            return GuiService:GetGuiObjectsAtPosition(position.X, position.Y)
+        end)
+        if not ok or type(guiObjects) ~= "table" then
+            return false
+        end
+
+        for _, guiObject in ipairs(guiObjects) do
+            if guiObject.Visible and (
+                guiObject:IsA("GuiButton") or
+                guiObject:IsA("TextBox") or
+                guiObject:IsA("ScrollingFrame") or
+                guiObject.Active
+            ) then
+                return true
+            end
+        end
+        return false
+    end
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        local inputType = input.UserInputType
+        if inputType ~= Enum.UserInputType.Touch and inputType ~= Enum.UserInputType.MouseButton1 then
+            return
+        end
+        if TouchStartedOnInteractiveGui(input.Position) then
+            return
+        end
+
+        resetPressId += 1
+        local currentPressId = resetPressId
+        local pressStartPosition = input.Position
+        task.delay(LONG_PRESS_TIME, function()
+            local movedDistance = (input.Position - pressStartPosition).Magnitude
+            if currentPressId == resetPressId
+                and input.UserInputState ~= Enum.UserInputState.End
+                and movedDistance <= MAX_LONG_PRESS_MOVEMENT then
+                ResetAllUIPositions()
+            end
+        end)
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        local inputType = input.UserInputType
+        if inputType == Enum.UserInputType.Touch or inputType == Enum.UserInputType.MouseButton1 then
+            resetPressId += 1
+        end
+    end)
+end
