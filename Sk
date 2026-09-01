@@ -8,6 +8,20 @@ local AUTH_TOKEN = ""
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
+-- 🔁 رابط السكربت الأساسي لإعادة تشغيله تلقائياً بعد الانتقال لسيرفر جديد.
+local SKY_MAIN_SCRIPT_URL = "https://raw.githubusercontent.com/Vx61717-oss/Sky/refs/heads/main/Sk"
+local function QueueSkyScriptAfterTeleport()
+    local queueTeleport = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+    if type(queueTeleport) ~= "function" then
+        return false
+    end
+
+    local queuedCode = "loadstring(game:HttpGet(" .. string.format("%q", SKY_MAIN_SCRIPT_URL) .. "))()"
+    return pcall(function()
+        queueTeleport(queuedCode)
+    end)
+end
+
 -- شاشة تحميل بسيطة بدل مقدمة S K Y
 local _TweenS = game:GetService("TweenService")
 
@@ -4132,6 +4146,8 @@ end)
             if success and result and result.data then
                 for _, server in ipairs(result.data) do
                     if server.playing <= 1 and server.id ~= game.JobId then
+                        -- نجهّز تشغيل السكربت في السيرفر الجديد قبل تنفيذ الانتقال.
+                        QueueSkyScriptAfterTeleport()
                         TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id)
                         Notify("🌐 سيرفر", "تم الانتقال لسيرفر فارغ!", Color3.fromRGB(0, 200, 170))
                         return
