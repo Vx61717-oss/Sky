@@ -2,6 +2,7 @@
 local FIREBASE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chat.json"
 local TYPING_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/typing.json"
 local PRESENCE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/presence.json"
+local NOTES_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/feedback.json" -- 📝 ملاحظات ومشاكل المستخدمين للمطوّرة
 local AUTH_TOKEN = ""
 
 -- 🌐 توافق مع مختلف برامج الإكسبلويت: كل وحد يسمي دالة الطلبات باسم مختلف
@@ -46,7 +47,7 @@ _LoadingTitle.BackgroundTransparency = 1
 _LoadingTitle.Text = "جاري التحميل"
 _LoadingTitle.TextColor3 = Color3.fromRGB(190, 50, 255)
 _LoadingTitle.TextTransparency = 1
-_LoadingTitle.Font = Enum.Font.GothamBold
+_LoadingTitle.Font = Enum.Font.Arcade
 _LoadingTitle.TextSize = 25
 _LoadingTitle.Parent = _LoadingBG
 
@@ -57,7 +58,7 @@ _LoadingStatus.BackgroundTransparency = 1
 _LoadingStatus.Text = "تهيئة السكربت..."
 _LoadingStatus.TextColor3 = Color3.fromRGB(210, 210, 210)
 _LoadingStatus.TextTransparency = 1
-_LoadingStatus.Font = Enum.Font.Gotham
+_LoadingStatus.Font = Enum.Font.Arcade
 _LoadingStatus.TextSize = 13
 _LoadingStatus.Parent = _LoadingBG
 
@@ -69,7 +70,7 @@ _LoadingCredits.BackgroundTransparency = 1
 _LoadingCredits.Text = "المطور  : AAbbooyi"
 _LoadingCredits.TextColor3 = Color3.fromRGB(230, 210, 255)
 _LoadingCredits.TextTransparency = 1
-_LoadingCredits.Font = Enum.Font.GothamBold
+_LoadingCredits.Font = Enum.Font.Arcade
 _LoadingCredits.TextSize = 14
 _LoadingCredits.TextWrapped = true
 _LoadingCredits.Parent = _LoadingBG
@@ -159,82 +160,7 @@ _TweenS:Create(_LoadingBar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):P
 task.wait(0.5)
 _LoadingGui:Destroy()
 
--- ====================== قائمة اللغة ======================
-local _SelectedLanguage = "Arabic"
-local _LanguageChosen = false
-local _LanguageGui = Instance.new("ScreenGui")
-_LanguageGui.Name = "SkyLanguageSelect"
-_LanguageGui.IgnoreGuiInset = true
-_LanguageGui.DisplayOrder = 100000
-_LanguageGui.ResetOnSpawn = false
-_LanguageGui.Parent = game.CoreGui
-
-local _LanguageFrame = Instance.new("Frame")
-_LanguageFrame.Size = UDim2.new(0, 250, 0, 135)
-_LanguageFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-_LanguageFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-_LanguageFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 20)
-_LanguageFrame.BorderSizePixel = 0
-_LanguageFrame.ZIndex = 1
-_LanguageFrame.Parent = _LanguageGui
-Instance.new("UICorner", _LanguageFrame).CornerRadius = UDim.new(0, 12)
-
--- نفس الـ Glow المستخدم في أزرار السكربت: بنفسجي + أسود ويتحرك حول الحواف
-local _LanguageStroke = Instance.new("UIStroke", _LanguageFrame)
-_LanguageStroke.Color = Color3.fromRGB(170, 0, 255)
-_LanguageStroke.Thickness = 1.5
-
-local _LanguageGlowGrad = Instance.new("UIGradient")
-_LanguageGlowGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 0, 255)),
-})
-_LanguageGlowGrad.Parent = _LanguageStroke
-
-task.spawn(function()
-    while _LanguageStroke and _LanguageStroke.Parent do
-        _LanguageGlowGrad.Rotation = (_LanguageGlowGrad.Rotation + 2) % 360
-        task.wait(0.03)
-    end
-end)
-
-local _LanguageTitle = Instance.new("TextLabel", _LanguageFrame)
-_LanguageTitle.Size = UDim2.new(1, -20, 0, 32)
-_LanguageTitle.Position = UDim2.new(0, 10, 0, 8)
-_LanguageTitle.BackgroundTransparency = 1
-_LanguageTitle.Text = "اختر اللغة / Choose Language"
-_LanguageTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-_LanguageTitle.Font = Enum.Font.GothamBold
-_LanguageTitle.TextSize = 14
-_LanguageTitle.TextWrapped = true
-
-local function _AddLanguageButton(text, x, language)
-    local button = Instance.new("TextButton", _LanguageFrame)
-    button.Size = UDim2.new(0, 100, 0, 42)
-    button.Position = UDim2.new(0, x, 0, 70)
-    button.BackgroundColor3 = Color3.fromRGB(65, 12, 90)
-    button.BorderSizePixel = 0
-    button.Text = text
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.Font = Enum.Font.GothamBold
-    button.TextSize = 14
-    Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
-    button.MouseButton1Click:Connect(function()
-        _SelectedLanguage = language
-        _LanguageChosen = true
-        _LanguageGui:Destroy()
-    end)
-end
-
-_AddLanguageButton("عربي", 18, "Arabic")
-_AddLanguageButton("English", 132, "English")
-
--- لا يتم إنشاء القائمة الرئيسية قبل اختيار اللغة.
-while not _LanguageChosen do
-    task.wait()
-end
-
+-- ====================== تشغيل السكربت مباشرة بالعربي ======================
 -- ====================== الآن يشتغل السكريبت الأصلي ======================
 -- زر Fly يفتح ويغلق القائمة فقط | الطيران يُشغل من داخل القائمة | ✅ نظام إشعارات بنفسجي
 
@@ -428,162 +354,10 @@ Instance.new("UIListLayout", NC).Padding = UDim.new(0, 5)
 
 local _currentNotification = nil
 
--- مترجم مركزي للنصوص العربية التي تظهر أثناء التشغيل
-local _EnglishText = {
-    ["قوة القفز"] = "Jump Power",
-    ["إرجاع السرعة والنط الطبيعي"] = "Restore speed and jump",
-    ["القفز اللانهائي"] = "Infinite jump",
-    ["مانع الطيران"] = "Anti fling",
-    ["تشغيل الطيران"] = "Enable fly",
-    ["إيقاف الطيران"] = "Disable fly",
-    ["إرجاع السرعة والنط لوضع الماب الطبيعي"] = "Speed and jump restored",
-    ["قوة القفز:"] = "Jump power:",
-    ["طيران"] = "Fly",
-    ["تم تشغيل الطيران"] = "Fly enabled",
-    ["تم إيقاف الطيران"] = "Fly disabled",
-    ["فتح قائمة الطيران"] = "Fly menu opened",
-    ["إغلاق قائمة الطيران"] = "Fly menu closed",
-    ["قفز لانهائي: مفعل"] = "Infinite jump: Enabled",
-    ["قفز لانهائي: معطل"] = "Infinite jump: Disabled",
-    ["تم تفعيل مانع الطيران"] = "Anti fling enabled",
-    ["تم إيقاف مانع الطيران"] = "Anti fling disabled",
-    ["إرجاع السرعة والنط الطبيعي"] = "Restore speed and jump",
-    ["القفز"] = "Jump",
-    ["النط"] = "Jump",
-    ["تم تشغيل الموسيقى"] = "Music started",
-    ["تم إيقاف الموسيقى"] = "Music stopped",
-    ["تشغيل"] = "Play",
-    ["إيقاف"] = "Stop",
-    ["بانق: تشغيل"] = "Bang: On",
-    ["بانق: إيقاف"] = "Bang: Off",
-    ["فشل تحميل/تشغيل Auto E"] = "Failed to load/run Auto E",
-    ["تم تشغيل Auto E"] = "Auto E started",
-    ["إرجاع"] = "Restore",
-    ["القفز اللانهائي"] = "Infinite jump",
-    ["إلغاء ضرر السقوط"] = "Disable fall damage",
-    ["انتقال وملاحقة"] = "Teleport and follow",
-    ["تخفيف الجودة"] = "Reduce quality",
-    ["أجواء الماب"] = "Map atmosphere",
-    ["السيرفر"] = "Server",
-    ["سيرفر"] = "Server",
-    ["اختر اللون:"] = "Choose a color:",
-    ["صوت اللعبة"] = "Game volume",
-    ["لم يتم العثور على سيرفر"] = "No server found",
-    ["الكاميرا تتجاوز الجدران والأشياء"] = "Camera passes through walls and objects",
-    ["الزوم: عادي"] = "Zoom: Normal",
-    ["فتح قائمة الانتقال"] = "Teleport menu opened",
-    ["إغلاق قائمة الانتقال"] = "Teleport menu closed",
-    ["تم الانتقال لسيرفر فارغ!"] = "Moved to an empty server!",
-    ["رجع الجو الطبيعي"] = "Weather restored",
-    ["تم تخفيف الجودة (سريع)"] = "Quality reduced (fast)",
-    ["تم استعادة الجودة الأصلية"] = "Original quality restored",
-    ["تم إيقاف"] = "Stopped",
-    ["تم نسخ الرسالة"] = "Message copied",
-    ["تم حذف الحفظ وإعادة كل الإعدادات للأصل"] = "Saved settings deleted and all settings restored",
-    ["رجعت كل الألوان لوضعها الافتراضي"] = "All colors restored to default",
-    ["تم تغيير لون"] = "Color changed for",
-    ["تم تشغيل أغنية 2"] = "Song 2 started",
-    ["تم إيقاف أغنية 2"] = "Song 2 stopped",
-    ["تم تشغيل الأغنية 3"] = "Song 3 started",
-    ["تم إيقاف الأغنية 3"] = "Song 3 stopped",
-    ["تم تشغيل الأغنية 4"] = "Song 4 started",
-    ["تم إيقاف الأغنية 4"] = "Song 4 stopped",
-    ["تم تشغيل الأغنية 5"] = "Song 5 started",
-    ["تم إيقاف الأغنية 5"] = "Song 5 stopped",
-    ["تم تشغيل الأغنية 6"] = "Song 6 started",
-    ["تم إيقاف الأغنية 6"] = "Song 6 stopped",
-    ["تم تشغيل الأغنية 7"] = "Song 7 started",
-    ["تم إيقاف الأغنية 7"] = "Song 7 stopped",
-    ["تم تشغيل الأغنية 8"] = "Song 8 started",
-    ["تم إيقاف الأغنية 8"] = "Song 8 stopped",
-    ["تم تشغيل الموسيقى"] = "Music started",
-    ["تم إيقاف الموسيقى"] = "Music stopped",
-    ["فشل حذف الرسالة: "] = "Failed to delete message: ",
-    ["فايربيس رفض الحذف ("] = "Firebase rejected deletion (",
-    ["فشل إرسال الرسالة: "] = "Failed to send message: ",
-    ["فايربيس رفض الإرسال ("] = "Firebase rejected sending (",
-    ["فشل جلب الدردشة: "] = "Failed to fetch chat: ",
-    ["جلب الدردشة رجع بدون رد (response = nil)"] = "Chat fetch returned no response (response = nil)",
-    ["فايربيس رد بخطأ "] = "Firebase returned an error ",
-    ["برنامج الإكسبلويت حقك ما يدعم setclipboard"] = "Your executor does not support setclipboard",
-    ["برنامج الإكسبلويت حقك ما يدعم دالة request/http_request/syn.request — الدردشة ما راح تشتغل أبد على هذا البرنامج"] = "Your executor does not support request/http_request/syn.request — chat will not work on this executor",
-    ["اللاعب ["] = "Player [",
-    ["] غادر اللعبة!"] = "] left the game!",
-    ["جاري التحميل"] = "Loading",
-    ["تم استرجاع إعداداتك المحفوظة"] = "Your saved settings were restored",
-    ["جاهز وملء الشاشة بالكامل!"] = "Ready and full screen!",
-    ["السرعه"] = "Speed",
-    ["السرعة: "] = "Speed: ",
-    ["الزوم: عادي"] = "Zoom: Normal",
-    ["الكاميرا تتجاوز الجدران والأشياء"] = "Camera passes through walls and objects",
-    ["ترا يمديك تضغط 2 على الشاشة وتزيد السرعة حقت الكاميرا"] = "Press 2 on the screen to increase camera speed",
-    ["ترا يمديك تضغط 3 مرات وتنقص السرعة الطبيعية: 50"] = "Press 3 times to reduce normal speed: 50",
-    ["المناظرة"] = "View",
-    ["المنظور"] = "Perspective",
-    ["إضاءة عادية"] = "Normal lighting",
-    ["تنوير المكان"] = "Brighten area",
-    ["قائمة الانتقال"] = "Teleport menu",
-    ["انتقال "] = "Teleport ",
-    ["حفض موقعك"] = "Save your location",
-    ["مشاهدة اللاعب"] = "View player",
-    ["جلوس فوق رأسه"] = "Sit on their head",
-    ["تطيير اللاعب"] = "Fling player",
-    ["ايم بوت"] = "Aimbot",
-    ["🎯 ايم بوت"] = "🎯 Aimbot",
-    ["🔓 ايم بوت"] = "🔓 Aimbot",
-    ["نوكليب"] = "Noclip",
-    ["👻 نوكليب"] = "👻 Noclip",
-    ["🧱 نوكليب"] = "🧱 Noclip",
-    ["بانق"] = "Bang",
-    ["حذف"] = "Delete",
-    ["حفظ "] = "Save ",
-    ["خلاص عرفت"] = "Got it",
-    ["معلومة: "] = "Info: ",
-    ["متصل"] = "Online",
-    ["صديق دخل"] = "Friend joined",
-    ["صديق غادر"] = "Friend left",
-    ["غادر لاعب"] = "Player left",
-    ["جالس على: "] = "Sitting on: ",
-    ["توقف الجلوس"] = "Stop sitting",
-    ["حماية السقوط"] = "Fall protection",
-    ["ملاحقة"] = "Follow",
-    ["مشاهدة اللاعب"] = "View player",
-    ["تنوير"] = "Brighten",
-    ["منظور"] = "Perspective",
-    ["📷 منظور"] = "📷 Perspective",
-    ["🔭 منظور"] = "🔭 Perspective",
-    ["🌙 تنوير"] = "🌙 Brighten",
-    ["💡 تنوير"] = "💡 Brighten",
-    ["🪂 حماية السقوط"] = "🪂 Fall protection",
-    ["🪑 جالس على: "] = "🪑 Sitting on: ",
-    ["🔓 حماية"] = "🔓 Protection",
-    ["🛡️ حماية"] = "🛡️ Protection",
-    ["🌐 سيرفر"] = "🌐 Server",
-    ["🚀 طيران"] = "🚀 Fly",
-    ["🔓 طيران"] = "🔓 Fly",
-    ["📍 انتقال"] = "📍 Teleport",
-    ["🔒 انتقال"] = "🔒 Teleport",
-    ["💡 معلومة: "] = "💡 Info: ",
-    ["🔄 ريسبون"] = "🔄 Respawn",
-    ["🗑️ وضع الحذف"] = "🗑️ Delete mode",
-    ["📋 وضع النسخ"] = "📋 Copy mode",
-    ["⚠️ تنبيه"] = "⚠️ Warning",
-    ["✅ تم"] = "✅ Done",
-    ["تم استعادة الجودة الأصلية"] = "Original quality restored",
-    ["تم تشغيل Auto E"] = "Auto E started"
-}
-
+-- الترجمة معطلة: السكربت يعمل مباشرة باللغة العربية بدون قاموس كبير.
 local function _TranslateText(value)
-    if type(value) ~= "string" or _SelectedLanguage ~= "English" then return value end
-    if _EnglishText[value] then return _EnglishText[value] end
-    for arabic, english in pairs(_EnglishText) do
-        if string.find(value, arabic, 1, true) then
-            value = string.gsub(value, arabic, english)
-        end
-    end
     return value
 end
-
 function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     T = _TranslateText(T)
     M = _TranslateText(M)
@@ -596,21 +370,39 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     _currentNotification = F
     F.Size = UDim2.new(1, 0, 0, 0)
     F.BackgroundTransparency = 1
-    
+
     local I = Instance.new("Frame", F)
     I.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     I.BorderSizePixel = 0
     I.Size = UDim2.new(1, 0, 0, 0)
     I.Position = UDim2.new(0, 40, 0, 0) -- يبدأ مزحزح يمين عشان يدخل بحركة
-    I.BackgroundTransparency = 1
+    I.BackgroundTransparency = 0.08
+    I.ZIndex = 2
     
     local Corner = Instance.new("UICorner", I)
     Corner.CornerRadius = UDim.new(0, 12)
     
     local Stroke = Instance.new("UIStroke", I)
     Stroke.Color = C
-    Stroke.Thickness = 2
+    Stroke.Thickness = 2.5
     Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+    -- نفس Glow المستخدم في الأزرار: لون الإشعار يتناوب مع الأسود على الحد.
+    Stroke.Thickness = 1.2
+    Stroke.Transparency = 0.12
+    local GlowGradient = Instance.new("UIGradient", Stroke)
+    GlowGradient.Name = "MovingNotificationGlow"
+    GlowGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, C),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+        ColorSequenceKeypoint.new(1, C),
+    })
+    task.spawn(function()
+        while GlowGradient and GlowGradient.Parent do
+            GlowGradient.Rotation = (GlowGradient.Rotation + 1.5) % 360
+            task.wait(0.03)
+        end
+    end)
 
     -- شريط لون رفيع على الجنب يميز نوع الإشعار
     local Bar = Instance.new("Frame", I)
@@ -618,7 +410,29 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     Bar.Position = UDim2.new(0, 4, 0, 4)
     Bar.BackgroundColor3 = C
     Bar.BorderSizePixel = 0
+    Bar.ZIndex = 3
+    Bar.BackgroundTransparency = 0.12
     Instance.new("UICorner", Bar).CornerRadius = UDim.new(1, 0)
+
+    -- Glow للخط الجانبي أيضًا، بنفس تدرج حدود الأزرار.
+    local BarGlow = Instance.new("UIStroke", Bar)
+    BarGlow.Name = "MovingBarGlow"
+    BarGlow.Color = C
+    BarGlow.Thickness = 1.6
+    BarGlow.Transparency = 0.48
+    BarGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    local BarGlowGradient = Instance.new("UIGradient", BarGlow)
+    BarGlowGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, C),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+        ColorSequenceKeypoint.new(1, C),
+    })
+    task.spawn(function()
+        while BarGlowGradient and BarGlowGradient.Parent do
+            BarGlowGradient.Rotation = (BarGlowGradient.Rotation + 1.5) % 360
+            task.wait(0.03)
+        end
+    end)
 
     -- 🖼️ صورة اللاعب (اختيارية) على يسار النص
     local textOffset = 14
@@ -628,13 +442,14 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
         AvatarImg.Size = UDim2.new(0, 32, 0, 32)
         AvatarImg.Position = UDim2.new(0, 12, 0.5, -16)
         AvatarImg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-        AvatarImg.ImageTransparency = 1
+        AvatarImg.ImageTransparency = 0
+        AvatarImg.ZIndex = 4
         AvatarImg.Image = "rbxthumb://type=AvatarHeadShot&id="..avatarUserId.."&w=150&h=150"
         Instance.new("UICorner", AvatarImg).CornerRadius = UDim.new(1, 0)
         local avStroke = Instance.new("UIStroke", AvatarImg)
         avStroke.Color = avatarStrokeColor or C
         avStroke.Thickness = 1.5
-        avStroke.Transparency = 1
+        avStroke.Transparency = 0
         textOffset = 52
     end
 
@@ -644,10 +459,11 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     TL.BackgroundTransparency = 1
     TL.Text = T
     TL.TextColor3 = C
-    TL.TextTransparency = 1
-    TL.Font = Enum.Font.GothamBold
+    TL.TextTransparency = 0
+    TL.Font = Enum.Font.Arcade
     TL.TextSize = 14
     TL.TextXAlignment = Enum.TextXAlignment.Left
+    TL.ZIndex = 4
     
     local ML = Instance.new("TextLabel", I)
     ML.Size = UDim2.new(1, -textOffset - 11, 0, 16)
@@ -655,10 +471,11 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     ML.BackgroundTransparency = 1
     ML.Text = M
     ML.TextColor3 = Color3.fromRGB(220, 220, 220)
-    ML.TextTransparency = 1
-    ML.Font = Enum.Font.GothamMedium
+    ML.TextTransparency = 0
+    ML.Font = Enum.Font.Arcade
     ML.TextSize = 12
     ML.TextXAlignment = Enum.TextXAlignment.Left
+    ML.ZIndex = 4
     
     task.spawn(function()
         pcall(function()
@@ -702,6 +519,7 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
             Position = UDim2.new(0, 0, 0, -10),
             BackgroundTransparency = 1
         }):Play()
+        _TweenS:Create(Stroke, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Transparency = 1}):Play()
         _TweenS:Create(TL, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
         _TweenS:Create(ML, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
         task.wait(0.2)
@@ -759,7 +577,7 @@ _infoTipSound.Parent = game:GetService("SoundService")
 _ownSounds[_infoTipSound] = true
 
 function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFadeDuration)
-    displayDuration = tonumber(displayDuration) or 3
+    displayDuration = tonumber(displayDuration) or 4
     msg = _TranslateText(msg)
     _infoTipSound:Stop()
     _infoTipSound.TimePosition = 0
@@ -800,7 +618,7 @@ function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFad
     label.Position = UDim2.new(0, 10, 0, 5)
     label.BackgroundTransparency = 1
     label.ZIndex = 101
-    label.Font = Enum.Font.GothamBold
+    label.Font = Enum.Font.Arcade
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.TextStrokeColor3 = Color3.fromRGB(170, 0, 255)
     label.TextStrokeTransparency = 0.4
@@ -819,7 +637,7 @@ function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFad
         dismissBtn.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
         dismissBtn.Text = "خلاص عرفت"
         dismissBtn.TextColor3 = Color3.new(1, 1, 1)
-        dismissBtn.Font = Enum.Font.GothamBold
+        dismissBtn.Font = Enum.Font.Arcade
         dismissBtn.TextScaled = true
         dismissBtn.ZIndex = 102
         Instance.new("UICorner", dismissBtn).CornerRadius = UDim.new(0, 8)
@@ -850,7 +668,7 @@ function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFad
     _FlyTipTweenS:Create(stroke, TweenInfo.new(0.45), {Transparency = 0}):Play()
 
     -- ⏱️ مدة الرسالة محسوبة من بداية ظهورها إلى اختفائها بالكامل
-    local fadeDuration = tonumber(customFadeDuration) or math.min(0.25, displayDuration * 0.2)
+    local fadeDuration = tonumber(customFadeDuration) or 1.0
     task.wait(math.max(0, displayDuration - 0.45 - fadeDuration))
 
     if not (frame and frame.Parent) then return end -- انسكرت مسبقًا بضغطة "خلاص عرفت"
@@ -871,6 +689,7 @@ local function RunMyOriginalScript()
     local State = {}
     local UI = {}
     UI.ConfigRegistry = {} -- 💾 [اسم العنصر] = {apply=function(value, skipCall), get=function()}
+    UI.ToggleSetters = {} -- 🔧 يسمح للقوائم الفرعية بإطفاء زرها الرئيسي فعليًا عند الضغط على X
     UI._LoadedConfig = nil
     local TweenService = game:GetService("TweenService")
     
@@ -1062,6 +881,7 @@ local function RunMyOriginalScript()
     State.tpMainGlowGrad = nil
     State.tpMainAct = false
     State.savedLocations = {}
+    State.tpSlotCount = 1
 
     local function saveMyPos()
         local char = game.Players.LocalPlayer.Character
@@ -1102,10 +922,7 @@ local function RunMyOriginalScript()
             end
         }
 
-        -- إذا كانت النافذة أُنشئت بعد تحميل config، طبّق موضعها المحفوظ فوراً.
-        if UI._LoadedConfig and UI._LoadedConfig[positionKey] then
-            pcall(function() UI.ConfigRegistry[positionKey].apply(UI._LoadedConfig[positionKey]) end)
-        end
+        -- لا يتم تحميل موضع محفوظ؛ 3 ضغطات فقط تعيد النافذة لمكانها الأصلي.
 
         ui.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1113,7 +930,7 @@ local function RunMyOriginalScript()
                 input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
                         dragging = false
-                        if SaveConfig then SaveConfig() end
+                        -- لا نحفظ موضع القائمة عند السحب.
                     end
                 end)
             end
@@ -1309,13 +1126,6 @@ local function RunMyOriginalScript()
         task.spawn(function() task.wait(0.6) State.flyPanel.ClipsDescendants = false end)
 
         MakeDraggable(State.flyPanel)
-        task.delay(0.7, function()
-            if State.flyPanel and UI._LoadedConfig then
-                local saved = UI._LoadedConfig["__Position_" .. State.flyPanel.Name]
-                if saved then pcall(function() UI.ConfigRegistry["__Position_" .. State.flyPanel.Name].apply(saved) end) end
-            end
-        end)
-
         local titleFrame = Instance.new("Frame")
         titleFrame.Size = UDim2.new(1, 0, 0, 32)
         titleFrame.BackgroundTransparency = 1
@@ -1327,7 +1137,7 @@ local function RunMyOriginalScript()
         title.BackgroundTransparency = 1
         title.Text = "Fly"
         title.TextColor3 = Color3.fromRGB(170, 0, 255)
-        title.Font = Enum.Font.GothamBold
+        title.Font = Enum.Font.Arcade
         title.TextSize = 15
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = titleFrame
@@ -1339,7 +1149,7 @@ local function RunMyOriginalScript()
         closeBtn.Text = "X"
         closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
         closeBtn.TextScaled = true
-        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.Font = Enum.Font.Arcade
         closeBtn.TextSize = 14
         Instance.new("UICorner", closeBtn)
         closeBtn.Parent = titleFrame
@@ -1349,18 +1159,17 @@ local function RunMyOriginalScript()
 
         closeBtn.MouseButton1Click:Connect(function()
             playClick()
-            State.flyMainAct = false
-            if State.flyMainBtn then State.flyMainBtn.Text = _TranslateText("تشغيل") end
-            if State.flyMainStroke then State.flyMainStroke.Color = TOGGLE_OFF_COLOR end
-            if State.flyMainGlowGrad then SetGlowColor(State.flyMainGlowGrad, TOGGLE_OFF_COLOR) end
-            if State.flyPanel then
-                local closing = State.flyPanel
-                TweenService:Create(closing, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-                    Size = UDim2.new(0, 0, 0, 0),
-                    Position = UDim2.new(0.5, 360, 0.5, -72),
-                    BackgroundTransparency = 1
-                }):Play()
-                task.delay(0.35, function() if closing then closing:Destroy() end; State.flyPanel = nil end)
+
+            -- 🔒 إغلاق X = نفس إطفاء زر FLY بالضبط.
+            -- نستخدم setter الحقيقي للزر حتى تتغير حالته الداخلية + النص + الحافة.
+            local setter = UI.ToggleSetters["F   L   Y"]
+            if setter then
+                setter(false, true)
+            else
+                State.flyMainAct = false
+                if State.flyMainBtn then State.flyMainBtn.Text = _TranslateText("تشغيل") end
+                if State.flyMainStroke then State.flyMainStroke.Color = TOGGLE_OFF_COLOR end
+                if State.flyMainGlowGrad then SetGlowColor(State.flyMainGlowGrad, TOGGLE_OFF_COLOR) end
             end
         end)
 
@@ -1372,7 +1181,7 @@ local function RunMyOriginalScript()
         State.toggleBtnFly.Text = _TranslateText("تشغيل الطيران")
         State.toggleBtnFly.TextColor3 = Color3.new(1,1,1)
         State.toggleBtnFly.TextTransparency = 1
-        State.toggleBtnFly.Font = Enum.Font.GothamBold
+        State.toggleBtnFly.Font = Enum.Font.Arcade
         State.toggleBtnFly.TextSize = 14
         Instance.new("UICorner", State.toggleBtnFly)
         State.toggleBtnFly.Parent = State.flyPanel
@@ -1404,7 +1213,7 @@ local function RunMyOriginalScript()
         State.speedLabel.TextTransparency = 1
         State.speedLabel.Text = "السرعة: " .. State.flySpeed
         State.speedLabel.TextColor3 = Color3.new(1,1,1)
-        State.speedLabel.Font = Enum.Font.GothamMedium
+        State.speedLabel.Font = Enum.Font.Arcade
         State.speedLabel.TextSize = 14
         State.speedLabel.Parent = State.flyPanel
         task.delay(0.6, function()
@@ -1422,7 +1231,7 @@ local function RunMyOriginalScript()
         plusBtn.Text = "+"
         plusBtn.TextColor3 = Color3.new(1,1,1)
         plusBtn.TextScaled = true
-        plusBtn.Font = Enum.Font.GothamBold
+        plusBtn.Font = Enum.Font.Arcade
         plusBtn.TextSize = 16
         Instance.new("UICorner", plusBtn)
         plusBtn.Parent = State.flyPanel
@@ -1452,7 +1261,7 @@ local function RunMyOriginalScript()
         minusBtn.Text = "-"
         minusBtn.TextColor3 = Color3.new(1,1,1)
         minusBtn.TextScaled = true
-        minusBtn.Font = Enum.Font.GothamBold
+        minusBtn.Font = Enum.Font.Arcade
         minusBtn.TextSize = 16
         Instance.new("UICorner", minusBtn)
         minusBtn.Parent = State.flyPanel
@@ -1489,14 +1298,13 @@ local function RunMyOriginalScript()
         State.tpPanel.Parent = NG
         State.tpPanel.ZIndex = 1
         Instance.new("UICorner", State.tpPanel).CornerRadius = UDim.new(0, 12)
-        
+
         local stroke = Instance.new("UIStroke", State.tpPanel)
         stroke.Color = Color3.fromRGB(170, 0, 255)
         stroke.Thickness = 2
         stroke.Transparency = 1
         AddMovingBorderGlow(stroke, 1.5)
 
-        -- شريط تحميل رفيع يمشي مرة وحدة وقت فتح لوحة الانتقال
         local TPLoadingBar = Instance.new("Frame", State.tpPanel)
         TPLoadingBar.Size = UDim2.new(0, 0, 0, 3)
         TPLoadingBar.Position = UDim2.new(0, 0, 0, 0)
@@ -1507,50 +1315,66 @@ local function RunMyOriginalScript()
             Size = UDim2.new(1, 0, 0, 3)
         }):Play()
         task.delay(0.6, function()
-            TweenService:Create(TPLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                BackgroundTransparency = 1
-            }):Play()
-            task.delay(0.3, function() if TPLoadingBar then TPLoadingBar:Destroy() end end)
+            if TPLoadingBar then
+                TweenService:Create(TPLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    BackgroundTransparency = 1
+                }):Play()
+                task.delay(0.3, function() if TPLoadingBar then TPLoadingBar:Destroy() end end)
+            end
         end)
 
-        -- أنيميشن فتح مثل القائمة الرئيسية
+        -- حجم القائمة يعتمد على عدد خانات الحفظ التي أضافها المستخدم فقط.
+        local function GetTPPanelHeight()
+            return 85 + math.max(0, State.tpSlotCount - 1) * 45
+        end
+
         TweenService:Create(State.tpPanel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 200, 0, 85),
+            Size = UDim2.new(0, 200, 0, GetTPPanelHeight()),
             Position = UDim2.new(0.5, 265, 0.42, 0),
             BackgroundTransparency = 0
         }):Play()
         TweenService:Create(stroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Transparency = 0
         }):Play()
-        task.spawn(function() task.wait(0.6) State.tpPanel.ClipsDescendants = false end)
+        task.spawn(function() task.wait(0.6) if State.tpPanel then State.tpPanel.ClipsDescendants = false end end)
 
         MakeDraggable(State.tpPanel)
-        task.delay(0.7, function()
-            if State.tpPanel and UI._LoadedConfig then
-                local saved = UI._LoadedConfig["__Position_" .. State.tpPanel.Name]
-                if saved then pcall(function() UI.ConfigRegistry["__Position_" .. State.tpPanel.Name].apply(saved) end) end
-            end
-        end)
-
         local titleFrame = Instance.new("Frame")
         titleFrame.Size = UDim2.new(1, 0, 0, 32)
         titleFrame.BackgroundTransparency = 1
         titleFrame.Parent = State.tpPanel
 
         local title = Instance.new("TextLabel")
-        title.Size = UDim2.new(1, -40, 1, 0)
+        title.Size = UDim2.new(1, -70, 1, 0)
         title.Position = UDim2.new(0, 12, 0, 0)
         title.BackgroundTransparency = 1
         title.Text = "قائمة الانتقال"
         title.TextColor3 = Color3.fromRGB(170, 0, 255)
         title.TextTransparency = 1
-        title.Font = Enum.Font.GothamBold
+        title.Font = Enum.Font.Arcade
         title.TextSize = 15
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = titleFrame
         task.delay(0.5, function()
             if title then TweenService:Create(title, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
         end)
+
+        -- زر + بجانب X: هو الوحيد الذي يضيف خانة حفظ جديدة.
+        local plusSlotBtn = Instance.new("TextButton")
+        plusSlotBtn.Size = UDim2.new(0, 26, 0, 26)
+        plusSlotBtn.Position = UDim2.new(1, -62, 0, 3)
+        plusSlotBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        plusSlotBtn.Text = "+"
+        plusSlotBtn.TextColor3 = Color3.fromRGB(90, 255, 150)
+        plusSlotBtn.TextScaled = true
+        plusSlotBtn.Font = Enum.Font.Arcade
+        plusSlotBtn.TextSize = 14
+        plusSlotBtn.ZIndex = 5
+        Instance.new("UICorner", plusSlotBtn)
+        plusSlotBtn.Parent = titleFrame
+        local plusSlotGlow = Instance.new("UIStroke", plusSlotBtn)
+        plusSlotGlow.Thickness = 1.5
+        AddMovingBorderGlow(plusSlotGlow, 1.5)
 
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 26, 0, 26)
@@ -1559,8 +1383,9 @@ local function RunMyOriginalScript()
         closeBtn.Text = "X"
         closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
         closeBtn.TextScaled = true
-        closeBtn.Font = Enum.Font.GothamBold
+        closeBtn.Font = Enum.Font.Arcade
         closeBtn.TextSize = 14
+        closeBtn.ZIndex = 5
         Instance.new("UICorner", closeBtn)
         closeBtn.Parent = titleFrame
         local closeBtnGlow = Instance.new("UIStroke", closeBtn)
@@ -1569,18 +1394,18 @@ local function RunMyOriginalScript()
 
         closeBtn.MouseButton1Click:Connect(function()
             playClick()
-            State.tpMainAct = false
-            if State.tpMainBtn then State.tpMainBtn.Text = _TranslateText("تشغيل") end
-            if State.tpMainStroke then State.tpMainStroke.Color = TOGGLE_OFF_COLOR end
-            if State.tpMainGlowGrad then SetGlowColor(State.tpMainGlowGrad, TOGGLE_OFF_COLOR) end
-            if State.tpPanel then
-                local closing = State.tpPanel
-                TweenService:Create(closing, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-                    Size = UDim2.new(0, 0, 0, 0),
-                    Position = UDim2.new(0.5, 365, 0.5, -42),
-                    BackgroundTransparency = 1
-                }):Play()
-                task.delay(0.35, function() if closing then closing:Destroy() end; State.tpPanel = nil end)
+
+            -- 🔒 إغلاق X = نفس إطفاء زر الانتقال بالضبط.
+            -- الـ setter يشغّل callback الأصلي، لذلك State.tpMainAct والقائمة
+            -- والحالة البصرية للزر كلها تتغير مع بعض.
+            local setter = UI.ToggleSetters["حفض موقعك"]
+            if setter then
+                setter(false, true)
+            else
+                State.tpMainAct = false
+                if State.tpMainBtn then State.tpMainBtn.Text = _TranslateText("تشغيل") end
+                if State.tpMainStroke then State.tpMainStroke.Color = TOGGLE_OFF_COLOR end
+                if State.tpMainGlowGrad then SetGlowColor(State.tpMainGlowGrad, TOGGLE_OFF_COLOR) end
             end
         end)
 
@@ -1590,13 +1415,23 @@ local function RunMyOriginalScript()
         scroll.BackgroundTransparency = 1
         scroll.ScrollBarThickness = 0
         scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        
+        scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+
         local layout = Instance.new("UIListLayout", scroll)
         layout.Padding = UDim.new(0, 5)
-        layout.HorizontalAlignment = "Center"
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+        local function ResizeTPPanel()
+            if not State.tpPanel then return end
+            local newHeight = GetTPPanelHeight()
+            TweenService:Create(State.tpPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, 200, 0, newHeight)
+            }):Play()
+        end
 
         local function AddTPButtons(index)
             local frame = Instance.new("Frame", scroll)
+            frame.Name = "SaveSlot_" .. index
             frame.Size = UDim2.new(0.9, 0, 0, 40)
             frame.BackgroundTransparency = 1
 
@@ -1607,17 +1442,17 @@ local function RunMyOriginalScript()
             saveBtn.TextTransparency = 1
             saveBtn.Text = "حفظ " .. index
             saveBtn.TextColor3 = Color3.new(1,1,1)
-            saveBtn.Font = Enum.Font.GothamBold
+            saveBtn.Font = Enum.Font.Arcade
             saveBtn.TextSize = 12
             Instance.new("UICorner", saveBtn)
             local saveBtnGlow = Instance.new("UIStroke", saveBtn)
             saveBtnGlow.Thickness = 1.5
             saveBtnGlow.Transparency = 1
             AddMovingBorderGlow(saveBtnGlow, 1.5)
-            task.delay(0.5 + index * 0.1, function()
+            task.delay(0.15 + index * 0.05, function()
                 if saveBtn then
-                    TweenService:Create(saveBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(saveBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    TweenService:Create(saveBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    TweenService:Create(saveBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
 
@@ -1629,17 +1464,17 @@ local function RunMyOriginalScript()
             goBtn.TextTransparency = 1
             goBtn.Text = "انتقال " .. index
             goBtn.TextColor3 = Color3.new(1,1,1)
-            goBtn.Font = Enum.Font.GothamBold
+            goBtn.Font = Enum.Font.Arcade
             goBtn.TextSize = 12
             Instance.new("UICorner", goBtn)
             local goBtnGlow = Instance.new("UIStroke", goBtn)
             goBtnGlow.Thickness = 1.5
             goBtnGlow.Transparency = 1
             AddMovingBorderGlow(goBtnGlow, 1.5)
-            task.delay(0.6 + index * 0.1, function()
+            task.delay(0.2 + index * 0.05, function()
                 if goBtn then
-                    TweenService:Create(goBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(goBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    TweenService:Create(goBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    TweenService:Create(goBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
 
@@ -1649,15 +1484,11 @@ local function RunMyOriginalScript()
                 if char and char:FindFirstChild("HumanoidRootPart") then
                     State.savedLocations[index] = char.HumanoidRootPart.CFrame
                     saveBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
-                    task.wait(0.5)
-                    saveBtn.BackgroundColor3 = Color3.fromRGB(140, 0, 210)
+                    task.delay(0.5, function()
+                        if saveBtn then saveBtn.BackgroundColor3 = Color3.fromRGB(140, 0, 210) end
+                    end)
                     OK("💾 تم حفظ الموقع #"..index)
-                    
-                    if index == #State.savedLocations or not State.savedLocations[index+1] then
-                        local newHeight = math.min(85 + (index * 45), 300)
-                        State.tpPanel:TweenSize(UDim2.new(0, 200, 0, newHeight), "Out", "Quad", 0.3, true)
-                        AddTPButtons(index + 1)
-                    end
+                    -- مهم: الحفظ لا يضيف خانة جديدة. الإضافة تتم فقط من زر +.
                 end
             end)
 
@@ -1673,7 +1504,18 @@ local function RunMyOriginalScript()
             end)
         end
 
-        AddTPButtons(1)
+        -- إعادة بناء الخانات الموجودة سابقاً بدون إنشاء خانات إضافية بسبب الحفظ.
+        for i = 1, math.max(1, State.tpSlotCount) do
+            AddTPButtons(i)
+        end
+
+        plusSlotBtn.MouseButton1Click:Connect(function()
+            playClick()
+            State.tpSlotCount = State.tpSlotCount + 1
+            AddTPButtons(State.tpSlotCount)
+            ResizeTPPanel()
+            OK("➕ تمت إضافة حفظ " .. State.tpSlotCount)
+        end)
     end
 
     -- ====================== AimBot Loop ======================
@@ -2145,7 +1987,7 @@ end)
     UI.Title.BackgroundTransparency = 1
     UI.Title.Text = ""
     UI.Title.TextColor3 = Color3.fromRGB(170, 0, 255)
-    UI.Title.Font = Enum.Font.GothamBold
+    UI.Title.Font = Enum.Font.Arcade
     UI.Title.TextSize = 19
     UI.Title.TextScaled = false
     UI.Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -2209,7 +2051,7 @@ end)
     UI.PlayerName.BackgroundTransparency = 1
     UI.PlayerName.Text = "جاري التحميل..."
     UI.PlayerName.TextColor3 = Color3.fromRGB(255, 255, 255)
-    UI.PlayerName.Font = Enum.Font.GothamBold
+    UI.PlayerName.Font = Enum.Font.Arcade
     UI.PlayerName.TextSize = 12
     UI.PlayerName.TextXAlignment = Enum.TextXAlignment.Left
     UI.PlayerName.TextTruncate = Enum.TextTruncate.AtEnd
@@ -2222,7 +2064,7 @@ end)
     UI.PlayerUsername.BackgroundTransparency = 1
     UI.PlayerUsername.Text = "@player"
     UI.PlayerUsername.TextColor3 = Color3.fromRGB(175, 175, 195)
-    UI.PlayerUsername.Font = Enum.Font.Gotham
+    UI.PlayerUsername.Font = Enum.Font.Arcade
     UI.PlayerUsername.TextSize = 10
     UI.PlayerUsername.TextXAlignment = Enum.TextXAlignment.Left
     UI.PlayerUsername.TextTruncate = Enum.TextTruncate.AtEnd
@@ -2295,7 +2137,7 @@ end)
     UI.FPSLabel.BackgroundTransparency = 1
     UI.FPSLabel.Text = "-- FPS"
     UI.FPSLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
-    UI.FPSLabel.Font = Enum.Font.GothamBold
+    UI.FPSLabel.Font = Enum.Font.Arcade
     UI.FPSLabel.TextSize = 13
     UI.FPSLabel.TextXAlignment = Enum.TextXAlignment.Left
     UI.FPSLabel.ZIndex = 21
@@ -2307,7 +2149,7 @@ end)
     UI.PingLabel.BackgroundTransparency = 1
     UI.PingLabel.Text = "-- ms"
     UI.PingLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
-    UI.PingLabel.Font = Enum.Font.GothamBold
+    UI.PingLabel.Font = Enum.Font.Arcade
     UI.PingLabel.TextSize = 13
     UI.PingLabel.TextXAlignment = Enum.TextXAlignment.Left
     UI.PingLabel.ZIndex = 21
@@ -2361,13 +2203,13 @@ end)
 
     UI.CloseBtn = Instance.new("TextButton", UI.MainFrame)
     UI.CloseBtn.Size = UDim2.new(0, 45, 0, 45)
-    UI.CloseBtn.Position = UDim2.new(1, -50, 0, 3)
+    UI.CloseBtn.Position = UDim2.new(1, -58, 0, 8)
     UI.CloseBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     UI.CloseBtn.Text = "X"
     UI.CloseBtn.TextColor3 = Color3.new(1,0,0)
     UI.CloseBtn.TextSize = 19
     UI.CloseBtn.TextScaled = false
-    UI.CloseBtn.Font = Enum.Font.GothamBold
+    UI.CloseBtn.Font = Enum.Font.Arcade
     Instance.new("UICorner", UI.CloseBtn)
     UI.CloseBtn.ZIndex = 6
     UI.CloseBtnStroke = Instance.new("UIStroke", UI.CloseBtn)
@@ -2381,7 +2223,8 @@ end)
     UI.ActionBtn.Position = UDim2.new(1, -100, 0, 3)
     UI.ActionBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     UI.ActionBtn.Text = "-"
-    UI.ActionBtn.Font = Enum.Font.GothamBold
+    UI.ActionBtn.Font = Enum.Font.Arcade
+    UI.ActionBtn.Visible = false
     Instance.new("UICorner", UI.ActionBtn)
     UI.ActionBtn.ZIndex = 6
     UI.ActionBtnStroke = Instance.new("UIStroke", UI.ActionBtn)
@@ -2399,7 +2242,7 @@ end)
     UI.ChatRestoreBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
     UI.ChatRestoreBtn.TextSize = 18
     UI.ChatRestoreBtn.TextScaled = false
-    UI.ChatRestoreBtn.Font = Enum.Font.GothamBold
+    UI.ChatRestoreBtn.Font = Enum.Font.Arcade
     UI.ChatRestoreBtn.Visible = false
     UI.ChatRestoreBtn.ZIndex = 7
     Instance.new("UICorner", UI.ChatRestoreBtn).CornerRadius = UDim.new(0, 9)
@@ -2412,10 +2255,10 @@ end)
     UI.ResetConfigBtn.Size = UDim2.new(0, 45, 0, 45)
     UI.ResetConfigBtn.TextSize = 19
     UI.ResetConfigBtn.TextScaled = false
-    UI.ResetConfigBtn.Position = UDim2.new(1, -150, 0, 3)
+    UI.ResetConfigBtn.Position = UDim2.new(1, -108, 0, 8)
     UI.ResetConfigBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     UI.ResetConfigBtn.Text = "🗑️"
-    UI.ResetConfigBtn.Font = Enum.Font.GothamBold
+    UI.ResetConfigBtn.Font = Enum.Font.Arcade
     Instance.new("UICorner", UI.ResetConfigBtn)
     UI.ResetConfigBtn.ZIndex = 6
     UI.ResetConfigBtnStroke = Instance.new("UIStroke", UI.ResetConfigBtn)
@@ -2436,7 +2279,7 @@ end)
     UI.DeleteChatBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
     UI.DeleteChatBtn.TextSize = 13
     UI.DeleteChatBtn.TextScaled = false
-    UI.DeleteChatBtn.Font = Enum.Font.GothamBold
+    UI.DeleteChatBtn.Font = Enum.Font.Arcade
     Instance.new("UICorner", UI.DeleteChatBtn)
     UI.DeleteChatBtn.ZIndex = 6
     UI.DeleteChatBtn.Visible = false -- يبان بس لما تاب الدردشة يكون مفتوح
@@ -2453,7 +2296,7 @@ end)
     UI.CopyChatBtn.TextColor3 = Color3.fromRGB(80, 170, 255)
     UI.CopyChatBtn.TextSize = 13
     UI.CopyChatBtn.TextScaled = false
-    UI.CopyChatBtn.Font = Enum.Font.GothamBold
+    UI.CopyChatBtn.Font = Enum.Font.Arcade
     Instance.new("UICorner", UI.CopyChatBtn)
     UI.CopyChatBtn.ZIndex = 6
     UI.CopyChatBtn.Visible = false -- يبان بس لما تاب الدردشة يكون مفتوح
@@ -2525,7 +2368,7 @@ end)
         if shapeType == 3 then
             shape = Instance.new("TextLabel")
             shape.Text = "▲"
-            shape.Font = Enum.Font.GothamBold
+            shape.Font = Enum.Font.Arcade
             shape.TextScaled = true
             shape.TextColor3 = color
             shape.BackgroundTransparency = 1
@@ -2656,6 +2499,7 @@ end)
         State.IsSuperMini = true; State.IsMin = false
         State.MainUIVisible = false
         _SetMainMenuSound(false)
+        UI.ActionBtn.Visible = true
         State._wasChatOpenBeforeMin = wasChatOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
         UI.DeleteChatBtn.Visible = State._chatPanelOpen
@@ -2672,6 +2516,8 @@ end)
         UI.Title.TextScaled = false
         UI.Title.Position = UDim2.new(0, 15, 0, 0)
         UI.Title.Size = UDim2.new(1, -70, 1, 0)
+        -- إخفاء نقطة الحالة في الشريط المصغّر حتى لا تغطي حرف Y في Sky.
+        UI.StatusDot.Visible = false
         UI.ActionBtn.Text = "+"
         UI.ActionBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
         UI.ActionBtn.TextScaled = false
@@ -2696,6 +2542,9 @@ end)
         State.IsMin = false; State.IsSuperMini = false
         State.MainUIVisible = true
         _SetMainMenuSound(true)
+        -- إزالة زر (-) من القائمة الكبيرة؛ يظهر (+) فقط في الوضع المصغّر.
+        UI.ActionBtn.Visible = false
+        UI.StatusDot.Visible = true
         State._chatPageOpen = State._wasChatOpenBeforeMin -- رجعنا للحجم الكامل، لو تاب الدردشة كان مفتوح نرجّعه يعتبر مفتوح
         UI.DeleteChatBtn.Visible = State._chatPageOpen
         UI.CopyChatBtn.Visible = State._chatPageOpen
@@ -2715,6 +2564,7 @@ end)
         UI.ActionBtn.TextScaled = false
         UI.ActionBtn.Position = UDim2.new(1, -100, 0, 3)
         UI.ActionBtn.Size = UDim2.new(0, 45, 0, 45)
+        UI.ResetConfigBtn.Position = UDim2.new(1, -108, 0, 8)
         UI.CloseBtn.Visible = true
         -- زر الدردشة يظهر فقط عند تصغير القائمة الأساسية.
         UI.ChatRestoreBtn.Visible = false
@@ -2731,6 +2581,7 @@ end)
         State.IsMin = true; State.IsSuperMini = false
         State.MainUIVisible = false
         _SetMainMenuSound(false)
+        UI.ActionBtn.Visible = true
         State._wasChatOpenBeforeMin = State._chatPageOpen
         State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
         UI.DeleteChatBtn.Visible = false
@@ -2761,11 +2612,11 @@ end)
 
     UI.ActionBtn.MouseButton1Click:Connect(function()
         playClick()
-        if State.IsSuperMini or State.IsMin then
-            SetToFullMode()
-        elseif State._chatPageOpen then
-            -- زر - داخل الدردشة: نصغّر القائمة ونترك زر «الدردشة» بجانب +.
+        -- زر - يعني تصغير القائمة دائمًا، حتى لو كانت لوحة الدردشة مخفية.
+        if UI.ActionBtn.Text == "-" then
             SetToSuperMiniMode()
+        elseif State.IsSuperMini or State.IsMin then
+            SetToFullMode()
         else
             SetToNormalMiniMode()
         end
@@ -2797,7 +2648,7 @@ end)
         btn.Text = _TranslateText(name)
         btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         btn.TextColor3 = Color3.new(1,1,1)
-        btn.Font = Enum.Font.GothamBold
+        btn.Font = Enum.Font.Arcade
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
         btn.TextScaled = true
         btn.ZIndex = 6
@@ -2815,8 +2666,8 @@ UI.btn4 = CreateTabBtn("🎵 الموسيقى", 0.6)
 UI.btn5 = CreateTabBtn("💬 الدردشة", 1.0)
 UI.btn6 = CreateTabBtn("❓ السكربت", 0.8)
 UI.btn7 = CreateTabBtn("⚙️ الإعدادات", 1.2)
-UI.btn8 = CreateTabBtn("👥 المشغلين", 1.4)
--- بطاقة خضراء مميزة للتاب 8
+UI.btn8 = CreateTabBtn("📝 ملاحظات", 1.4)
+-- بطاقة مميزة لتاب الملاحظات
 UI.btn8.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 UI.btn8.TextColor3 = Color3.fromRGB(220, 255, 240)
  
@@ -2831,7 +2682,7 @@ local function CreateTabBadge(tabBtn)
     badge.BorderSizePixel = 0
     badge.Text = "0"
     badge.TextColor3 = Color3.new(1, 1, 1)
-    badge.Font = Enum.Font.GothamBold
+    badge.Font = Enum.Font.Arcade
     badge.TextScaled = true
     badge.ZIndex = 8
     badge.Visible = false
@@ -2864,7 +2715,7 @@ UI.MiniChatBadge.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
 UI.MiniChatBadge.BorderSizePixel = 0
 UI.MiniChatBadge.Text = "0"
 UI.MiniChatBadge.TextColor3 = Color3.new(1, 1, 1)
-UI.MiniChatBadge.Font = Enum.Font.GothamBold
+UI.MiniChatBadge.Font = Enum.Font.Arcade
 UI.MiniChatBadge.TextScaled = true
 UI.MiniChatBadge.ZIndex = 20 -- فوق كل شي حتى فوق زر X والـ +
 UI.MiniChatBadge.Visible = false
@@ -3146,7 +2997,9 @@ end)
             EnsureConfigFolder()
             local data = {}
             for name, entry in pairs(UI.ConfigRegistry) do
-                data[name] = entry.get()
+                if not (type(name) == "string" and name:match("^__Position_")) then
+                    data[name] = entry.get()
+                end
             end
             writefile(CONFIG_FILE, game:GetService("HttpService"):JSONEncode(data))
         end)
@@ -3157,6 +3010,20 @@ end)
     _G.SkySaveConfig = function()
         if SaveConfig then return SaveConfig() end
     end
+
+    -- 🔄 إرجاع أماكن كل القوائم/النوافذ القابلة للسحب لمكانها الافتراضي فقط
+    -- (بدون لمس بقية الإعدادات مثل المميزات المفعّلة أو الألوان)
+    local function ResetAllMenuPositions()
+        for name, entry in pairs(UI.ConfigRegistry) do
+            if type(name) == "string" and name:match("^__Position_") and entry.default ~= nil then
+                pcall(function() entry.apply(entry.default) end)
+            end
+        end
+        -- لا نحفظ مواضع القوائم بعد إرجاعها.
+    end
+
+    -- يستعمله زر قفل الكاميرا الموجود خارج RunMyOriginalScript (3 ضغطات متتالية).
+    _G.SkyResetMenuPositions = ResetAllMenuPositions
 
     LoadConfig = function()
         if not (readfile and isfile) then return false end
@@ -3169,9 +3036,11 @@ end)
 
         _configLoading = true
         for name, value in pairs(data) do
-            local entry = UI.ConfigRegistry[name]
-            if entry then
-                pcall(function() entry.apply(value) end)
+            if not (type(name) == "string" and name:match("^__Position_")) then
+                local entry = UI.ConfigRegistry[name]
+                if entry then
+                    pcall(function() entry.apply(value) end)
+                end
             end
         end
         _configLoading = false
@@ -3245,7 +3114,7 @@ end)
         l.TextColor3 = Color3.new(1,1,1)
         l.BackgroundTransparency = 1
         l.TextXAlignment = "Left"
-        l.Font = Enum.Font.GothamMedium
+        l.Font = Enum.Font.Arcade
         l.TextScaled = true
         l.ZIndex = 7
         local uip = Instance.new("UITextSizeConstraint", l)
@@ -3312,7 +3181,7 @@ end)
             btn.Text = _TranslateText("تشغيل")
             btn.TextColor3 = Color3.new(1,1,1)
             btn.TextSize = 16
-            btn.Font = Enum.Font.GothamBold
+            btn.Font = Enum.Font.Arcade
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
             btn.ZIndex = 7
             local btnStroke = Instance.new("UIStroke", btn)
@@ -3349,7 +3218,7 @@ end)
             btn.Text = _TranslateText("تشغيل")
             btn.TextColor3 = Color3.new(1,1,1)
             btn.TextSize = 16
-            btn.Font = Enum.Font.GothamBold
+            btn.Font = Enum.Font.Arcade
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
             btn.ZIndex = 7
             local stroke = Instance.new("UIStroke", btn)
@@ -3424,6 +3293,16 @@ end)
                     isActive = function() return act end
                 })
             end
+
+            -- 🔧 مفتاح داخلي: أي قائمة فرعية تقدر الآن ترجع زرها الرئيسي
+            -- لحالة "تشغيل" بدون ترك الحالة البصرية عالقة على "إيقاف".
+            UI.ToggleSetters[txt] = function(value, save)
+                applyToggle(value == true)
+                if save and txt ~= "سيرفر" then
+                    SaveConfig()
+                end
+            end
+
             return btn, stroke, _btnGlowGrad
         end
     end
@@ -3690,7 +3569,7 @@ local function UpdatePlayerList()
                 nameLbl.BackgroundTransparency = 1
                 nameLbl.Text = p.DisplayName
                 nameLbl.TextColor3 = Color3.new(1, 1, 1)
-                nameLbl.Font = Enum.Font.GothamBold
+                nameLbl.Font = Enum.Font.Arcade
                 nameLbl.TextScaled = true
                 nameLbl.ZIndex = 7
                 local nameConstraint = Instance.new("UITextSizeConstraint", nameLbl)
@@ -3704,7 +3583,7 @@ local function UpdatePlayerList()
                 userLbl.BackgroundTransparency = 1
                 userLbl.Text = "@"..p.Name
                 userLbl.TextColor3 = Color3.fromRGB(170, 0, 255)
-                userLbl.Font = Enum.Font.GothamMedium
+                userLbl.Font = Enum.Font.Arcade
                 userLbl.TextScaled = true
                 userLbl.ZIndex = 7
                 local userConstraint = Instance.new("UITextSizeConstraint", userLbl)
@@ -3845,7 +3724,7 @@ local function UpdatePlayerList()
 
         local l = Instance.new("TextLabel", f)
         l.Size = UDim2.new(1, 0, 0, 35); l.Position = UDim2.new(0, 10, 0, 5)
-        l.Text = txt .. ": " .. startVal; l.TextColor3 = Color3.new(1,1,1); l.BackgroundTransparency = 1; l.TextXAlignment = "Left"; l.TextSize = 18; l.Font = Enum.Font.GothamMedium; l.ZIndex = 7
+        l.Text = txt .. ": " .. startVal; l.TextColor3 = Color3.new(1,1,1); l.BackgroundTransparency = 1; l.TextXAlignment = "Left"; l.TextSize = 18; l.Font = Enum.Font.Arcade; l.ZIndex = 7
 
         local sB = Instance.new("Frame", f)
         sB.Size = UDim2.new(0.9, 0, 0, 8); sB.Position = UDim2.new(0.05, 0, 0.75, 0); sB.BackgroundColor3 = Color3.fromRGB(50,50,50); Instance.new("UICorner", sB)
@@ -3954,7 +3833,7 @@ speedIndicator.Size = UDim2.new(0, 200, 0, 50)
 speedIndicator.Position = UDim2.new(0.5, -100, 0.4, -25)
 speedIndicator.BackgroundTransparency = 1
 speedIndicator.Text = ""
-speedIndicator.Font = Enum.Font.GothamBlack
+speedIndicator.Font = Enum.Font.Arcade
 speedIndicator.TextSize = 45 
 speedIndicator.TextColor3 = Color3.fromRGB(0,0 ,0 ) 
 speedIndicator.TextTransparency = 1
@@ -4438,7 +4317,7 @@ l.Text = "الموسيقى" -- غيرتها لتكون أقصر وأرتب
 l.TextColor3 = Color3.new(1,1,1)
 l.BackgroundTransparency = 1
 l.TextXAlignment = "Left"
-l.Font = Enum.Font.GothamMedium
+l.Font = Enum.Font.Arcade
 l.TextScaled = true
 l.ZIndex = 7
 
@@ -4455,7 +4334,7 @@ btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn.Text = _TranslateText("تشغيل")
 btn.TextColor3 = Color3.new(1,1,1)
 btn.TextSize = 16
-btn.Font = Enum.Font.GothamBold
+btn.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn)
 btn.ZIndex = 7
 
@@ -4503,7 +4382,7 @@ l2.Text = "موسيقى2"
 l2.TextColor3 = Color3.new(1,1,1)
 l2.BackgroundTransparency = 1
 l2.TextXAlignment = Enum.TextXAlignment.Left
-l2.Font = Enum.Font.GothamMedium
+l2.Font = Enum.Font.Arcade
 l2.TextScaled = true
 l2.ZIndex = 7
 
@@ -4519,7 +4398,7 @@ btn2m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn2m.Text = _TranslateText("تشغيل")
 btn2m.TextColor3 = Color3.new(1,1,1)
 btn2m.TextSize = 16
-btn2m.Font = Enum.Font.GothamBold
+btn2m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn2m)
 btn2m.ZIndex = 7
 
@@ -4565,7 +4444,7 @@ l3.Text = "موسيقى 3"
 l3.TextColor3 = Color3.new(1,1,1)
 l3.BackgroundTransparency = 1
 l3.TextXAlignment = Enum.TextXAlignment.Left
-l3.Font = Enum.Font.GothamMedium
+l3.Font = Enum.Font.Arcade
 l3.TextScaled = true
 l3.ZIndex = 7
 
@@ -4581,7 +4460,7 @@ btn3m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn3m.Text = _TranslateText("تشغيل")
 btn3m.TextColor3 = Color3.new(1,1,1)
 btn3m.TextSize = 16
-btn3m.Font = Enum.Font.GothamBold
+btn3m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn3m)
 btn3m.ZIndex = 7
 
@@ -4630,7 +4509,7 @@ l5.Text = "موسيقى 4"
 l5.TextColor3 = Color3.new(1,1,1)
 l5.BackgroundTransparency = 1
 l5.TextXAlignment = Enum.TextXAlignment.Left
-l5.Font = Enum.Font.GothamMedium
+l5.Font = Enum.Font.Arcade
 l5.TextScaled = true
 l5.ZIndex = 7
 
@@ -4645,7 +4524,7 @@ btn5m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn5m.Text = _TranslateText("تشغيل")
 btn5m.TextColor3 = Color3.new(1,1,1)
 btn5m.TextSize = 16
-btn5m.Font = Enum.Font.GothamBold
+btn5m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn5m)
 btn5m.ZIndex = 7
 
@@ -4696,7 +4575,7 @@ l6.Text = "موسيقى 5"
 l6.TextColor3 = Color3.new(1,1,1)
 l6.BackgroundTransparency = 1
 l6.TextXAlignment = Enum.TextXAlignment.Left
-l6.Font = Enum.Font.GothamMedium
+l6.Font = Enum.Font.Arcade
 l6.TextScaled = true
 l6.ZIndex = 7
 
@@ -4711,7 +4590,7 @@ btn6m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn6m.Text = _TranslateText("تشغيل")
 btn6m.TextColor3 = Color3.new(1,1,1)
 btn6m.TextSize = 16
-btn6m.Font = Enum.Font.GothamBold
+btn6m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn6m)
 btn6m.ZIndex = 7
 
@@ -4762,7 +4641,7 @@ l7.Text = "موسيقى 6"
 l7.TextColor3 = Color3.new(1,1,1)
 l7.BackgroundTransparency = 1
 l7.TextXAlignment = Enum.TextXAlignment.Left
-l7.Font = Enum.Font.GothamMedium
+l7.Font = Enum.Font.Arcade
 l7.TextScaled = true
 l7.ZIndex = 7
 
@@ -4777,7 +4656,7 @@ btn7m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn7m.Text = _TranslateText("تشغيل")
 btn7m.TextColor3 = Color3.new(1,1,1)
 btn7m.TextSize = 16
-btn7m.Font = Enum.Font.GothamBold
+btn7m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn7m)
 btn7m.ZIndex = 7
 
@@ -4828,7 +4707,7 @@ l8.Text = "موسيقى 7"
 l8.TextColor3 = Color3.new(1,1,1)
 l8.BackgroundTransparency = 1
 l8.TextXAlignment = Enum.TextXAlignment.Left
-l8.Font = Enum.Font.GothamMedium
+l8.Font = Enum.Font.Arcade
 l8.TextScaled = true
 l8.ZIndex = 7
 
@@ -4843,7 +4722,7 @@ btn8m.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 btn8m.Text = _TranslateText("تشغيل")
 btn8m.TextColor3 = Color3.new(1,1,1)
 btn8m.TextSize = 16
-btn8m.Font = Enum.Font.GothamBold
+btn8m.Font = Enum.Font.Arcade
 Instance.new("UICorner", btn8m)
 btn8m.ZIndex = 7
 
@@ -4960,7 +4839,7 @@ end)
     settingsTitle.BackgroundTransparency = 1
     settingsTitle.Text = "🎨 اختر تاب ثم لون لحوافه"
     settingsTitle.TextColor3 = Color3.new(1,1,1)
-    settingsTitle.Font = Enum.Font.GothamBold
+    settingsTitle.Font = Enum.Font.Arcade
     settingsTitle.TextScaled = true
     settingsTitle.TextXAlignment = Enum.TextXAlignment.Left
     settingsTitle.ZIndex = 6
@@ -5025,7 +4904,7 @@ end)
         lbl.BackgroundTransparency = 1
         lbl.Text = item.name
         lbl.TextColor3 = Color3.new(1,1,1)
-        lbl.Font = Enum.Font.GothamBold
+        lbl.Font = Enum.Font.Arcade
         lbl.TextScaled = true
         lbl.TextXAlignment = Enum.TextXAlignment.Center
         lbl.ZIndex = 7
@@ -5056,7 +4935,7 @@ end)
     paletteTitle.BackgroundTransparency = 1
     paletteTitle.Text = "اختر اللون:"
     paletteTitle.TextColor3 = Color3.new(1,1,1)
-    paletteTitle.Font = Enum.Font.GothamBold
+    paletteTitle.Font = Enum.Font.Arcade
     paletteTitle.TextScaled = true
     paletteTitle.TextXAlignment = Enum.TextXAlignment.Left
     paletteTitle.ZIndex = 6
@@ -5117,7 +4996,7 @@ end)
     ResetColorsBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     ResetColorsBtn.Text = "🔄 استرجاع الألوان الافتراضية"
     ResetColorsBtn.TextColor3 = Color3.new(1,1,1)
-    ResetColorsBtn.Font = Enum.Font.GothamBold
+    ResetColorsBtn.Font = Enum.Font.Arcade
     ResetColorsBtn.TextScaled = true
     ResetColorsBtn.ZIndex = 6
     Instance.new("UICorner", ResetColorsBtn).CornerRadius = UDim.new(0, 8)
@@ -5321,7 +5200,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         ChatTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
         ChatTitle.TextSize = 21
         ChatTitle.TextScaled = false
-        ChatTitle.Font = Enum.Font.GothamBold
+        ChatTitle.Font = Enum.Font.Arcade
         ChatTitle.TextXAlignment = Enum.TextXAlignment.Left
         ChatTitle.ZIndex = 9
 
@@ -5349,12 +5228,13 @@ UI.btn1.MouseButton1Click:Connect(function()
             end
         end)
 
-        -- ⚫ إطار واحد فقط للوحة الدردشة، بدون تراكب أو توهج إضافي
+        -- 🟣 إطار لوحة الدردشة بنفس ستايل التوهج البنفسجي/الأسود المستخدم بباقي قوائم السكربت
         local ChatPanelStroke = Instance.new("UIStroke", ChatPanel)
-        ChatPanelStroke.Color = Color3.fromRGB(0, 0, 0)
+        ChatPanelStroke.Color = Color3.fromRGB(170, 0, 255)
         ChatPanelStroke.Thickness = 2
-        ChatPanelStroke.Transparency = 0.05
+        ChatPanelStroke.Transparency = 0
         ChatPanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(ChatPanelStroke, 1.5)
         MakeDraggable(ChatPanel)
 
         -- نقل صفحة الدردشة وأدواتها إلى اللوحة الحالية.
@@ -5389,7 +5269,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         ChatCloseBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
         ChatCloseBtn.Text = "X"
         ChatCloseBtn.TextColor3 = Color3.new(1, 0, 0)
-        ChatCloseBtn.Font = Enum.Font.GothamBold
+        ChatCloseBtn.Font = Enum.Font.Arcade
         ChatCloseBtn.TextSize = 18
         ChatCloseBtn.ZIndex = 9
         Instance.new("UICorner", ChatCloseBtn)
@@ -5446,20 +5326,332 @@ end)
     
     UI.btn8.MouseButton1Click:Connect(function()
         playClick()
-        UI.Page1.Visible = false
-        UI.Page2.Visible = false
-        UI.Page3.Visible = false
-        UI.Page4.Visible = false
-        UI.Page5.Visible = false
-        UI.Page6.Visible = false
-        UI.Page7.Visible = false
-        UI.Page8.Visible = true
-        AnimatePage(UI.Page8)
-        MoveUnderline(1.4)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[8]}):Play()
-        SetGlowColor(UI.MainGlowGradient, UI.TabColors[8])
-        SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[8])
-        SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[8])
+        SetToSuperMiniMode()
+
+        -- 🖼️ لوحة الملاحظات: نفس فكرة لوحة الدردشة (تصغّر القائمة الأساسية وتفتح نافذة عائمة)
+        local NotesPanel = Instance.new("Frame")
+        NotesPanel.Name = "SkyNotesPanel"
+        NotesPanel.Size = UDim2.new(0, 420, 0, 360)
+        NotesPanel.Position = UDim2.new(0.5, -210, 0.5, -165)
+        NotesPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        NotesPanel.BackgroundTransparency = 0.25
+        NotesPanel.BorderSizePixel = 0
+        NotesPanel.ClipsDescendants = true
+        NotesPanel.Active = true
+        NotesPanel.ZIndex = 6
+        NotesPanel.Parent = ScreenGui
+        Instance.new("UICorner", NotesPanel).CornerRadius = UDim.new(0, 15)
+
+        local NotesTitle = Instance.new("TextLabel", NotesPanel)
+        NotesTitle.Name = "NotesTitle"
+        NotesTitle.Size = UDim2.new(0, 260, 0, 36)
+        NotesTitle.Position = UDim2.new(0, 18, 0, 6)
+        NotesTitle.BackgroundTransparency = 1
+        NotesTitle.Text = "📝 ملاحظات ومشاكل"
+        NotesTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NotesTitle.TextSize = 17
+        NotesTitle.TextScaled = false
+        NotesTitle.Font = Enum.Font.Arcade
+        NotesTitle.TextXAlignment = Enum.TextXAlignment.Left
+        NotesTitle.ZIndex = 9
+
+        -- 🟦 نفس ستايل التوهج المستخدم بباقي قوائم السكربت، بلون تاب الملاحظات
+        local NotesPanelStroke = Instance.new("UIStroke", NotesPanel)
+        NotesPanelStroke.Color = UI.TabColors[8]
+        NotesPanelStroke.Thickness = 2
+        NotesPanelStroke.Transparency = 0
+        NotesPanelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(NotesPanelStroke, 1.5, UI.TabColors[8])
+        MakeDraggable(NotesPanel)
+
+        -- زر X بسيط: يقفل نافذة الملاحظات بس، بدون أي أزرار ثانية جنبه.
+        local NotesCloseBtn = Instance.new("TextButton", NotesPanel)
+        NotesCloseBtn.Name = "NotesCloseBtn"
+        NotesCloseBtn.Size = UDim2.new(0, 45, 0, 45)
+        NotesCloseBtn.Position = UDim2.new(1, -55, 0, 5)
+        NotesCloseBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        NotesCloseBtn.Text = "X"
+        NotesCloseBtn.TextColor3 = Color3.new(1, 0, 0)
+        NotesCloseBtn.Font = Enum.Font.Arcade
+        NotesCloseBtn.TextSize = 18
+        NotesCloseBtn.ZIndex = 9
+        Instance.new("UICorner", NotesCloseBtn)
+        local NotesCloseStroke = Instance.new("UIStroke", NotesCloseBtn)
+        NotesCloseStroke.Color = UI.TabColors[8]
+        NotesCloseStroke.Thickness = 1.5
+        AddMovingBorderGlow(NotesCloseStroke, 1.5, UI.TabColors[8])
+
+        -- 📜 قائمة صغيرة تعرض آخر ملاحظاتي المرسلة (تأكيد إنها وصلت)
+        local NotesLog = Instance.new("ScrollingFrame", NotesPanel)
+        NotesLog.Name = "NotesLog"
+        NotesLog.Position = UDim2.new(0, 4, 0, 58)
+        NotesLog.Size = UDim2.new(1, -12, 1, -116)
+        NotesLog.BackgroundTransparency = 1
+        NotesLog.BorderSizePixel = 0
+        NotesLog.ScrollBarThickness = 4
+        NotesLog.ScrollBarImageColor3 = UI.TabColors[8]
+        NotesLog.CanvasSize = UDim2.new(0, 0, 0, 0)
+        NotesLog.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        NotesLog.ZIndex = 7
+
+        local NotesLogList = Instance.new("UIListLayout", NotesLog)
+        NotesLogList.SortOrder = Enum.SortOrder.LayoutOrder
+        NotesLogList.Padding = UDim.new(0, 6)
+
+        local NotesEmptyLbl = Instance.new("TextLabel", NotesLog)
+        NotesEmptyLbl.Name = "NotesEmptyLbl"
+        NotesEmptyLbl.LayoutOrder = -999
+        NotesEmptyLbl.Size = UDim2.new(1, -8, 0, 40)
+        NotesEmptyLbl.BackgroundTransparency = 1
+        NotesEmptyLbl.Text = "اكتب أي ملاحظة، مشكلة، أو اقتراح تحت 👇"
+        NotesEmptyLbl.TextColor3 = Color3.fromRGB(170, 170, 170)
+        NotesEmptyLbl.TextSize = 13
+        NotesEmptyLbl.Font = Enum.Font.Arcade
+        NotesEmptyLbl.TextWrapped = true
+        NotesEmptyLbl.ZIndex = 8
+
+        -- 🛠️ زر الحذف يبان بس عندك أنت (المطوّرة)، الباقي ما يشوفونه أبد حتى على ملاحظاتهم هم
+        local NOTES_ADMIN_NAME = "AAbbooyi"
+        local isNotesAdmin = (game.Players.LocalPlayer.Name == NOTES_ADMIN_NAME)
+
+        -- 🟦⚫ توهج أزرق مع أسود متحرك على حواف الفقاعة (نفس إحساس فقاعة خويي فوق الراس)
+        local function addBlackBlueGlow(stroke)
+            local grad = Instance.new("UIGradient", stroke)
+            grad.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 140, 255)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 140, 255)),
+            })
+            task.spawn(function()
+                while grad and grad.Parent do
+                    grad.Rotation = (grad.Rotation + 1.5) % 360
+                    task.wait(0.03)
+                end
+            end)
+        end
+
+        local function addNoteRow(text, sentOk, noteId, avatarUserId)
+            NotesEmptyLbl.Visible = false
+            text = tostring(text or "")
+
+            -- 📏 حجم الفقاعة يتبع طول النص: مو عريضة مرا ولا طويلة مرا، مقاسة فعليًا من النص
+            local TextService = game:GetService("TextService")
+            local measured = TextService:GetTextSize(text, 13, Enum.Font.Arcade, Vector2.new(200, 1000))
+            local bubbleWidth = math.clamp(measured.X + 22, 70, 230)
+            local bubbleHeight = math.clamp(measured.Y + 14, 26, 90)
+            local avatarSize = 30
+            local avatarGap = 8
+            local bubbleOffsetX = avatarSize + avatarGap -- ↔️ ندفع الفقاعة يمين عشان الصورة ما تدخل جواها
+            local rowHeight = math.max(bubbleHeight, avatarSize)
+
+            local row = Instance.new("Frame", NotesLog)
+            row.Name = "NoteRow"
+            row.Size = UDim2.new(1, -8, 0, rowHeight)
+            row.BackgroundTransparency = 1
+            row.ZIndex = 7
+
+            -- 🖼️ صورة صاحب الملاحظة
+            local avatar = Instance.new("ImageLabel", row)
+            avatar.Name = "NoteAvatar"
+            avatar.Size = UDim2.new(0, avatarSize, 0, avatarSize)
+            avatar.Position = UDim2.new(0, 0, 0.5, -avatarSize / 2)
+            avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            avatar.ZIndex = 7
+            Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+            local avatarStroke = Instance.new("UIStroke", avatar)
+            avatarStroke.Color = Color3.fromRGB(0, 140, 255)
+            avatarStroke.Thickness = 1.6
+            addBlackBlueGlow(avatarStroke)
+            if avatarUserId then
+                avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(avatarUserId) .. "&w=150&h=150"
+            end
+
+            local bubble = Instance.new("Frame", row)
+            bubble.Name = "NoteBubble"
+            bubble.Size = UDim2.new(0, bubbleWidth, 0, bubbleHeight)
+            bubble.Position = UDim2.new(0, bubbleOffsetX, 0.5, -bubbleHeight / 2)
+            bubble.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+            bubble.ZIndex = 7
+            Instance.new("UICorner", bubble).CornerRadius = UDim.new(0, 10)
+            local bStroke = Instance.new("UIStroke", bubble)
+            bStroke.Color = Color3.fromRGB(0, 140, 255)
+            bStroke.Thickness = 1.6
+            if sentOk then
+                addBlackBlueGlow(bStroke)
+            else
+                bStroke.Color = Color3.fromRGB(255, 60, 60)
+            end
+
+            local lbl = Instance.new("TextLabel", bubble)
+            lbl.Size = UDim2.new(1, -12, 1, -8)
+            lbl.Position = UDim2.new(0, 6, 0, 4)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = sentOk and text or ("❌ " .. text)
+            lbl.TextColor3 = Color3.fromRGB(235, 235, 235)
+            lbl.TextSize = 13
+            lbl.Font = Enum.Font.Arcade
+            lbl.TextWrapped = true
+            lbl.TextXAlignment = Enum.TextXAlignment.Left
+            lbl.TextYAlignment = Enum.TextYAlignment.Center
+            lbl.ZIndex = 8
+
+            -- 🗑️ زر حذف — يبان بس عند AAbbooyi (المطوّرة)، ما يبان عند أي شخص ثاني أبد
+            if isNotesAdmin and sentOk and noteId then
+                local delBtn = Instance.new("TextButton", row)
+                delBtn.Name = "DelBtn"
+                delBtn.Size = UDim2.new(0, 24, 0, 24)
+                delBtn.Position = UDim2.new(0, bubbleOffsetX + bubbleWidth + 8, 0.5, -12)
+                delBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                delBtn.Text = "🗑"
+                delBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+                delBtn.TextSize = 14
+                delBtn.Font = Enum.Font.Arcade
+                delBtn.ZIndex = 8
+                Instance.new("UICorner", delBtn).CornerRadius = UDim.new(1, 0)
+                local delStroke = Instance.new("UIStroke", delBtn)
+                delStroke.Color = Color3.fromRGB(255, 60, 60)
+                delStroke.Thickness = 1
+
+                delBtn.MouseButton1Click:Connect(function()
+                    playClick()
+                    row:Destroy()
+                    -- 🔥 حذف فعلي من فايربيس عشان ما ترجع لما تفتح الملاحظات مرة ثانية
+                    task.spawn(function()
+                        if request then
+                            pcall(function()
+                                request({
+                                    Url = NOTES_URL:gsub("%.json$", "") .. "/" .. tostring(noteId) .. ".json?auth=" .. AUTH_TOKEN,
+                                    Method = "DELETE",
+                                })
+                            end)
+                        end
+                    end)
+                    local anyLeft = false
+                    for _, c in ipairs(NotesLog:GetChildren()) do
+                        if c.Name == "NoteRow" then anyLeft = true; break end
+                    end
+                    if not anyLeft then NotesEmptyLbl.Visible = true end
+                end)
+            end
+
+            task.defer(function()
+                NotesLog.CanvasPosition = Vector2.new(0, math.max(0, NotesLog.AbsoluteCanvasSize.Y))
+            end)
+        end
+
+        -- ⌨️ نفس تصميم مربع كتابة الدردشة بالضبط (شكل الحبة + توهج)، بس بدون زر نسخ أو زر جنب "+"
+        local NotesInputBar = Instance.new("Frame", NotesPanel)
+        NotesInputBar.Name = "NotesInputBar"
+        NotesInputBar.AnchorPoint = Vector2.new(0, 1)
+        NotesInputBar.Position = UDim2.new(0, 8, 1, -8)
+        NotesInputBar.Size = UDim2.new(1, -16, 0, 44)
+        NotesInputBar.BackgroundTransparency = 1
+        NotesInputBar.ZIndex = 8
+
+        local notesInputBox = Instance.new("TextBox", NotesInputBar)
+        notesInputBox.Size = UDim2.new(1, 0, 1, 0)
+        notesInputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        notesInputBox.PlaceholderText = "اكتب ملاحظتك أو مشكلتك هنا..."
+        notesInputBox.Text = ""
+        notesInputBox.TextColor3 = Color3.new(1, 1, 1)
+        notesInputBox.Font = Enum.Font.Arcade
+        notesInputBox.TextSize = 14
+        notesInputBox.ClearTextOnFocus = false
+        notesInputBox.ZIndex = 9
+        Instance.new("UICorner", notesInputBox).CornerRadius = UDim.new(1, 0)
+        local notesInputPad = Instance.new("UIPadding", notesInputBox)
+        notesInputPad.PaddingLeft = UDim.new(0, 14)
+        notesInputPad.PaddingRight = UDim.new(0, 14)
+
+        local notesInputStroke = Instance.new("UIStroke", notesInputBox)
+        notesInputStroke.Color = UI.TabColors[8]
+        notesInputStroke.Thickness = 2
+        notesInputStroke.Transparency = 0
+        AddMovingBorderGlow(notesInputStroke, 1.5, UI.TabColors[8])
+
+        -- 📤 إرسال الملاحظة لفايربيس عشان المطوّرة تشوفها لاحقًا
+        local function sendNote()
+            local text = tostring(notesInputBox.Text or "")
+            if text:gsub("%s+", "") == "" then return end
+            notesInputBox.Text = ""
+
+            local myName = game.Players.LocalPlayer.Name
+            local myUserId = game.Players.LocalPlayer.UserId
+            local payload = {
+                ["sender"] = myName,
+                ["userId"] = myUserId,
+                ["text"] = text,
+                ["ts"] = os.time(),
+                ["placeId"] = tostring(game.PlaceId),
+            }
+
+            task.spawn(function()
+                local ok = false
+                local newId = nil
+                if request then
+                    local success, response = pcall(function()
+                        return request({
+                            Url = NOTES_URL .. "?auth=" .. AUTH_TOKEN,
+                            Method = "POST",
+                            Headers = {["Content-Type"] = "application/json"},
+                            Body = game:GetService("HttpService"):JSONEncode(payload)
+                        })
+                    end)
+                    ok = success and response and (not response.StatusCode or response.StatusCode == 200)
+                    if ok and response.Body then
+                        local okK, keyData = pcall(function()
+                            return game:GetService("HttpService"):JSONDecode(response.Body)
+                        end)
+                        if okK and keyData and keyData.name then newId = keyData.name end
+                    end
+                end
+                addNoteRow(text, ok, newId, myUserId)
+                if ok then
+                    Notify("📝 تم الإرسال", "وصلت ملاحظتك، شكرًا لك", UI.TabColors[8])
+                else
+                    Notify("❌ فشل الإرسال", "تأكد من الاتصال وحاول مرة ثانية", Color3.fromRGB(255, 60, 60))
+                end
+            end)
+        end
+
+        notesInputBox.FocusLost:Connect(function(enter)
+            if enter then sendNote() end
+        end)
+
+        -- 📂 نجيب الملاحظات أول ما تفتح النافذة: عند AAbbooyi كل ملاحظات الكل، عند الباقين ملاحظاتهم هم بس
+        task.spawn(function()
+            if not request then return end
+            local ok, res = pcall(function()
+                return request({Url = NOTES_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+            end)
+            if not (ok and res and res.Body and res.Body ~= "null") then return end
+            local okD, allNotes = pcall(function()
+                return game:GetService("HttpService"):JSONDecode(res.Body)
+            end)
+            if not (okD and type(allNotes) == "table") then return end
+
+            local myUserId = game.Players.LocalPlayer.UserId
+            local list = {}
+            for k, v in pairs(allNotes) do
+                if type(v) == "table" and (isNotesAdmin or v.userId == myUserId) then
+                    v.__id = k
+                    table.insert(list, v)
+                end
+            end
+            table.sort(list, function(a, b) return (a.ts or 0) < (b.ts or 0) end)
+            if not isNotesAdmin then
+                while #list > 10 do table.remove(list, 1) end
+            end
+            if #list > 0 then NotesEmptyLbl.Visible = false end
+            for _, v in ipairs(list) do
+                addNoteRow(tostring(v.text or ""), true, v.__id, v.userId)
+            end
+        end)
+
+        NotesCloseBtn.MouseButton1Click:Connect(function()
+            playClick()
+            NotesPanel:Destroy()
+        end)
     end)
     
     -- أي تاب ثاني يتفتح = صفحة الدردشة مب ظاهرة
@@ -5501,10 +5693,265 @@ end)
         chatHeader.BackgroundTransparency = 1
         chatHeader.Text = "💬 الدردشة"
         chatHeader.TextColor3 = Color3.fromRGB(200, 200, 200)
-        chatHeader.Font = Enum.Font.GothamBold
+        chatHeader.Font = Enum.Font.Arcade
         chatHeader.TextSize = 14
         chatHeader.TextXAlignment = Enum.TextXAlignment.Left
         chatHeader.ZIndex = 7
+
+        -- 🛠️ زر المطوّر: يظهر لصاحب السكربت فقط.
+        local developerButton
+        local developerComposer
+        local developerInput
+        local developerComposerGlow
+        local developerAnnouncement
+        local developerAnnouncementText
+        local showDeveloperAnnouncement
+        local hideDeveloperAnnouncement
+        local developerAnnouncementSerial = 0
+        local isDeveloper = game.Players.LocalPlayer.Name == "AAbbooyi"
+
+        if isDeveloper then
+            developerButton = Instance.new("TextButton", chatContainer)
+            developerButton.Name = "DeveloperMessageButton"
+            developerButton.Size = UDim2.new(0, 112, 0, 28)
+            developerButton.Position = UDim2.new(0, 8, 0, 28)
+            developerButton.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+            developerButton.Text = "مطور السكربت"
+            developerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            developerButton.Font = Enum.Font.Arcade
+            developerButton.TextSize = 11
+            developerButton.AutoButtonColor = false
+            developerButton.ZIndex = 12
+            Instance.new("UICorner", developerButton).CornerRadius = UDim.new(0, 7)
+            local developerButtonStroke = Instance.new("UIStroke", developerButton)
+            developerButtonStroke.Color = Color3.fromRGB(170, 0, 255)
+            developerButtonStroke.Thickness = 1.5
+            AddMovingBorderGlow(developerButtonStroke, 1.5)
+
+            developerComposer = Instance.new("Frame", chatContainer)
+            developerComposer.Name = "DeveloperComposer"
+            developerComposer.AnchorPoint = Vector2.new(0.5, 0)
+            developerComposer.Position = UDim2.new(0.5, 0, 0.70, 0)
+            developerComposer.Size = UDim2.new(0, 330, 0, 48)
+            developerComposer.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+            developerComposer.Visible = false
+            developerComposer.ZIndex = 40
+            Instance.new("UICorner", developerComposer).CornerRadius = UDim.new(0, 9)
+            local developerComposerStroke = Instance.new("UIStroke", developerComposer)
+            developerComposerStroke.Color = Color3.fromRGB(170, 0, 255)
+            developerComposerStroke.Thickness = 2
+            AddMovingBorderGlow(developerComposerStroke, 1.8)
+
+            developerComposerGlow = Instance.new("Frame")
+            developerComposerGlow.Name = "DeveloperComposerGlow"
+            developerComposerGlow.AnchorPoint = developerComposer.AnchorPoint
+            developerComposerGlow.Position = developerComposer.Position
+            developerComposerGlow.Size = developerComposer.Size
+            developerComposerGlow.BackgroundTransparency = 1
+            developerComposerGlow.BorderSizePixel = 0
+            developerComposerGlow.Visible = false
+            developerComposerGlow.ZIndex = 39
+            developerComposerGlow.Parent = ScreenGui
+            Instance.new("UICorner", developerComposerGlow).CornerRadius = UDim.new(0, 9)
+            local developerComposerGlowStroke = Instance.new("UIStroke", developerComposerGlow)
+            developerComposerGlowStroke.Color = Color3.fromRGB(170, 0, 255)
+            developerComposerGlowStroke.Thickness = 2
+            AddMovingBorderGlow(developerComposerGlowStroke, 1.8)
+
+            developerInput = Instance.new("TextBox", developerComposer)
+            developerInput.Size = UDim2.new(1, -12, 1, -8)
+            developerInput.Position = UDim2.new(0, 6, 0, 4)
+            developerInput.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+            developerInput.PlaceholderText = "اكتب رسالة المطوّر ثم اضغط Enter..."
+            developerInput.Text = ""
+            developerInput.ClearTextOnFocus = false
+            developerInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+            developerInput.PlaceholderColor3 = Color3.fromRGB(175, 175, 180)
+            developerInput.Font = Enum.Font.Arcade
+            developerInput.TextSize = 12
+            developerInput.TextXAlignment = Enum.TextXAlignment.Right
+            developerInput.ZIndex = 41
+            Instance.new("UICorner", developerInput).CornerRadius = UDim.new(0, 7)
+            developerComposer.Parent = ScreenGui
+
+            developerAnnouncement = Instance.new("Frame", chatContainer)
+            developerAnnouncement.Name = "DeveloperAnnouncement"
+            developerAnnouncement.AnchorPoint = Vector2.new(0.5, 0)
+            developerAnnouncement.Position = UDim2.new(0.5, 0, 0.24, 0)
+            developerAnnouncement.Size = UDim2.new(0.62, 0, 0, 62)
+            developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+            developerAnnouncement.Visible = false
+            developerAnnouncement.ZIndex = 25
+            Instance.new("UICorner", developerAnnouncement).CornerRadius = UDim.new(0, 10)
+            local developerAnnouncementStroke = Instance.new("UIStroke", developerAnnouncement)
+            developerAnnouncementStroke.Color = Color3.fromRGB(170, 0, 255)
+            developerAnnouncementStroke.Thickness = 2
+            AddMovingBorderGlow(developerAnnouncementStroke, 1.8)
+
+            developerAnnouncementText = Instance.new("TextLabel", developerAnnouncement)
+            developerAnnouncementText.Size = UDim2.new(1, -16, 1, -10)
+            developerAnnouncementText.Position = UDim2.new(0, 8, 0, 5)
+            developerAnnouncementText.BackgroundTransparency = 1
+            developerAnnouncementText.TextColor3 = Color3.fromRGB(255, 255, 255)
+            developerAnnouncementText.Font = Enum.Font.Arcade
+            developerAnnouncementText.TextSize = 13
+            developerAnnouncementText.TextWrapped = true
+            developerAnnouncementText.TextXAlignment = Enum.TextXAlignment.Center
+            developerAnnouncementText.TextYAlignment = Enum.TextYAlignment.Center
+            developerAnnouncementText.ZIndex = 26
+            developerAnnouncement.Parent = ScreenGui
+
+            showDeveloperAnnouncement = function(text)
+                if not developerAnnouncement or not developerAnnouncementText then return end
+                developerAnnouncementSerial = developerAnnouncementSerial + 1
+                local serial = developerAnnouncementSerial
+                task.delay(2, function()
+                    if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
+                    developerAnnouncementText.Text = "مطور السكربت : " .. tostring(text)
+                    developerAnnouncement.Visible = true
+                    developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+                    developerAnnouncement.BackgroundTransparency = 1
+                    developerAnnouncementText.TextTransparency = 1
+                    TweenService:Create(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
+                    TweenService:Create(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    task.delay(5, function()
+                        if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
+                        TweenService:Create(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+                        local fade = TweenService:Create(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
+                        fade:Play()
+                        fade.Completed:Connect(function()
+                            if serial == developerAnnouncementSerial and developerAnnouncement then
+                                developerAnnouncement.Visible = false
+                            end
+                        end)
+                    end)
+                end)
+            end
+
+            hideDeveloperAnnouncement = function()
+                developerAnnouncementSerial = developerAnnouncementSerial + 1
+                if developerAnnouncement then
+                    developerAnnouncement.Visible = false
+                end
+            end
+
+            developerButton.MouseButton1Click:Connect(function()
+                playClick()
+                developerComposer.Visible = not developerComposer.Visible
+                if developerComposer.Visible then
+                    if State._chatPanel and State._chatPanel.Parent then
+                        State._chatPanel.Visible = false
+                    end
+                    -- إبقاء زر الدردشة ظاهرًا بجانب + أثناء فتح مربع المطوّر.
+                    UI.ChatRestoreBtn.Visible = State._chatPanelOpen == true
+                    if developerComposerGlow then
+                        developerComposerGlow.Visible = true
+                        developerComposerGlow.Position = developerComposer.Position
+                        developerComposerGlow.Size = developerComposer.Size
+                    end
+                    developerInput:CaptureFocus()
+                else
+                    developerInput:ReleaseFocus()
+                    if developerComposerGlow then developerComposerGlow.Visible = false end
+                    if State._chatPanel and State._chatPanel.Parent then
+                        State._chatPanel.Visible = true
+                    end
+                    UI.ChatRestoreBtn.Visible = false
+                end
+            end)
+
+            developerInput.FocusLost:Connect(function(enterPressed)
+                if not enterPressed then return end
+                if not developerComposer.Visible then return end
+                local text = tostring(developerInput.Text or "")
+                if text:gsub("%s+", "") == "" then return end
+                developerInput.Text = ""
+                developerInput:ReleaseFocus()
+                developerComposer.Visible = false
+                if developerComposerGlow then developerComposerGlow.Visible = false end
+                -- تبقى قائمة الدردشة مخفية بعد إرسال رسالة المطوّر.
+                showDeveloperAnnouncement(text)
+                task.spawn(function()
+                    pcall(function()
+                        request({
+                            Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN,
+                            Method = "POST",
+                            Headers = {["Content-Type"] = "application/json"},
+                            Body = game:GetService("HttpService"):JSONEncode({
+                                sender = "AAbbooyi",
+                                text = text,
+                                timestamp = os.time(),
+                                userId = game.Players.LocalPlayer.UserId,
+                                chatType = "developer",
+                                developerMessage = true
+                            })
+                        })
+                    end)
+                end)
+            end)
+        end
+
+        -- المستخدمون الآخرون يرون الإعلان فقط، بدون زر أو مربع إرسال.
+        if not isDeveloper then
+            developerAnnouncement = Instance.new("Frame", chatContainer)
+            developerAnnouncement.Name = "DeveloperAnnouncement"
+            developerAnnouncement.AnchorPoint = Vector2.new(0.5, 0)
+            developerAnnouncement.Position = UDim2.new(0.5, 0, 0.24, 0)
+            developerAnnouncement.Size = UDim2.new(0.62, 0, 0, 62)
+            developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+            developerAnnouncement.Visible = false
+            developerAnnouncement.ZIndex = 25
+            Instance.new("UICorner", developerAnnouncement).CornerRadius = UDim.new(0, 10)
+            local developerAnnouncementStroke = Instance.new("UIStroke", developerAnnouncement)
+            developerAnnouncementStroke.Color = Color3.fromRGB(170, 0, 255)
+            developerAnnouncementStroke.Thickness = 2
+            AddMovingBorderGlow(developerAnnouncementStroke, 1.8)
+
+            developerAnnouncementText = Instance.new("TextLabel", developerAnnouncement)
+            developerAnnouncementText.Size = UDim2.new(1, -16, 1, -10)
+            developerAnnouncementText.Position = UDim2.new(0, 8, 0, 5)
+            developerAnnouncementText.BackgroundTransparency = 1
+            developerAnnouncementText.TextColor3 = Color3.fromRGB(255, 255, 255)
+            developerAnnouncementText.Font = Enum.Font.Arcade
+            developerAnnouncementText.TextSize = 13
+            developerAnnouncementText.TextWrapped = true
+            developerAnnouncementText.TextXAlignment = Enum.TextXAlignment.Center
+            developerAnnouncementText.TextYAlignment = Enum.TextYAlignment.Center
+            developerAnnouncementText.ZIndex = 26
+            developerAnnouncement.Parent = ScreenGui
+
+            showDeveloperAnnouncement = function(text)
+                developerAnnouncementSerial = developerAnnouncementSerial + 1
+                local serial = developerAnnouncementSerial
+                task.delay(2, function()
+                    if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
+                    developerAnnouncementText.Text = "مطور السكربت : " .. tostring(text)
+                    developerAnnouncement.Visible = true
+                    developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+                    developerAnnouncement.BackgroundTransparency = 1
+                    developerAnnouncementText.TextTransparency = 1
+                    TweenService:Create(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
+                    TweenService:Create(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    task.delay(5, function()
+                        if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
+                        TweenService:Create(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+                        local fade = TweenService:Create(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
+                        fade:Play()
+                        fade.Completed:Connect(function()
+                            if serial == developerAnnouncementSerial and developerAnnouncement then
+                                developerAnnouncement.Visible = false
+                            end
+                        end)
+                    end)
+                end)
+            end
+            hideDeveloperAnnouncement = function()
+                developerAnnouncementSerial = developerAnnouncementSerial + 1
+                if developerAnnouncement then
+                    developerAnnouncement.Visible = false
+                end
+            end
+        end
 
         -- 🟢 يبان لما خويك يكون فاتح تاب الدردشة عنده
         local onlineLabel = Instance.new("TextLabel", chatContainer)
@@ -5514,7 +5961,7 @@ end)
         onlineLabel.BackgroundTransparency = 1
         onlineLabel.Text = ""
         onlineLabel.TextColor3 = Color3.fromRGB(0, 230, 100)
-        onlineLabel.Font = Enum.Font.GothamBold
+        onlineLabel.Font = Enum.Font.Arcade
         onlineLabel.TextSize = 12
         onlineLabel.TextXAlignment = Enum.TextXAlignment.Right
         onlineLabel.ZIndex = 7
@@ -5527,7 +5974,7 @@ end)
         typingLabel.BackgroundTransparency = 1
         typingLabel.Text = ""
         typingLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
-        typingLabel.Font = Enum.Font.GothamBold
+        typingLabel.Font = Enum.Font.Arcade
         typingLabel.TextSize = 11
         typingLabel.TextXAlignment = Enum.TextXAlignment.Right
         typingLabel.ZIndex = 7
@@ -5543,7 +5990,7 @@ end)
         chatLog.CanvasSize = UDim2.new(0, 0, 0, 500)
         chatLog.ZIndex = 7
 
-        -- 🖤 حواف سوداء حول قائمة رسائل الدردشة
+        -- 💜🖤حواف Glow حول قائمة رسائل الدردشة
         local chatLogCorner = Instance.new("UICorner", chatLog)
         chatLogCorner.CornerRadius = UDim.new(0, 10)
         local chatLogStroke = Instance.new("UIStroke", chatLog)
@@ -5551,6 +5998,7 @@ end)
         chatLogStroke.Thickness = 2
         chatLogStroke.Transparency = 0
         chatLogStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(chatLogStroke, 1.5)
         
         local chatList = Instance.new("UIListLayout", chatLog)
         -- مسافة بسيطة بين كل رسالة والثانية
@@ -5570,7 +6018,7 @@ end)
         chatToBottomBtn.BorderSizePixel = 0
         chatToBottomBtn.Text = "⬇"
         chatToBottomBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        chatToBottomBtn.Font = Enum.Font.GothamBold
+        chatToBottomBtn.Font = Enum.Font.Arcade
         chatToBottomBtn.TextSize = 18
         chatToBottomBtn.AutoButtonColor = false
         chatToBottomBtn.Visible = false
@@ -5752,13 +6200,40 @@ end)
         inputBox.PlaceholderText = "اكتب رسالتك هنا..."
         inputBox.Text = ""
         inputBox.TextColor3 = Color3.new(1,1,1)
-        inputBox.Font = Enum.Font.Gotham
+        inputBox.Font = Enum.Font.Arcade
         inputBox.TextSize = 14
         inputBox.ZIndex = 16
         Instance.new("UICorner", inputBox).CornerRadius = UDim.new(1, 0)
-        local inputBoxStroke = Instance.new("UIStroke", inputBox)
-        inputBoxStroke.Thickness = 3
-        AddMovingBorderGlow(inputBoxStroke, 1.5, Color3.fromRGB(170, 0, 255))
+        -- 🟣 إطار مستقل خلف مربع الكتابة؛ الـGlow يطبق على الحواف فقط وليس على النص.
+        local inputBoxGlowFrame = Instance.new("Frame", ChatInputBar)
+        inputBoxGlowFrame.Name = "InputBoxGlowFrame"
+        inputBoxGlowFrame.AnchorPoint = inputBox.AnchorPoint
+        inputBoxGlowFrame.Size = inputBox.Size
+        inputBoxGlowFrame.Position = inputBox.Position
+        inputBoxGlowFrame.BackgroundTransparency = 1
+        inputBoxGlowFrame.BorderSizePixel = 0
+        inputBoxGlowFrame.ZIndex = 15
+        Instance.new("UICorner", inputBoxGlowFrame).CornerRadius = UDim.new(1, 0)
+
+        local inputBoxStroke = Instance.new("UIStroke", inputBoxGlowFrame)
+        inputBoxStroke.Color = Color3.fromRGB(75 ,0 ,130)
+        inputBoxStroke.Thickness = 2
+        inputBoxStroke.Transparency = 0
+
+        local inputBoxGlowGradient = Instance.new("UIGradient")
+        inputBoxGlowGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 0, 255))
+        })
+        inputBoxGlowGradient.Parent = inputBoxStroke
+
+        task.spawn(function()
+            while inputBoxGlowFrame and inputBoxGlowFrame.Parent do
+                inputBoxGlowGradient.Rotation = (inputBoxGlowGradient.Rotation + 2) % 360
+                task.wait(0.03)
+            end
+        end)
 
         -- ✍️ نبلّغ فايربيس إذا كنت قاعد تكتب (مع تهدئة عشان ما نرسل كل حرف)
         local _lastTypingSent = 0
@@ -5792,7 +6267,7 @@ end)
 
         local function calcBubbleWidth(text)
             local ok, size = pcall(function()
-                return TextService:GetTextSize(text, 14, Enum.Font.Gotham, Vector2.new(1000, 1000))
+                return TextService:GetTextSize(text, 14, Enum.Font.Arcade, Vector2.new(1000, 1000))
             end)
             local w = (ok and size and (size.X + 26)) or 120
             if w < 70 then w = 70 end
@@ -5853,7 +6328,7 @@ end)
         deleteOpt.BackgroundColor3 = Color3.fromRGB(45, 22, 26)
         deleteOpt.Text = "🗑️ حذف"
         deleteOpt.TextColor3 = Color3.fromRGB(255, 95, 95)
-        deleteOpt.Font = Enum.Font.GothamBold
+        deleteOpt.Font = Enum.Font.Arcade
         deleteOpt.TextSize = 15
         deleteOpt.ZIndex = 52
         Instance.new("UICorner", deleteOpt).CornerRadius = UDim.new(0, 8)
@@ -5867,7 +6342,7 @@ end)
         backOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
         backOpt.Text = "↩️ الرجوع"
         backOpt.TextColor3 = Color3.new(1, 1, 1)
-        backOpt.Font = Enum.Font.GothamBold
+        backOpt.Font = Enum.Font.Arcade
         backOpt.TextSize = 15
         backOpt.ZIndex = 52
         Instance.new("UICorner", backOpt).CornerRadius = UDim.new(0, 8)
@@ -5954,7 +6429,7 @@ end)
         copyOpt.BackgroundColor3 = Color3.fromRGB(20, 30, 42)
         copyOpt.Text = "📋 نسخ"
         copyOpt.TextColor3 = Color3.fromRGB(120, 190, 255)
-        copyOpt.Font = Enum.Font.GothamBold
+        copyOpt.Font = Enum.Font.Arcade
         copyOpt.TextSize = 15
         copyOpt.ZIndex = 52
         Instance.new("UICorner", copyOpt).CornerRadius = UDim.new(0, 8)
@@ -5968,7 +6443,7 @@ end)
         copyBackOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
         copyBackOpt.Text = "↩️ الرجوع"
         copyBackOpt.TextColor3 = Color3.new(1, 1, 1)
-        copyBackOpt.Font = Enum.Font.GothamBold
+        copyBackOpt.Font = Enum.Font.Arcade
         copyBackOpt.TextSize = 15
         copyBackOpt.ZIndex = 52
         Instance.new("UICorner", copyBackOpt).CornerRadius = UDim.new(0, 8)
@@ -6007,6 +6482,47 @@ end)
             end
         end)
 
+        -- حالة قراءة رسائلي: تتغير فقط عندما يظهر مستخدم آخر داخل قائمة الدردشة.
+        -- العنصر منفصل عن نص الرسالة حتى لا يغطي الكلام أو يغيّر محاذاته.
+        local _otherUserInChat = false
+
+        local function updateOwnMessageReadState(otherUserInChat)
+            local latestOwnRow = nil
+            local latestTimestamp = -math.huge
+
+            -- نحدد آخر رسالة لي فقط حتى لا نكرر كلمة الحالة تحت كل الرسائل القديمة.
+            for _, row in ipairs(chatLog:GetChildren()) do
+                if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
+                    local rowTimestamp = tonumber(row:GetAttribute("ChatTimestamp")) or 0
+                    if rowTimestamp >= latestTimestamp then
+                        latestTimestamp = rowTimestamp
+                        latestOwnRow = row
+                    end
+
+                    -- إذا دخل مستخدم آخر صفحة الدردشة، نثبت الرسائل على «مقروء».
+                    if otherUserInChat then
+                        row:SetAttribute("ReadState", "Read")
+                    end
+                end
+            end
+
+            for _, row in ipairs(chatLog:GetChildren()) do
+                if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
+                    local readStatus = row:FindFirstChild("ReadStatus")
+                    if readStatus then
+                        readStatus.Visible = (row == latestOwnRow)
+                        local isRead = row:GetAttribute("ReadState") == "Read"
+                        readStatus.Text = isRead
+                            and (_SelectedLanguage == "English" and "Read" or "مقروء")
+                            or (_SelectedLanguage == "English" and "Unread" or "غير مقروء")
+                        readStatus.TextColor3 = isRead
+                            and Color3.fromRGB(120, 220, 150)
+                            or Color3.fromRGB(175, 175, 185)
+                    end
+                end
+            end
+        end
+
         local function addChatMsg(sender, text, id, userId, timestamp)
             local myName = game.Players.LocalPlayer.Name
             local isMine = (sender == myName)
@@ -6030,6 +6546,9 @@ end)
             row:SetAttribute("ChatTimestamp", tonumber(timestamp) or 0)
             row:SetAttribute("ChatSender", tostring(sender))
             row:SetAttribute("ChatText", tostring(text))
+            if isMine then
+                row:SetAttribute("ReadState", "Unread")
+            end
 
             -- 🖼️ صورة المرسل (تظهر يسار الفقاعة لكلام الغير، ويمينها لكلامك انت)
             local avatarImg
@@ -6109,7 +6628,7 @@ end)
             nameLabel.Text = sender
             nameLabel.TextColor3 = Color3.fromRGB(205, 205, 210)
             nameLabel.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن مثل الباقي
-            nameLabel.Font = Enum.Font.GothamMedium
+            nameLabel.Font = Enum.Font.Arcade
             nameLabel.TextSize = 9
             nameLabel.TextXAlignment = Enum.TextXAlignment.Left
             nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
@@ -6126,10 +6645,27 @@ end)
             label.TextWrapped = true
             label.TextColor3 = Color3.new(1, 1, 1)
             label.TextTransparency = 1 -- يبدأ شفاف عشان الانميشن
-            label.Font = Enum.Font.Gotham
+            label.Font = Enum.Font.Arcade
             label.TextSize = 14
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.ZIndex = 10
+
+            -- 📖 حالة الرسالة أسفل النص داخل نفس الفقاعة، مع مساحة مستقلة تلقائيًا.
+            -- لا نستخدم Position ثابتة حتى لا تتداخل مع الرسائل الطويلة أو متعددة الأسطر.
+            if isMine then
+                local readStatus = Instance.new("TextLabel", bubble)
+                readStatus.Name = "ReadStatus"
+                readStatus.LayoutOrder = 3
+                readStatus.BackgroundTransparency = 1
+                readStatus.Size = UDim2.new(1, 0, 0, 12)
+                readStatus.Text = _SelectedLanguage == "English" and "Unread" or "غير مقروء"
+                readStatus.TextColor3 = Color3.fromRGB(175, 175, 185)
+                readStatus.TextTransparency = 1
+                readStatus.Font = Enum.Font.Arcade
+                readStatus.TextSize = 9
+                readStatus.TextXAlignment = Enum.TextXAlignment.Right
+                readStatus.ZIndex = 10
+            end
 
             -- 📍 محاذاة: كلامي يمين، كلام خويي يسار (نفس الشي عند الطرفين لأنه مبني على isMine)
             local targetPos
@@ -6172,34 +6708,336 @@ end)
                 TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
                 TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
                 TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
+                local readStatus = bubble:FindFirstChild("ReadStatus")
+                if readStatus then
+                    TweenService:Create(readStatus, fadeInfo, {TextTransparency = 0}):Play()
+                end
                 if avatarImg then
                     local avStroke = avatarImg:FindFirstChildOfClass("UIStroke")
                     TweenService:Create(avatarImg, fadeInfo, {ImageTransparency = 0}):Play()
                     if avStroke then TweenService:Create(avStroke, fadeInfo, {Transparency = 0}):Play() end
                 end
             end)
+
+            task.defer(function()
+                updateOwnMessageReadState(_otherUserInChat)
+            end)
         end
         
-        local function sendMsg()
-            local text = inputBox.Text
+        -- 💬 فقاعة ثابتة فوق الرأس بحجم شاشة واحد.
+        -- الفقاعة الأصلية في Roblox تكبر وتصغر مع بُعد الكاميرا، لذلك نستخدم
+        -- ScreenGui ونحوّل مكان الرأس إلى إحداثيات الشاشة في كل إطار.
+        -- 💬 فقاعات فوق الرأس مثل روبلوكس:
+        -- نسمح بحد أقصى 3 رسايل لنفس الشخص في نفس الوقت.
+        -- الجديدة تكون تحت، والأقدم تطلع فوق. إذا وصلت رسالة رابعة نحذف الأقدم.
+        local _headBubbleStacks = {}
+        local HEAD_BUBBLE_MAX = 3
+        local HEAD_BUBBLE_GAP = 5
+        local HEAD_BUBBLE_BASE_OFFSET = 8
+        local HEAD_BUBBLE_MAX_HEIGHT = 120
+
+        local function showMessageAboveHead(text, targetPlayer, isMine)
+            local player = targetPlayer or game.Players.LocalPlayer
+            local character = player and player.Character
+            local head = character and character:FindFirstChild("Head")
+            if not head then return end
+
+            text = tostring(text or "")
             if text == "" then return end
+            if isMine == nil then isMine = true end
+
+            local userKey = tostring(player.UserId)
+            local stack = _headBubbleStacks[userKey]
+            if not stack then
+                stack = {}
+                _headBubbleStacks[userKey] = stack
+            end
+
+            -- 🧹 إذا عندنا 3 بالفعل، نحذف أقدم فقاعة قبل إضافة الجديدة.
+            while #stack >= HEAD_BUBBLE_MAX do
+                -- الرابعة لا تدخل أصلًا: نحذف أقدم فقاعة فقط ونبقي آخر 3.
+                local oldest = table.remove(stack, 1)
+                if oldest then
+                    oldest.alive = false
+                    if oldest.followConnection then
+                        oldest.followConnection:Disconnect()
+                        oldest.followConnection = nil
+                    end
+                    if oldest.bubble and oldest.bubble.Parent then
+                        oldest.bubble:Destroy()
+                    end
+                end
+            end
+
+            local Camera = workspace.CurrentCamera
+            if not Camera then return end
+
+            -- حجم متناسب مع الكلام، مع حد أدنى حتى لا تصغر الرسائل القصيرة جدًا.
+            local TextService = game:GetService("TextService")
+            local textFont = Enum.Font.Arcade
+            local textSize = 18
+            local measured = TextService:GetTextSize(text, textSize, textFont, Vector2.new(300, 1000))
+            local bubbleWidth = math.clamp(measured.X + 34, 155, 310)
+            local bubbleHeight = math.clamp(measured.Y + 22, 58, 110)
+
+            -- 🎨 لون التوهج: بنفسجي لكلامي أنا، أزرق لكلام خويي.
+            local glowColor = isMine and Color3.fromRGB(170, 0, 255) or Color3.fromRGB(0, 140, 255)
+
+            local bubble = Instance.new("Frame")
+            bubble.Name = "SkyFixedChatBubble_" .. userKey .. "_" .. tostring(math.floor(os.clock() * 1000000))
+            bubble.Parent = NG
+            bubble.AnchorPoint = Vector2.new(0.5, 1)
+            local bubbleFullSize = UDim2.new(0, bubbleWidth, 0, bubbleHeight)
+            bubble.Size = UDim2.new(0, 0, 0, 0)
+            bubble.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+            bubble.BackgroundTransparency = 1
+            bubble.BorderSizePixel = 0
+            bubble.ZIndex = 100
+            Instance.new("UICorner", bubble).CornerRadius = UDim.new(0, 14)
+
+            local bubbleStroke = Instance.new("UIStroke", bubble)
+            bubbleStroke.Color = glowColor
+            bubbleStroke.Thickness = 1.6
+            bubbleStroke.Transparency = 1
+
+            local bubbleGradient = Instance.new("UIGradient", bubbleStroke)
+            bubbleGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, glowColor),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+                ColorSequenceKeypoint.new(1, glowColor),
+            })
+            task.spawn(function()
+                while bubbleGradient and bubbleGradient.Parent do
+                    bubbleGradient.Rotation = (bubbleGradient.Rotation + 1.5) % 360
+                    task.wait(0.03)
+                end
+            end)
+
+            local label = Instance.new("TextLabel", bubble)
+            label.Size = UDim2.new(1, -24, 1, -14)
+            label.Position = UDim2.new(0, 12, 0, 7)
+            label.BackgroundTransparency = 1
+            label.Text = text
+            label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            label.TextTransparency = 1
+            label.Font = Enum.Font.Arcade
+            label.TextSize = 18
+            label.TextWrapped = true
+            label.TextTruncate = Enum.TextTruncate.None
+            label.TextXAlignment = Enum.TextXAlignment.Center
+            label.TextYAlignment = Enum.TextYAlignment.Center
+            label.ZIndex = 101
+
+            -- ذيل صغير يربط الفقاعة بالرأس.
+            local tail = Instance.new("Frame", bubble)
+            tail.Size = UDim2.new(0, 12, 0, 12)
+            tail.AnchorPoint = Vector2.new(0.5, 0)
+            tail.Position = UDim2.new(0.5, 0, 1, -4)
+            tail.Rotation = 45
+            tail.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+            tail.BackgroundTransparency = 1
+            tail.BorderSizePixel = 0
+            tail.ZIndex = 99
+
+            local record = {
+                bubble = bubble,
+                bubbleStroke = bubbleStroke,
+                label = label,
+                tail = tail,
+                height = bubbleHeight,
+                alive = true,
+                followConnection = nil,
+            }
+            table.insert(stack, record)
+
+            -- نعيد ترتيب الفقاعات: الأحدث تحت، والأقدم فوقها.
+            local function repositionStack()
+                for index, item in ipairs(stack) do
+                    if item and item.bubble and item.bubble.Parent then
+                        local newerCount = #stack - index
+                        item.stackOffset = newerCount
+                    end
+                end
+            end
+            repositionStack()
+
+            -- ⏱️ كل فقاعة لها مدة مستقلة، لكن وجود أكثر من 3 لا يحدث أبدًا.
+            local baseSeconds = 6
+            local extraSeconds = 0
+            if #text > 15 then
+                extraSeconds = math.clamp((#text - 15) * 0.09, 0, 12)
+            end
+            local visibleUntil = os.clock() + baseSeconds + extraSeconds
+            local isClosing = false
+
+            local function removeRecord()
+                if not record.alive then return end
+                record.alive = false
+                if record.followConnection then
+                    record.followConnection:Disconnect()
+                    record.followConnection = nil
+                end
+
+                for i, item in ipairs(stack) do
+                    if item == record then
+                        table.remove(stack, i)
+                        break
+                    end
+                end
+                if #stack == 0 then
+                    _headBubbleStacks[userKey] = nil
+                end
+                repositionStack()
+                if bubble.Parent then bubble:Destroy() end
+            end
+
+            record.followConnection = RunService.RenderStepped:Connect(function()
+                if not record.alive or not bubble.Parent or not head.Parent then
+                    removeRecord()
+                    return
+                end
+
+                Camera = workspace.CurrentCamera or Camera
+                if not Camera then return end
+
+                -- 📌 ترتيب Roblox: آخر رسالة تكون تحت، والرسائل الأقدم تصعد فوقها.
+                -- لكل لاعب Stack مستقل، لذلك رسائل اللاعبين الآخرين لا تتداخل مع بعض.
+                local stackIndex = table.find(stack, record) or #stack
+                local pixelOffset = HEAD_BUBBLE_BASE_OFFSET + 30
+
+                -- نجمع ارتفاع الفقاعات الأحدث فقط؛ بهذا تكون الجديدة دائمًا أقرب للرأس.
+                for i = #stack, stackIndex + 1, -1 do
+                    local newer = stack[i]
+                    if newer and newer.alive and newer.bubble and newer.bubble.Parent then
+                        pixelOffset = pixelOffset + math.min(newer.height or 58, HEAD_BUBBLE_MAX_HEIGHT) + HEAD_BUBBLE_GAP
+                    end
+                end
+
+                local screenPoint, onScreen = Camera:WorldToViewportPoint(head.Position)
+                bubble.Position = UDim2.fromOffset(screenPoint.X, screenPoint.Y - pixelOffset)
+                bubble.Visible = (onScreen and screenPoint.Z > 0) or isClosing
+
+                if os.clock() >= visibleUntil and not isClosing then
+                    isClosing = true
+                    local outInfo = TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+                    _TweenS:Create(bubble, outInfo, {
+                        Size = UDim2.new(0, 0, 0, 0),
+                        BackgroundTransparency = 1
+                    }):Play()
+                    _TweenS:Create(bubbleStroke, outInfo, {Transparency = 1}):Play()
+                    _TweenS:Create(label, outInfo, {TextTransparency = 1}):Play()
+                    _TweenS:Create(tail, outInfo, {BackgroundTransparency = 1}):Play()
+                    task.delay(0.35, removeRecord)
+                end
+            end)
+
+            -- أنيميشن ظهور: تكبر الفقاعة من نقطة صغيرة.
+            local inInfo = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            _TweenS:Create(bubble, inInfo, {
+                Size = bubbleFullSize,
+                BackgroundTransparency = 0.08
+            }):Play()
+            _TweenS:Create(bubbleStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Transparency = 0.12
+            }):Play()
+            _TweenS:Create(label, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = 0
+            }):Play()
+            _TweenS:Create(tail, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 0
+            }):Play()
+        end
+
+        -- 💬 زر خارجي بسيط لفتح نسخة ثانية من مربع الكتابة خارج قائمة الدردشة
+        local ChatFloatBtn = Instance.new("TextButton", ChatInputBar)
+        ChatFloatBtn.Name = "ChatFloatBtn"
+        ChatFloatBtn.Size = UDim2.new(0, 38, 0, 38)
+        ChatFloatBtn.Position = UDim2.new(0.55, -68, 0.5, -19) -- قريب من مربع الكتابة الأصلي مع مسافة بسيطة
+        ChatFloatBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        ChatFloatBtn.Text = "💬"
+        ChatFloatBtn.TextColor3 = Color3.new(1, 1, 1)
+        ChatFloatBtn.Font = Enum.Font.Arcade
+        ChatFloatBtn.TextSize = 17
+        ChatFloatBtn.ZIndex = 18
+        Instance.new("UICorner", ChatFloatBtn).CornerRadius = UDim.new(1, 0)
+        local ChatFloatStroke = Instance.new("UIStroke", ChatFloatBtn)
+        ChatFloatStroke.Color = Color3.fromRGB(170, 0, 255)
+        ChatFloatStroke.Thickness = 1.5
+        AddMovingBorderGlow(ChatFloatStroke, 1.5)
+
+        -- زر المطوّر بجانب زر الفقاعات، ولا يظهر إلا للمالك.
+        if developerButton then
+            developerButton.Parent = ChatInputBar
+            developerButton.Size = UDim2.new(0, 44, 0, 44)
+            developerButton.Position = UDim2.new(0.55, -120, 0.5, -22)
+            developerButton.Text = "S"
+            developerButton.TextSize = 18
+            developerButton.ZIndex = 18
+        end
+
+        -- 💬 نسخة خارجية مطابقة تمامًا لمربع الكتابة الأصلي الموجود داخل قائمة الدردشة
+        -- ننسخ نفس الـTextBox ونفس إطار الـGlow بدل إنشاء تصميم مختلف.
+        local ChatFloatBox = inputBox:Clone()
+        ChatFloatBox.Name = "ChatFloatBox"
+        ChatFloatBox.Parent = ScreenGui
+        ChatFloatBox.AnchorPoint = Vector2.new(0.5, 0.5)
+        ChatFloatBox.Size = UDim2.new(0, 220, 0, inputBox.AbsoluteSize.Y)
+        ChatFloatBox.Position = UDim2.new(0.5, 0, 0.72, 0)
+        ChatFloatBox.Text = ""
+        ChatFloatBox.PlaceholderText = "اكتب فقاعة فوق رأسك..."
+        ChatFloatBox.Visible = false
+        ChatFloatBox.ZIndex = 40
+        MakeDraggable(ChatFloatBox)
+
+        -- نفس حواف مربع الدردشة الأصلي بالضبط، لكن على النسخة الخارجية.
+        local ChatFloatGlow = inputBoxGlowFrame:Clone()
+        ChatFloatGlow.Name = "ChatFloatGlow"
+        ChatFloatGlow.Parent = ScreenGui
+        ChatFloatGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+        ChatFloatGlow.Size = ChatFloatBox.Size
+        ChatFloatGlow.Position = ChatFloatBox.Position
+        ChatFloatGlow.ZIndex = 39
+        ChatFloatGlow.Visible = false
+
+        local floatGlowGradient = ChatFloatGlow:FindFirstChildWhichIsA("UIStroke") and ChatFloatGlow:FindFirstChildWhichIsA("UIStroke"):FindFirstChildWhichIsA("UIGradient")
+        task.spawn(function()
+            while ChatFloatGlow and ChatFloatGlow.Parent do
+                if floatGlowGradient then
+                    floatGlowGradient.Rotation = (floatGlowGradient.Rotation + 2) % 360
+                end
+                task.wait(0.03)
+            end
+        end)
+
+        -- 📩 رسالة الدردشة العادية: تظهر داخل قائمة الدردشة فقط.
+        local function sendMsg(box)
+            box = box or inputBox
+            local text = tostring(box.Text or "")
+            if text:gsub("%s+", "") == "" then return end
+            if hideDeveloperAnnouncement then hideDeveloperAnnouncement() end
+
             local myName = game.Players.LocalPlayer.Name
             local myUserId = game.Players.LocalPlayer.UserId
-            local data = {["sender"] = myName, ["text"] = text, ["timestamp"] = os.time(), ["userId"] = myUserId}
-            inputBox.Text = ""
-            -- ✅ نطلع الرسالة فورًا بالقائمة بدون ما ننتظر الرد من فايربيس
+            local data = {
+                ["sender"] = myName,
+                ["text"] = text,
+                ["timestamp"] = os.time(),
+                ["userId"] = myUserId,
+                ["chatType"] = "message"
+            }
+
+            box.Text = ""
+            box:ReleaseFocus()
+
+            -- رسالة محلية فورية داخل قائمة الدردشة، بدون فقاعة فوق الرأس.
             addChatMsg(myName, text, nil, myUserId, data.timestamp)
 
-            -- بعد الإرسال فقط: نوقف عند آخر رسالة فعلية، وليس عند نهاية المساحة الفارغة.
             task.defer(function()
                 task.wait()
-                task.wait() -- ننتظر تحديث UIListLayout قبل حساب مكان آخر رسالة
+                task.wait()
                 local contentHeight = chatList.AbsoluteContentSize.Y
                 local visibleHeight = chatLog.AbsoluteSize.Y
-                -- نخلي آخر رسالة تنزل شوي زيادة عشان تكون كاملة وواضحة فوق شريط الكتابة،
-                -- لكن ما نوصل لنهاية الـ500 بكسل الفاضية.
-                local extraReveal = 70
-                local targetY = math.max(0, contentHeight - visibleHeight + extraReveal)
+                local targetY = math.max(0, contentHeight - visibleHeight + 70)
                 local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
                 targetY = math.min(targetY, maxY)
                 chatLog.CanvasPosition = Vector2.new(0, targetY)
@@ -6221,8 +7059,87 @@ end)
                 end
             end)
         end
-        
-        inputBox.FocusLost:Connect(function(enter) if enter then sendMsg() end end)
+
+        -- 💬 فقاعة الرأس: تظهر فوق الشخصية فقط ولا تدخل قائمة الدردشة.
+        local function sendBubbleMsg(box)
+            box = box or ChatFloatBox
+            local text = tostring(box.Text or "")
+            if text:gsub("%s+", "") == "" then return end
+            if hideDeveloperAnnouncement then hideDeveloperAnnouncement() end
+
+            local myName = game.Players.LocalPlayer.Name
+            local myUserId = game.Players.LocalPlayer.UserId
+            local data = {
+                ["sender"] = myName,
+                ["text"] = text,
+                ["timestamp"] = os.time(),
+                ["userId"] = myUserId,
+                ["chatType"] = "bubble"
+            }
+
+            box.Text = ""
+            box:ReleaseFocus()
+
+            -- نعرض الفقاعة فورًا عندي.
+            showMessageAboveHead(text, game.Players.LocalPlayer, true)
+
+            -- نرسلها للطرف الآخر كفقاعة فقط.
+            task.spawn(function()
+                local ok, res = pcall(function()
+                    return request({
+                        Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = game:GetService("HttpService"):JSONEncode(data)
+                    })
+                end)
+                if not ok then
+                    WARN("فشل إرسال الفقاعة: " .. tostring(res))
+                elseif res and res.StatusCode and res.StatusCode ~= 200 then
+                    WARN("فايربيس رفض إرسال الفقاعة (" .. tostring(res.StatusCode) .. "): " .. tostring(res.Body))
+                end
+            end)
+        end
+
+        inputBox.FocusLost:Connect(function(enter)
+            if enter then sendMsg(inputBox) end
+        end)
+
+
+        ChatFloatBtn.MouseButton1Click:Connect(function()
+            playClick()
+            if ChatFloatBox.Visible then
+                -- X: إغلاق مربع الدردشة الخارجي والرجوع لزر 💬
+                ChatFloatBox:ReleaseFocus()
+                ChatFloatBox.Visible = false
+                ChatFloatGlow.Visible = false
+                ChatFloatBtn.Text = "💬"
+            else
+                -- 💬: فتح نفس مربع الدردشة وإعطاؤه التركيز للكتابة مباشرة
+                ChatFloatBox.Visible = true
+                ChatFloatGlow.Visible = true
+                ChatFloatBtn.Text = "X"
+                ChatFloatGlow.Position = ChatFloatBox.Position
+                ChatFloatGlow.Size = ChatFloatBox.Size
+                task.defer(function()
+                    if ChatFloatBox.Visible then
+                        ChatFloatBox:CaptureFocus()
+                    end
+                end)
+            end
+        end)
+
+        ChatFloatBox:GetPropertyChangedSignal("Position"):Connect(function()
+            if ChatFloatGlow and ChatFloatGlow.Parent then
+                ChatFloatGlow.Position = ChatFloatBox.Position
+            end
+        end)
+
+        ChatFloatBox.FocusLost:Connect(function(enter)
+            if enter then
+                sendBubbleMsg(ChatFloatBox)
+            end
+        end)
         
         if not request then
             WARN("⚠️ برنامج الإكسبلويت حقك ما يدعم دالة request/http_request/syn.request — الدردشة ما راح تشتغل أبد على هذا البرنامج")
@@ -6238,99 +7155,6 @@ end)
             end)
         end
 
-        -- ==================== صور مشغلي السكربت في Page8 ====================
-        local ScriptUsersScroll = Instance.new("ScrollingFrame", UI.Page8)
-        ScriptUsersScroll.Name = "ScriptUsersScroll"
-        ScriptUsersScroll.Size = UDim2.new(1, -20, 1, -20)
-        ScriptUsersScroll.Position = UDim2.new(0, 10, 0, 10)
-        ScriptUsersScroll.BackgroundTransparency = 1
-        ScriptUsersScroll.BorderSizePixel = 0
-        ScriptUsersScroll.ScrollBarThickness = 4
-        ScriptUsersScroll.ScrollBarImageColor3 = UI.TabColors[8]
-        ScriptUsersScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        ScriptUsersScroll.ZIndex = 6
-
-        local ScriptUsersGrid = Instance.new("UIGridLayout", ScriptUsersScroll)
-        ScriptUsersGrid.CellSize = UDim2.new(0, 118, 0, 142)
-        ScriptUsersGrid.CellPadding = UDim2.new(0, 10, 0, 10)
-        ScriptUsersGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        ScriptUsersGrid.SortOrder = Enum.SortOrder.LayoutOrder
-
-        local ScriptUsersEmpty = Instance.new("TextLabel", ScriptUsersScroll)
-        ScriptUsersEmpty.Name = "NoScriptUsers"
-        ScriptUsersEmpty.LayoutOrder = -999
-        ScriptUsersEmpty.Size = UDim2.new(1, -20, 0, 60)
-        ScriptUsersEmpty.BackgroundTransparency = 1
-        ScriptUsersEmpty.Text = "لا يوجد أحد مشغل السكربت"
-        ScriptUsersEmpty.TextColor3 = Color3.fromRGB(190, 190, 190)
-        ScriptUsersEmpty.TextSize = 20
-        ScriptUsersEmpty.Font = Enum.Font.GothamBold
-        ScriptUsersEmpty.TextWrapped = true
-        ScriptUsersEmpty.ZIndex = 8
-
-        local function RefreshScriptUsers(presenceData)
-            for _, child in ipairs(ScriptUsersScroll:GetChildren()) do
-                if child:IsA("Frame") and child.Name == "ScriptUserCard" then
-                    child:Destroy()
-                end
-            end
-
-            local activeUsers = {}
-            local myName = LocalPlayer.Name
-            if type(presenceData) == "table" then
-                for userName, timestamp in pairs(presenceData) do
-                    if userName ~= myName and type(timestamp) == "number" and (os.time() - timestamp) < 12 then
-                        table.insert(activeUsers, tostring(userName))
-                    end
-                end
-            end
-            table.sort(activeUsers)
-            ScriptUsersEmpty.Visible = (#activeUsers == 0)
-
-            for index, userName in ipairs(activeUsers) do
-                local card = Instance.new("Frame", ScriptUsersScroll)
-                card.Name = "ScriptUserCard"
-                card.LayoutOrder = index
-                card.Size = UDim2.new(0, 118, 0, 142)
-                card.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                card.ZIndex = 7
-                Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
-
-                local cardStroke = Instance.new("UIStroke", card)
-                cardStroke.Thickness = 1.2
-                cardStroke.Transparency = 0.1
-                AddTabGlow(cardStroke, 1.5, UI.Page8)
-
-                local avatar = Instance.new("ImageLabel", card)
-                avatar.Size = UDim2.new(0, 82, 0, 82)
-                avatar.Position = UDim2.new(0.5, -41, 0, 8)
-                avatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-                avatar.Image = ""
-                avatar.ZIndex = 8
-                Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
-                local avatarStroke = Instance.new("UIStroke", avatar)
-                avatarStroke.Color = UI.TabColors[8]
-                avatarStroke.Thickness = 1.2
-
-                local okId, userId = pcall(function()
-                    return Players:GetUserIdFromNameAsync(userName)
-                end)
-                if okId and userId then
-                    avatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=150&h=150"
-                end
-
-                local nameLabel = Instance.new("TextLabel", card)
-                nameLabel.Size = UDim2.new(1, -8, 0, 30)
-                nameLabel.Position = UDim2.new(0, 4, 0, 103)
-                nameLabel.BackgroundTransparency = 1
-                nameLabel.Text = userName
-                nameLabel.TextColor3 = Color3.fromRGB(235, 235, 235)
-                nameLabel.TextSize = 13
-                nameLabel.Font = Enum.Font.GothamBold
-                nameLabel.TextWrapped = true
-                nameLabel.ZIndex = 8
-            end
-        end
 
         local lastData = ""
         local _lastSeenTimestamp = nil -- nil = أول تحميل، ما نبلّغ عن رسائل قديمة
@@ -6384,7 +7208,9 @@ end)
                             local key = "id:" .. tostring(m.id)
                             local fallback = "msg:" .. tostring(m.timestamp) .. ":" .. tostring(m.sender) .. ":" .. tostring(m.text)
                             if not existing[key] and not existing[fallback] then
-                                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp)
+                                if m.chatType ~= "bubble" and not (m.chatType == "developer" and m.developerMessage == true) then
+                                    addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp)
+                                end
                                 existing[key] = true
                                 existing[fallback] = true
                             elseif not existing[key] and existing[fallback] then
@@ -6411,15 +7237,31 @@ end)
                         local newestTimestamp = _lastSeenTimestamp
                         local newMsgsFromOthers = 0
                         local lastOtherMsg = nil
+                        local lastOtherBubble = nil
+                        local lastDeveloperMsg = nil
 
                         for _, m in ipairs(msgs) do
                             if not newestTimestamp or m.timestamp > newestTimestamp then
                                 newestTimestamp = m.timestamp
                             end
                             if _lastSeenTimestamp and m.timestamp > _lastSeenTimestamp and m.sender ~= myName then
-                                newMsgsFromOthers = newMsgsFromOthers + 1
-                                lastOtherMsg = m
+                                if m.chatType == "developer" and m.developerMessage == true and m.sender == "AAbbooyi" then
+                                    lastDeveloperMsg = m
+                                elseif m.chatType == "bubble" then
+                                    lastOtherBubble = m
+                                else
+                                    newMsgsFromOthers = newMsgsFromOthers + 1
+                                    lastOtherMsg = m
+                                end
                             end
+                        end
+
+                        if lastDeveloperMsg then
+                            _lastSeenTimestamp = newestTimestamp
+                            if showDeveloperAnnouncement then
+                                showDeveloperAnnouncement(lastDeveloperMsg.text)
+                            end
+                            playMsgNotify()
                         end
 
                         if _lastSeenTimestamp == nil then
@@ -6440,6 +7282,19 @@ end)
                                 -- 💬 بوب أب إشعار فقط عندما تكون خارج الدردشة.
                                 playMsgNotify()
                                 Notify("💬 " .. lastOtherMsg.sender, lastOtherMsg.text, Color3.fromRGB(170, 0, 255), true)
+                            end
+                            -- 💬 فقط رسائل chatType="bubble" تظهر فوق رأس صاحبها.
+                            if lastOtherBubble then
+                                local friendPlayer = nil
+                                for _, p in ipairs(game.Players:GetPlayers()) do
+                                    if (lastOtherBubble.userId and p.UserId == lastOtherBubble.userId) or p.Name == lastOtherBubble.sender then
+                                        friendPlayer = p
+                                        break
+                                    end
+                                end
+                                if friendPlayer then
+                                    showMessageAboveHead(lastOtherBubble.text, friendPlayer, false)
+                                end
                             end
                         end
                     end
@@ -6490,7 +7345,6 @@ end)
                         local myName = game.Players.LocalPlayer.Name
                         local friendOnline = false
                         if okD and presenceData then
-                            RefreshScriptUsers(presenceData)
                             for pname, pts in pairs(presenceData) do
                                 if pname ~= myName and type(pts) == "number" and (os.time() - pts) < 10 then
                                     friendOnline = true
@@ -6498,6 +7352,10 @@ end)
                             end
                         end
                         onlineLabel.Text = friendOnline and "🟢 متصل" or ""
+                        _otherUserInChat = friendOnline
+                        -- إذا لم يوجد أحد آخر داخل قائمة الدردشة تبقى رسائلي «غير مقروءة».
+                        -- عند ظهور صديق/مستخدم آخر في الحضور تتحول إلى «مقروء».
+                        updateOwnMessageReadState(friendOnline)
                     end
                 end
 
@@ -6507,80 +7365,16 @@ end)
     end
     setupChatPage(UI.Page5, UI.DeleteChatBtn, ChatInputBar, UI.CopyChatBtn)
 
--- ====================== ترجمة اختيارية للواجهة ======================
+-- ====================== تطبيق اللغة المختارة ======================
+    -- اختيار اللغة يتم في البداية فقط؛ لا يوجد زر لغة داخل القائمة.
     if _SelectedLanguage == "English" then
-        pcall(function()
-            local translations = {
-                ["✈️ المميزات"] = "✈️ Features",
-                ["😈 تخريب"] = "😈 Trolling",
-                ["🛠️ مساعده"] = "🛠️ Tools",
-                ["🎵 الموسيقى"] = "🎵 Music",
-                ["💬 الدردشة"] = "💬 Chat",
-                ["❓ السكربت"] = "❓ Script",
-                ["⚙️ الإعدادات"] = "⚙️ Settings",
-                ["👥 المشغلين"] = "👥 Players",
-                ["تشغيل"] = "Play",
-                ["إيقاف"] = "Stop",
-                ["حفظ"] = "Save",
-                ["إغلاق"] = "Close",
-                ["حذف"] = "Delete",
-                ["نسخ"] = "Copy",
-                ["الرجوع"] = "Back",
-                ["مفعل"] = "Enabled",
-                ["معطل"] = "Disabled",
-                ["اكتب رسالتك هنا..."] = "Type your message here...",
-                ["لا يوجد أحد مشغل السكربت"] = "No one is running the script",
-                ["متصل"] = "Online",
-                ["يكتب..."] = "is typing...",
-                ["💬 الشات"] = "💬 Chat",
-                ["الموسيقى"] = "Music",
-                ["موسيقى2"] = "Music 2",
-                ["موسيقى 3"] = "Music 3",
-                ["موسيقى 4"] = "Music 4",
-                ["موسيقى 5"] = "Music 5",
-                ["موسيقى 6"] = "Music 6",
-                ["موسيقى 7"] = "Music 7",
-                ["اختر تاب ثم لون لحوافه"] = "Choose a tab and its border color",
-                ["اختر اللون:"] = "Choose a color:",
-                ["استرجاع الألوان الافتراضية"] = "Restore default colors",
-                ["🎨 اختر تاب ثم لون لحوافه"] = "🎨 Choose a tab and its border color",
-                ["🔄 استرجاع الألوان الافتراضية"] = "🔄 Restore default colors",
-                ["🗑️ حذف"] = "🗑️ Delete",
-                ["↩️ الرجوع"] = "↩️ Back",
-                ["📋 نسخ"] = "📋 Copy",
-                ["تم الإيقاف"] = "Stopped",
-                ["تم نسخ الرسالة"] = "Message copied",
-                ["وضع الحذف"] = "Delete mode",
-                ["وضع النسخ"] = "Copy mode",
-                ["دوس على أي رسالة منك عشان تحذفها"] = "Tap one of your messages to delete it",
-                ["دوس على أي رسالة عشان تنسخها"] = "Tap a message to copy it",
-                ["تم تغيير لون"] = "Color changed for",
-                ["أجواء الماب"] = "Map atmosphere",
-                ["الفضاء"] = "Space",
-                ["الغروب"] = "Sunset",
-                ["الليل البنفسجي"] = "Purple night",
-                ["رجع الجو الطبيعي"] = "Weather restored",
-                ["تخفيف الجودة"] = "Reduce quality",
-                ["سيرفر"] = "Server",
-                ["انتقال وملاحقة"] = "Teleport and follow",
-                ["إلغاء ضرر السقوط"] = "Disable fall damage",
-                ["ملاحقة"] = "Follow",
-                ["جودة"] = "Quality",
-                ["انتقال"] = "Teleport",
-                ["فتح قائمة الانتقال"] = "Teleport menu opened",
-                ["إغلاق قائمة الانتقال"] = "Teleport menu closed",
-                ["تم تخفيف الجودة (سريع)"] = "Quality reduced (fast)",
-                ["تم استعادة الجودة الأصلية"] = "Original quality restored",
-                ["تم الانتقال لسيرفر فارغ!"] = "Moved to an empty server!"
-            }
-            for _, object in ipairs(ScreenGui:GetDescendants()) do
-                if object:IsA("TextLabel") or object:IsA("TextButton") then
-                    object.Text = translations[object.Text] or object.Text
-                elseif object:IsA("TextBox") then
-                    object.PlaceholderText = translations[object.PlaceholderText] or object.PlaceholderText
-                end
+        for _, object in ipairs(ScreenGui:GetDescendants()) do
+            if object:IsA("TextLabel") or object:IsA("TextButton") then
+                object.Text = _TranslateText(object.Text)
+            elseif object:IsA("TextBox") then
+                object.PlaceholderText = _TranslateText(object.PlaceholderText)
             end
-        end)
+        end
     end
 
 -- ====================== فتح القائمة ======================
@@ -6645,6 +7439,9 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
+-- 💾 تصريح مسبق: تُملأ لاحقًا بدالة حفظ مكان زر R وزر القفل، وتُستدعى عند نهاية السحب
+local SaveExtraButtonPositions
+
 -- 1. معرفات الأيقونات (IDs)
 local LOCKED_ICON = "rbxassetid://6034818372"
 local UNLOCKED_ICON = "rbxassetid://6034818379"
@@ -6669,7 +7466,7 @@ respawnButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 respawnButton.TextStrokeColor3 = Color3.fromRGB(170, 0, 255)
 respawnButton.TextStrokeTransparency = 0.35
 respawnButton.TextSize = 26
-respawnButton.Font = Enum.Font.GothamBold
+respawnButton.Font = Enum.Font.Arcade
 respawnButton.AutoButtonColor = true
 respawnButton.Modal = false
 respawnButton.ZIndex = 100 -- يظهر فوق عناصر التحرك
@@ -6717,6 +7514,9 @@ respawnButton.Active = true
 -- 🖐️ تحريك زر R باللمس أو الماوس
 local rDragging, rDragInput, rDragStart, rStartPos = false, nil, nil, nil
 local rMoved = false
+local _respawnClickTimes = {}
+local TRIPLE_CLICK_WINDOW = 0.6
+
 local function updateRespawnButton(input)
 	local delta = input.Position - rDragStart
 	if delta.Magnitude > 8 then rMoved = true end
@@ -6757,14 +7557,36 @@ respawnButton.MouseButton1Click:Connect(function()
 		rMoved = false
 		return
 	end
+
+	-- 🔄 3 ضغطات سريعة على زر R = إرجاع كل القوائم لمكانها الأصلي.
+	local now = tick()
+	table.insert(_respawnClickTimes, now)
+	while #_respawnClickTimes > 0 and (now - _respawnClickTimes[1]) > TRIPLE_CLICK_WINDOW do
+		table.remove(_respawnClickTimes, 1)
+	end
+
+	if #_respawnClickTimes >= 3 then
+		_respawnClickTimes = {}
+		if _G.SkyResetMenuPositions then
+			pcall(_G.SkyResetMenuPositions)
+			if FlyTipNotify then
+				pcall(function()
+					FlyTipNotify("🔄 تم إرجاع كل القوائم لمكانها الأصلي", false, nil, 4.0, 1.0)
+				end)
+			end
+		end
+		return
+	end
+
 	fastRespawn()
 end)
-button.Position = UDim2.new(0.5, -22.5, 0.8, 0)
+button.AnchorPoint = Vector2.new(1, 1)
+button.Position = UDim2.new(1, -100, 1, -110) -- 📍 موقع ثابت قريب من زر النط حق روبلوكس، أعلى ويسار شوي
 button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 button.Image = LOCKED_ICON
 button.ImageTransparency = 0.2
 button.ZIndex = 5
-button.Active = true -- لجعل الزر قابلاً للتفاعل
+button.Active = true -- لجعل الزر قابلاً للتفاعل (بدون سحب)
 
 -- إضافة زوايا مستديرة وإطار
 Instance.new("UICorner", button).CornerRadius = UDim.new(1, 0)
@@ -6773,23 +7595,41 @@ uiStroke.Thickness = 2
 uiStroke.Color = Color3.fromRGB(255, 255, 255)
 uiStroke.Transparency = 0.5
 
--- 3. ميزة تحريك الزر (Draggable Script)
-local dragging, dragInput, dragStart, startPos
+-- 🔒 تحريك محدود لزر القفل: يقدر يتحرك شوي لكن ما يقدر يطلع من صندوق ثابت حواليه
+-- (كذا حتى لو تحرك يفضل قريب من مكانه المعروف وما يضيع)
+local lockBaseOffsetX, lockBaseOffsetY = -100, -110 -- نفس قيم موضع الزر الثابت فوق
+local LOCK_BOX_RADIUS = 90 -- حجم الهدبوكس حول الزر (بالبكسل) -- كبير شوي عشان يعطي مجال حركة مريح
 
-local function update(input)
-	local delta = input.Position - dragStart
-	button.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+local function clampLockButtonPosition(pos)
+	local minX, maxX = lockBaseOffsetX - LOCK_BOX_RADIUS, lockBaseOffsetX + LOCK_BOX_RADIUS
+	local minY, maxY = lockBaseOffsetY - LOCK_BOX_RADIUS, lockBaseOffsetY + LOCK_BOX_RADIUS
+	local x = math.clamp(pos.X.Offset, minX, maxX)
+	local y = math.clamp(pos.Y.Offset, minY, maxY)
+	return UDim2.new(pos.X.Scale, x, pos.Y.Scale, y)
+end
+
+local lockDragging, lockDragInput, lockDragStart, lockStartPos = false, nil, nil, nil
+local lockMoved = false
+
+local function updateLockButton(input)
+	local delta = input.Position - lockDragStart
+	if delta.Magnitude > 8 then lockMoved = true end
+	local newPos = UDim2.new(
+		lockStartPos.X.Scale, lockStartPos.X.Offset + delta.X,
+		lockStartPos.Y.Scale, lockStartPos.Y.Offset + delta.Y
+	)
+	button.Position = clampLockButtonPosition(newPos)
 end
 
 button.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = button.Position
-		
+		lockDragging = true
+		lockMoved = false
+		lockDragStart = input.Position
+		lockStartPos = button.Position
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
+				lockDragging = false
 			end
 		end)
 	end
@@ -6797,20 +7637,20 @@ end)
 
 button.InputChanged:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-		dragInput = input
+		lockDragInput = input
 	end
 end)
 
-
-
 UserInputService.InputChanged:Connect(function(input)
-	if input == dragInput and dragging then
-		update(input)
+	if input == lockDragInput and lockDragging then
+		updateLockButton(input)
 	end
 end)
 
 -- 4. تفعيل الدوران (الشخصية تتبع الكاميرا)
 local isLocked = false
+-- عداد ضغطات زر القفل لإعادة أماكن كل القوائم بعد 3 ضغطات سريعة
+local _lockClickTimes = {}
 RunService.RenderStepped:Connect(function()
 	if isLocked and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
 		local hrp = player.Character.HumanoidRootPart
@@ -6819,8 +7659,13 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
--- 5. عند الضغط على الزر (تغيير الحالة)
+-- 5. عند الضغط على الزر (تغيير الحالة) + كشف 3 ضغطات سريعة لإعادة القوائم لمكانها
 button.MouseButton1Click:Connect(function()
+	if lockMoved then
+		lockMoved = false
+		return
+	end
+
 	isLocked = not isLocked
 	if isLocked then
 		button.Image = UNLOCKED_ICON
@@ -6831,7 +7676,36 @@ button.MouseButton1Click:Connect(function()
 		button.ImageColor3 = Color3.fromRGB(255, 255, 255)
 		uiStroke.Color = Color3.fromRGB(255, 255, 255)
 	end
+
+	-- 🔁 3 ضغطات متتالية وسريعة على زر القفل = إرجاع كل القوائم لمكانها الأصلي
+	local now = tick()
+	table.insert(_lockClickTimes, now)
+	while #_lockClickTimes > 0 and (now - _lockClickTimes[1]) > TRIPLE_CLICK_WINDOW do
+		table.remove(_lockClickTimes, 1)
+	end
+
+	if #_lockClickTimes >= 3 then
+		_lockClickTimes = {}
+		if _G.SkyResetMenuPositions then
+			local ok = pcall(_G.SkyResetMenuPositions)
+			if ok and FlyTipNotify then
+				pcall(function()
+					FlyTipNotify("🔄 تم إرجاع كل القوائم لمكانها الأصلي", false, nil, 4.0, 1.0)
+				end)
+			end
+		end
+	end
 end)
+
+local function showLockResetTip()
+	FlyTipNotify("🔄 اضغط 3 مرات على زر القفل عشان ترجع كل القوائم لمكانها", false, nil, 4.0, 1.0)
+end
+
+-- ❌ تم حذف نظام حفظ/استرجاع مواضع زر R وزر القفل.
+-- الموضع الحالي يبقى أثناء الجلسة فقط، ولا يوجد تحميل تلقائي من ملف.
 
 -- 💡 معلومة زر R: تظهر 4 ثوانٍ ثم تختفي تدريجيًا وببطء
 task.delay(0.8, showTouchRespawnTip)
+
+-- 💡 معلومة زر القفل: تظهر بعد معلومة زر R عشان ما تتداخل معاها
+task.delay(5.5, showLockResetTip)
