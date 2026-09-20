@@ -374,7 +374,7 @@ local _notificationQueues = {
     general = {},
     chat = {},
 }
-local _notificationLimits = {presence = 2, general = 5, chat = 2}
+local _notificationLimits = {presence = 2, general = 2, chat = 2}
 local _notificationSerial = 0
 
 local function notificationCategory(T, avatarUserId)
@@ -396,11 +396,15 @@ end
 
 local function updateNotificationPositions()
     -- الدردشة ثابتة تحت منطقة الإشعارات العامة.
+    -- 📍 إشعارات القائمة (general) تجي تحت إشعارات دخول/خروج اللاعبين (presence)،
+    -- بس إذا ما فيه إشعار دخول/خروج حاليًا، تاخذ إشعارات القائمة نفس مكان الأعلى بالضبط (بدون أي فراغ).
     local presenceHeight = PresenceLayout.AbsoluteContentSize.Y
     local generalHeight = GeneralLayout.AbsoluteContentSize.Y
     local gap = 10
-    GeneralNC.Position = UDim2.new(1, -320, 0.08, presenceHeight + gap)
-    ChatNC.Position = UDim2.new(1, -320, 0.08, presenceHeight + generalHeight + gap * 2)
+    local presenceGap = (presenceHeight > 0) and gap or 0
+    local generalGap = (generalHeight > 0) and gap or 0
+    GeneralNC.Position = UDim2.new(1, -320, 0.08, presenceHeight + presenceGap)
+    ChatNC.Position = UDim2.new(1, -320, 0.08, presenceHeight + presenceGap + generalHeight + generalGap)
 end
 PresenceLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateNotificationPositions)
 GeneralLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateNotificationPositions)
@@ -440,11 +444,64 @@ local function _TranslateText(value)
     return value
 end
 
-function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
+-- 🔁 إشعارات "حية" تتحدث بنفسها بدل ما تتكدس: تستخدمها القيم المتغيرة بسرعة
+-- (زيادة/نقصان الجاذبية، السرعة، وغيرها) عشان يبقى إشعار واحد بس يتحدث رقمه.
+local _liveNotifFrames = {}
+
+-- ينتظر ويطفي الإشعار بعد مدته؛ لو صار تحديث أحدث لنفس liveKey أثناء الانتظار
+-- (رقم Gen تغيّر) يتوقف هذا الإخفاء القديم ويسيب المهمة للتحديث الأحدث.
+local function _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, category, gen, liveKey)
+    task.wait(category == "presence" and 3.2 or 2.8)
+    if not F.Parent then return end
+    if gen ~= nil and F:GetAttribute("Gen") ~= gen then return end
+    _TweenS:Create(I, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Position = UDim2.new(0, 20, 0, -4), BackgroundTransparency = 1
+    }):Play()
+    _TweenS:Create(Stroke, TweenInfo.new(0.18), {Transparency = 1}):Play()
+    _TweenS:Create(TL, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
+    _TweenS:Create(ML, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
+    if AvatarImg then _TweenS:Create(AvatarImg, TweenInfo.new(0.18), {ImageTransparency = 1}):Play() end
+    task.wait(0.23)
+    removeNotificationRecord(category, F)
+    if F.Parent then F:Destroy() end
+    if liveKey and _liveNotifFrames[liveKey] == F then _liveNotifFrames[liveKey] = nil end
+end
+
+function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     T = _TranslateText(T)
     M = _TranslateText(M)
     local category = notificationCategory(T, avatarUserId)
     local container = getNotificationContainer(category)
+
+    -- ♻️ إذا فيه إشعار حي شغال لنفس المفتاح، نحدّث نصه بدل ما نسوي وحد جديد فوقه.
+    if liveKey and _liveNotifFrames[liveKey] and _liveNotifFrames[liveKey].Parent then
+        local F = _liveNotifFrames[liveKey]
+        local I = F:FindFirstChild("NotificationInner")
+        if I then
+            local TL = I:FindFirstChild("Title")
+            local ML = I:FindFirstChild("Message")
+            local Stroke = I:FindFirstChildOfClass("UIStroke")
+            local AvatarImg = I:FindFirstChild("Avatar")
+            if TL then TL.Text = T end
+            if ML then ML.Text = M end
+            -- ⚡ ومضة خفيفة على الحافة تعطي إحساس إن الإشعار تحدث فعلاً
+            if Stroke then
+                _TweenS:Create(Stroke, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Thickness = 2.4}):Play()
+                task.delay(0.1, function()
+                    if Stroke and Stroke.Parent then
+                        _TweenS:Create(Stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Thickness = 1.5}):Play()
+                    end
+                end)
+            end
+            local gen = (F:GetAttribute("Gen") or 0) + 1
+            F:SetAttribute("Gen", gen)
+            task.spawn(function()
+                pcall(_dismissNotificationAfterDelay, F, I, Stroke, TL, ML, AvatarImg, category, gen, liveKey)
+            end)
+            return F
+        end
+    end
+
     _notificationSerial += 1
 
     local F = Instance.new("Frame", container)
@@ -541,6 +598,12 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
     trimNotificationQueue(category)
     updateNotificationPositions()
 
+    -- 🔑 لو معه liveKey، نسجّله كإشعار حي؛ أي نداء Notify جاي بنفس المفتاح يحدّث هذا الفريم بدل ما يكدّس وحد جديد.
+    if liveKey then
+        F:SetAttribute("Gen", 0)
+        _liveNotifFrames[liveKey] = F
+    end
+
     task.spawn(function()
         pcall(function()
             _TweenS:Create(I, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
@@ -564,25 +627,14 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor)
                 _TweenS:Create(I, TweenInfo.new(0.05), {Position = UDim2.new(0, 0, 0, 0)}):Play()
             end
 
-            task.wait(category == "presence" and 3.2 or 2.8)
-            if not F.Parent then return end
-            _TweenS:Create(I, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(0, 20, 0, -4), BackgroundTransparency = 1
-            }):Play()
-            _TweenS:Create(Stroke, TweenInfo.new(0.18), {Transparency = 1}):Play()
-            _TweenS:Create(TL, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
-            _TweenS:Create(ML, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
-            if AvatarImg then _TweenS:Create(AvatarImg, TweenInfo.new(0.18), {ImageTransparency = 1}):Play() end
-            task.wait(0.23)
-            removeNotificationRecord(category, F)
-            if F.Parent then F:Destroy() end
+            _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, category, liveKey and 0 or nil, liveKey)
         end)
     end)
 end
 
-function OK(m) 
+function OK(m, liveKey) 
     playOK()
-    Notify("✅ تم", m, Color3.fromRGB(170, 0, 255)) 
+    Notify("✅ تم", m, Color3.fromRGB(170, 0, 255), nil, nil, nil, liveKey) 
 end
 
 function WARN(m) 
@@ -885,6 +937,7 @@ local function RunMyOriginalScript()
     State.speedActive = false
     State.AimBotActive = false
     State.ESPActive = false
+    State.ESPFilters = {Friend = true, Enemy = true, Bot = true} -- 👁️ أهداف الـ ESP (تتغير من قائمة ESP)
 
     State.Tracers = {}
     State.Boxes3D = {}
@@ -1044,6 +1097,113 @@ local function RunMyOriginalScript()
     LocalPlayer.CharacterAdded:Connect(SetupDeathSound)
 
     -- ====================== نظام السرعة + النط ======================
+    -- 🧠 كشف نوع الشخصية تلقائيًا (R6 / R15) وكل نوع له بروفايل سرعة مستقل.
+    -- عدّل cframeMult لأي نوع لوحده بدون ما تأثر على الثاني.
+    State.SpeedProfiles = {
+        R6  = { cframeMult = 0.168, walkScale = 1 },  -- نفس الطريقة القديمة بالضبط (WalkSpeed + دفع CFrame)
+        R15 = { cframeMult = 0,     walkScale = 20 }, -- R15: سرعة عادية فقط، والرقم 1 = سرعة 20 (2 = 40، 3 = 60...)
+    }
+    State.rigType = "R6"
+
+    -- 🔽 تصغير/توسيع القوائم: الحافة العليا تبقى ثابتة، والحافة السفلية هي اللي تطلع لفوق أو تنزل.
+    -- (القوائم AnchorPoint = 0.5,0.5 فنعوّض حركة المركز مع تغيير الارتفاع)
+    State.PanelBusy = setmetatable({}, {__mode = "k"})
+    State.LockPanelToggle = function(panel) -- يمنع ضغطتين متداخلتين أثناء الأنميشن
+        if not panel then return false end
+        if State.PanelBusy[panel] then return false end
+        State.PanelBusy[panel] = true
+        task.delay(0.3, function() State.PanelBusy[panel] = nil end)
+        return true
+    end
+    -- 🌫️ فتح القوائم: تظهر القائمة بمكانها النهائي مع كل اللي فيها شوي شوي (عكس الإغلاق)
+    -- نستدعيها بعد ما نحدد حجم/موضع القائمة؛ تخفيها فورًا ثم تظهرها بعد ما يخلص بناء كل العناصر.
+    State.FadeInPanel = function(panel, duration)
+        if not panel then return end
+        duration = duration or 0.35
+        panel.Visible = false
+        task.defer(function()
+            if not panel or not panel.Parent then return end
+            local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local jobs = {}
+            local function prep(obj)
+                local props
+                if obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox") then
+                    props = {"BackgroundTransparency", "TextTransparency"}
+                elseif obj:IsA("ScrollingFrame") then
+                    props = {"BackgroundTransparency", "ScrollBarImageTransparency"}
+                elseif obj:IsA("Frame") then
+                    props = {"BackgroundTransparency"}
+                elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                    props = {"BackgroundTransparency", "ImageTransparency"}
+                elseif obj:IsA("UIStroke") then
+                    props = {"Transparency"}
+                end
+                if not props then return end
+                local goal = {}
+                for _, prop in ipairs(props) do
+                    local value = obj[prop]
+                    -- العناصر المخفية أصلًا (شفافيتها 1) نتركها؛ لها أنيميشن ظهور خاص فيها.
+                    if value < 0.999 then
+                        goal[prop] = value
+                        obj[prop] = 1
+                    end
+                end
+                if next(goal) then jobs[#jobs + 1] = {obj, goal} end
+            end
+            prep(panel)
+            for _, d in ipairs(panel:GetDescendants()) do prep(d) end
+            panel.Visible = true
+            for _, job in ipairs(jobs) do
+                pcall(function() TweenService:Create(job[1], info, job[2]):Play() end)
+            end
+        end)
+    end
+
+    -- 🌫️ إغلاق القوائم: تختفي القائمة مع كل اللي فيها شوي شوي (بدون أنميشن تصغير)
+    State.FadeOutPanel = function(panel, duration)
+        if not panel or not panel.Parent then return end
+        duration = duration or 0.35
+        local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local function fade(obj)
+            local goal
+            if obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox") then
+                goal = {BackgroundTransparency = 1, TextTransparency = 1}
+            elseif obj:IsA("ScrollingFrame") then
+                goal = {BackgroundTransparency = 1, ScrollBarImageTransparency = 1}
+            elseif obj:IsA("Frame") then
+                goal = {BackgroundTransparency = 1}
+            elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                goal = {BackgroundTransparency = 1, ImageTransparency = 1}
+            elseif obj:IsA("UIStroke") then
+                goal = {Transparency = 1}
+            end
+            if goal then
+                pcall(function() TweenService:Create(obj, info, goal):Play() end)
+            end
+        end
+        fade(panel)
+        for _, d in ipairs(panel:GetDescendants()) do fade(d) end
+    end
+    State.TweenPanelHeight = function(panel, fromH, toH, width)
+        if not panel or not panel.Parent then return end
+        local pos = panel.Position
+        TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, width, 0, toH),
+            Position = UDim2.new(pos.X.Scale, pos.X.Offset, pos.Y.Scale, pos.Y.Offset + (toH - fromH) / 2)
+        }):Play()
+    end
+    -- السرعة الفعلية اللي تنحط على WalkSpeed حسب نوع الشخصية
+    State.GetWalkSpeed = function(humanoid)
+        local profile = State.SpeedProfiles[State.GetRigName(humanoid)] or State.SpeedProfiles.R6
+        return State.targetSpeed * profile.walkScale
+    end
+    State.GetRigName = function(humanoid)
+        if humanoid and humanoid.RigType == Enum.HumanoidRigType.R15 then
+            return "R15"
+        end
+        return "R6"
+    end
+
     RunService.PreSimulation:Connect(function()
         local character = LocalPlayer.Character
         if character then
@@ -1066,10 +1226,20 @@ local function RunMyOriginalScript()
                     end
                 end
 
+                -- 🧠 كشف الماب/الشخصية: R6 أو R15 (يتحدث تلقائيًا مع كل ريسبون أو تغيير شخصية)
+                local rig = State.GetRigName(humanoid)
+                if rig ~= State.rigType then
+                    State.rigType = rig
+                    if State.speedActive then
+                        OK("🧠 تم كشف شخصية " .. rig .. " — تم تبديل نظام السرعة")
+                    end
+                end
+
                 if State.speedActive then
-                    humanoid.WalkSpeed = State.targetSpeed
-                    if humanoid.MoveDirection.Magnitude > 0 then
-                        rootPart.CFrame = rootPart.CFrame + (humanoid.MoveDirection * (State.targetSpeed * 0.168))
+                    local profile = State.SpeedProfiles[rig] or State.SpeedProfiles.R6
+                    humanoid.WalkSpeed = State.targetSpeed * profile.walkScale
+                    if profile.cframeMult > 0 and humanoid.MoveDirection.Magnitude > 0 then
+                        rootPart.CFrame = rootPart.CFrame + (humanoid.MoveDirection * (State.targetSpeed * profile.cframeMult))
                     end
                 end
 
@@ -1161,18 +1331,16 @@ local function RunMyOriginalScript()
             task.delay(0.3, function() if FlyLoadingBar then FlyLoadingBar:Destroy() end end)
         end)
 
-        -- أنيميشن فتح مثل القائمة الرئيسية
-        TweenService:Create(State.flyPanel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 190, 0, 145),
-            Position = UDim2.new(0.5, 265, 0.42, 0),
-            BackgroundTransparency = 0
-        }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Transparency = 0
-        }):Play()
-        task.spawn(function() task.wait(0.6) State.flyPanel.ClipsDescendants = false end)
+        -- 🌫️ ظهور تدريجي: القائمة بمكانها النهائي وتظهر مع كل اللي فيها شوي شوي
+        State.flyPanel.Size = UDim2.new(0, 190, 0, 145)
+        State.flyPanel.Position = UDim2.new(0.5, 265, 0.42, 0)
+        State.flyPanel.BackgroundTransparency = 0
+        stroke.Transparency = 0
+        State.FadeInPanel(State.flyPanel, 0.35)
+        -- ✂️ القص يبقى شغال دايمًا: أي شي يطلع برا حدود القائمة ما يظهر (فتح/إغلاق/تصغير)
 
         MakeDraggable(State.flyPanel)
+        local flyBodyItems = {}
         local titleFrame = Instance.new("Frame")
         titleFrame.Size = UDim2.new(1, 0, 0, 32)
         titleFrame.BackgroundTransparency = 1
@@ -1188,6 +1356,57 @@ local function RunMyOriginalScript()
         title.TextSize = 15
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = titleFrame
+
+        -- زر تصغير/توسيع قائمة Fly مع إبقاء الطيران فعالًا.
+        local flyMinimizeBtn = Instance.new("TextButton")
+        flyMinimizeBtn.Name = "MinimizeFly"
+        flyMinimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+        flyMinimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+        flyMinimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        flyMinimizeBtn.Text = "−"
+        flyMinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        flyMinimizeBtn.TextScaled = true
+        flyMinimizeBtn.Font = Enum.Font.Arcade
+        flyMinimizeBtn.AutoButtonColor = false
+        flyMinimizeBtn.Parent = titleFrame
+        Instance.new("UICorner", flyMinimizeBtn)
+        local flyMinimizeGlow = Instance.new("UIStroke", flyMinimizeBtn)
+        flyMinimizeGlow.Thickness = 1.5
+        AddMovingBorderGlow(flyMinimizeGlow, 1.5)
+
+        local flyCollapsed = false
+        local function setFlyMinimized(minimized)
+            flyCollapsed = minimized
+            flyMinimizeBtn.Text = minimized and "+" or "−"
+            for _, item in ipairs(flyBodyItems) do
+                if item and item.Parent then
+                    local goal = {}
+                    if item:IsA("TextLabel") then
+                        goal.TextTransparency = minimized and 1 or 0
+                    elseif item:IsA("TextButton") then
+                        goal.BackgroundTransparency = minimized and 1 or 0
+                        goal.TextTransparency = minimized and 1 or 0
+                    end
+                    if next(goal) then
+                        TweenService:Create(item, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+                    end
+                    for _, child in ipairs(item:GetChildren()) do
+                        if child:IsA("UIStroke") then
+                            TweenService:Create(child, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                Transparency = minimized and 1 or 0.3
+                            }):Play()
+                        end
+                    end
+                end
+            end
+            State.TweenPanelHeight(State.flyPanel, minimized and 145 or 38, minimized and 38 or 145, 190)
+        end
+
+        flyMinimizeBtn.MouseButton1Click:Connect(function()
+            if not State.LockPanelToggle(State.flyPanel) then return end
+            playClick()
+            setFlyMinimized(not flyCollapsed)
+        end)
 
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 26, 0, 26)
@@ -1232,11 +1451,12 @@ local function RunMyOriginalScript()
         State.toggleBtnFly.TextSize = 14
         Instance.new("UICorner", State.toggleBtnFly)
         State.toggleBtnFly.Parent = State.flyPanel
+        table.insert(flyBodyItems, State.toggleBtnFly)
         local toggleBtnFlyGlow = Instance.new("UIStroke", State.toggleBtnFly)
         toggleBtnFlyGlow.Thickness = 1.5
         toggleBtnFlyGlow.Transparency = 1
         AddMovingBorderGlow(toggleBtnFlyGlow, 1.5)
-        task.delay(0.5, function()
+        task.delay(0.05, function()
             if State.toggleBtnFly then
                 TweenService:Create(State.toggleBtnFly, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
                 TweenService:Create(toggleBtnFlyGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
@@ -1263,7 +1483,13 @@ local function RunMyOriginalScript()
         State.speedLabel.Font = Enum.Font.Arcade
         State.speedLabel.TextSize = 14
         State.speedLabel.Parent = State.flyPanel
-        task.delay(0.6, function()
+        table.insert(flyBodyItems, State.speedLabel)
+        task.delay(0.05, function()
+            if State.speedLabel and State.speedLabel.Parent then
+                State.speedLabel.Visible = true
+            end
+        end)
+        task.delay(0.05, function()
             if State.speedLabel then
                 TweenService:Create(State.speedLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
             end
@@ -1282,22 +1508,53 @@ local function RunMyOriginalScript()
         plusBtn.TextSize = 16
         Instance.new("UICorner", plusBtn)
         plusBtn.Parent = State.flyPanel
+        table.insert(flyBodyItems, plusBtn)
         local plusBtnGlow = Instance.new("UIStroke", plusBtn)
         plusBtnGlow.Thickness = 1.5
         plusBtnGlow.Transparency = 1
         AddMovingBorderGlow(plusBtnGlow, 1.5)
-        task.delay(0.7, function()
+        task.delay(0.05, function()
             if plusBtn then
                 TweenService:Create(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
                 TweenService:Create(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
             end
         end)
-        plusBtn.MouseButton1Click:Connect(function()
-            playClick()
-            State.flySpeed = math.clamp(State.flySpeed + 30, 10, 2000)
+        local function applyFlySpeed(delta)
+            State.flySpeed = math.clamp(State.flySpeed + delta, 10, 2000)
             if State.speedLabel then State.speedLabel.Text = "السرعة: " .. State.flySpeed end
-            OK("⚡ السرعة: "..flySpeed)
-        end)
+            OK("⚡ السرعة: " .. State.flySpeed, "flySpeed")
+        end
+
+        local function bindFlySpeedHold(button, delta)
+            local holding = false
+            local longPress = false
+            button.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                holding = true
+                longPress = false
+                task.delay(0.45, function()
+                    if not holding or not button.Parent then return end
+                    longPress = true
+                    while holding and button.Parent do
+                        applyFlySpeed(delta)
+                        task.wait(0.08)
+                    end
+                end)
+            end)
+            button.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    holding = false
+                end
+            end)
+            button.MouseButton1Click:Connect(function()
+                playClick()
+                if not longPress then
+                    applyFlySpeed(delta)
+                end
+                longPress = false
+            end)
+        end
+        bindFlySpeedHold(plusBtn, 30)
 
         local minusBtn = Instance.new("TextButton")
         minusBtn.Size = UDim2.new(0.38, 0, 0, 30)
@@ -1312,22 +1569,19 @@ local function RunMyOriginalScript()
         minusBtn.TextSize = 16
         Instance.new("UICorner", minusBtn)
         minusBtn.Parent = State.flyPanel
+        table.insert(flyBodyItems, minusBtn)
         local minusBtnGlow = Instance.new("UIStroke", minusBtn)
         minusBtnGlow.Thickness = 1.5
         minusBtnGlow.Transparency = 1
         AddMovingBorderGlow(minusBtnGlow, 1.5)
-        task.delay(0.8, function()
+        task.delay(0.05, function()
             if minusBtn then
                 TweenService:Create(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
                 TweenService:Create(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
             end
         end)
-        minusBtn.MouseButton1Click:Connect(function()
-            playClick()
-            State.flySpeed = math.clamp(State.flySpeed - 30, 10, 2000)
-            if State.speedLabel then State.speedLabel.Text = "السرعة: " .. State.flySpeed end
-            OK("⚡ السرعة: "..flySpeed)
-        end)
+        bindFlySpeedHold(minusBtn, -30)
+
     end
 
     -- ====================== Teleport System ======================
@@ -1347,7 +1601,7 @@ local function RunMyOriginalScript()
         Instance.new("UICorner", State.tpPanel).CornerRadius = UDim.new(0, 12)
 
         local stroke = Instance.new("UIStroke", State.tpPanel)
-        stroke.Color = Color3.fromRGB(170, 0, 255)
+        stroke.Color = Color3.fromRGB(0, 170, 255)
         stroke.Thickness = 2
         stroke.Transparency = 1
         AddMovingBorderGlow(stroke, 1.5)
@@ -1355,7 +1609,7 @@ local function RunMyOriginalScript()
         local TPLoadingBar = Instance.new("Frame", State.tpPanel)
         TPLoadingBar.Size = UDim2.new(0, 0, 0, 3)
         TPLoadingBar.Position = UDim2.new(0, 0, 0, 0)
-        TPLoadingBar.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+        TPLoadingBar.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
         TPLoadingBar.BorderSizePixel = 0
         TPLoadingBar.ZIndex = 20
         TweenService:Create(TPLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -1375,15 +1629,13 @@ local function RunMyOriginalScript()
             return 85 + math.max(0, State.tpSlotCount - 1) * 45
         end
 
-        TweenService:Create(State.tpPanel, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 200, 0, GetTPPanelHeight()),
-            Position = UDim2.new(0.5, 265, 0.42, 0),
-            BackgroundTransparency = 0
-        }):Play()
-        TweenService:Create(stroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Transparency = 0
-        }):Play()
-        task.spawn(function() task.wait(0.6) if State.tpPanel then State.tpPanel.ClipsDescendants = false end end)
+        -- 🌫️ ظهور تدريجي: القائمة بمكانها النهائي وتظهر مع كل اللي فيها شوي شوي
+        State.tpPanel.Size = UDim2.new(0, 200, 0, GetTPPanelHeight())
+        State.tpPanel.Position = UDim2.new(0.5, 265, 0.42, 0)
+        State.tpPanel.BackgroundTransparency = 0
+        stroke.Transparency = 0
+        State.FadeInPanel(State.tpPanel, 0.35)
+        -- ✂️ القص يبقى شغال دايمًا: أي شي يطلع برا حدود القائمة ما يظهر
 
         MakeDraggable(State.tpPanel)
         local titleFrame = Instance.new("Frame")
@@ -1396,13 +1648,13 @@ local function RunMyOriginalScript()
         title.Position = UDim2.new(0, 12, 0, 0)
         title.BackgroundTransparency = 1
         title.Text = "قائمة الانتقال"
-        title.TextColor3 = Color3.fromRGB(170, 0, 255)
+        title.TextColor3 = Color3.fromRGB(0, 170, 255)
         title.TextTransparency = 1
         title.Font = Enum.Font.Arcade
         title.TextSize = 15
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = titleFrame
-        task.delay(0.5, function()
+        task.delay(0.05, function()
             if title then TweenService:Create(title, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
         end)
 
@@ -1412,7 +1664,7 @@ local function RunMyOriginalScript()
         plusSlotBtn.Position = UDim2.new(1, -62, 0, 3)
         plusSlotBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
         plusSlotBtn.Text = "+"
-        plusSlotBtn.TextColor3 = Color3.fromRGB(90, 255, 150)
+        plusSlotBtn.TextColor3 = Color3.fromRGB(0, 170, 255)
         plusSlotBtn.TextScaled = true
         plusSlotBtn.Font = Enum.Font.Arcade
         plusSlotBtn.TextSize = 14
@@ -1484,7 +1736,7 @@ local function RunMyOriginalScript()
 
             local saveBtn = Instance.new("TextButton", frame)
             saveBtn.Size = UDim2.new(0.45, 0, 1, 0)
-            saveBtn.BackgroundColor3 = Color3.fromRGB(140, 0, 210)
+            saveBtn.BackgroundColor3 = Color3.fromRGB(0, 115, 190)
             saveBtn.BackgroundTransparency = 1
             saveBtn.TextTransparency = 1
             saveBtn.Text = "حفظ " .. index
@@ -1506,7 +1758,7 @@ local function RunMyOriginalScript()
             local goBtn = Instance.new("TextButton", frame)
             goBtn.Size = UDim2.new(0.45, 0, 1, 0)
             goBtn.Position = UDim2.new(0.55, 0, 0, 0)
-            goBtn.BackgroundColor3 = Color3.fromRGB(100, 0, 160)
+            goBtn.BackgroundColor3 = Color3.fromRGB(0, 85, 145)
             goBtn.BackgroundTransparency = 1
             goBtn.TextTransparency = 1
             goBtn.Text = "انتقال " .. index
@@ -1532,7 +1784,7 @@ local function RunMyOriginalScript()
                     State.savedLocations[index] = char.HumanoidRootPart.CFrame
                     saveBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
                     task.delay(0.5, function()
-                        if saveBtn then saveBtn.BackgroundColor3 = Color3.fromRGB(140, 0, 210) end
+                        if saveBtn then saveBtn.BackgroundColor3 = Color3.fromRGB(0, 115, 190) end
                     end)
                     OK("💾 تم حفظ الموقع #"..index)
                     -- مهم: الحفظ لا يضيف خانة جديدة. الإضافة تتم فقط من زر +.
@@ -1654,15 +1906,59 @@ local function GetPlayerESPColor(player)
     return COLORS.Enemy
 end
 
-local function RemoveESP(character)
-    local data = ESP[character]
-    if not data then return end
+-- ✨ ظهور واختفاء ناعم للـ ESP بدل الظهور/الاختفاء المفاجئ
+-- (نخزن الدوال داخل State بدل local عشان ما نتعدى حد المتغيرات المحلية في Lua)
+State.ESPFadeTime = 0.35
 
+State.SetESPAlpha = function(data, alpha) -- 1 = ظاهر كامل، 0 = مخفي
+    if data.Highlight then data.Highlight.OutlineTransparency = 1 - alpha end
+    if data.Beam then data.Beam.Transparency = NumberSequence.new(1 - alpha) end
+end
+
+State.FadeESP = function(data, target, duration, onDone)
+    data.FadeId = (data.FadeId or 0) + 1
+    local id = data.FadeId
+    local startAlpha = data.Alpha or 0
+    task.spawn(function()
+        local t0 = os.clock()
+        while true do
+            if data.FadeId ~= id then return end -- تم إلغاء هذا الأنميشن بأنميشن أحدث
+            local k = math.clamp((os.clock() - t0) / duration, 0, 1)
+            local eased = k * k * (3 - 2 * k)
+            data.Alpha = startAlpha + (target - startAlpha) * eased
+            State.SetESPAlpha(data, data.Alpha)
+            if k >= 1 then break end
+            RunService.Heartbeat:Wait()
+        end
+        if onDone then onDone() end
+    end)
+end
+
+State.DestroyESPData = function(character, data)
     if data.Highlight then data.Highlight:Destroy() end
     if data.Attachment then data.Attachment:Destroy() end
     if data.Beam then data.Beam:Destroy() end
+    if ESP[character] == data then ESP[character] = nil end
+end
 
-    ESP[character] = nil
+-- instant = true عند اختفاء الشخصية فعليًا (ما فيه شي نسوي له أنميشن)
+local function RemoveESP(character, instant)
+    local data = ESP[character]
+    if not data then return end
+
+    if instant then
+        data.FadeId = (data.FadeId or 0) + 1
+        State.DestroyESPData(character, data)
+        return
+    end
+
+    if data.Removing then return end
+    data.Removing = true
+    State.FadeESP(data, 0, State.ESPFadeTime, function()
+        if data.Removing then
+            State.DestroyESPData(character, data)
+        end
+    end)
 end
 
 local function HideAllESP()
@@ -1681,7 +1977,7 @@ local function CreateESP(character, color)
     highlight.Name = "SkyESP"
     highlight.Adornee = character
     highlight.FillTransparency = 1
-    highlight.OutlineTransparency = 0
+    highlight.OutlineTransparency = 1
     highlight.OutlineColor = color
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     highlight.Parent = character
@@ -1696,26 +1992,29 @@ local function CreateESP(character, color)
     beam.FaceCamera = true
     beam.Width0 = 0.04
     beam.Width1 = 0.04
-    beam.Transparency = NumberSequence.new(0)
+    beam.Transparency = NumberSequence.new(1)
     beam.Color = ColorSequence.new(color)
     beam.LightEmission = 1
     beam.Segments = 1
     beam.Parent = root
 
-    ESP[character] = {
+    local data = {
         Root = root,
         Highlight = highlight,
         Attachment = attachment,
         Beam = beam,
-        Color = color
+        Color = color,
+        Alpha = 0
     }
+    ESP[character] = data
+    State.FadeESP(data, 1, State.ESPFadeTime)
 end
 
 local function UpdateESP(character, color)
     local root = GetRoot(character)
 
     if not root then
-        RemoveESP(character)
+        RemoveESP(character, true)
         return
     end
 
@@ -1725,6 +2024,12 @@ local function UpdateESP(character, color)
 
     local data = ESP[character]
     if not data then return end
+
+    -- لو كان قاعد يختفي ورجع هدف صالح، نرجعه يظهر بنعومة.
+    if data.Removing then
+        data.Removing = false
+        State.FadeESP(data, 1, State.ESPFadeTime)
+    end
 
     -- لا نعيد إنشاء ColorSequence كل فريم.
     if data.Color ~= color then
@@ -1767,7 +2072,7 @@ CameraAttachment.Parent = CameraPart
 -- هذا هو الجزء الوحيد الذي يحتاج RenderStepped:
 -- تحريك نقطة بداية الخط مع الكاميرا.
 RunService.RenderStepped:Connect(function()
-    if not State.ESPActive then
+    if not State.ESPActive and not next(ESP) then
         return
     end
 
@@ -1810,15 +2115,21 @@ task.spawn(function()
 
                 local humanoid = character:FindFirstChildOfClass("Humanoid")
                 if humanoid and humanoid.Health > 0 and GetRoot(character) then
-                    active[character] = true
-                    UpdateESP(character, GetPlayerESPColor(player))
-                    ConnectBeamToCamera(character)
+                    -- 👁️ فلتر القائمة: أصدقاء / لاعبين (أعداء)
+                    local isFriend = IsFriend(player)
+                    local category = isFriend and "Friend" or "Enemy"
+                    if State.ESPFilters[category] then
+                        active[character] = true
+                        UpdateESP(character, isFriend and COLORS.Friend or COLORS.Enemy)
+                        ConnectBeamToCamera(character)
+                    end
                 end
             end
         end
 
         -- البوتات:
         -- هذا الفحص الثقيل صار كل 0.20 ثانية فقط بدل 60+ مرة بالثانية.
+        if State.ESPFilters.Bot then
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("Model") and not active[obj] then
                 local belongsToPlayer = false
@@ -1859,10 +2170,12 @@ task.spawn(function()
             end
         end
 
+        end -- فلتر البوتات
+
         -- تنظيف العناصر التي اختفت أو ماتت.
         for character in pairs(ESP) do
             if not active[character] or not character.Parent then
-                RemoveESP(character)
+                RemoveESP(character, not character.Parent)
             end
         end
     end
@@ -1870,9 +2183,208 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
     if player.Character then
-        RemoveESP(player.Character)
+        RemoveESP(player.Character, true)
     end
 end)
+
+
+    -- ====================== 👁️ قائمة اختيار أهداف الـ ESP ======================
+    -- تظهر لما تضغط زر ESP: تختار تشغّل ESP على (الأصدقاء / اللاعبين / البوتات) أو لا.
+    do
+        local ESP_ACCENT = Color3.fromRGB(170, 0, 255) -- بنفسجي مثل التاب وقائمة Fly
+        local ROW_ON = Color3.fromRGB(120, 0, 180)
+        local ROW_OFF = Color3.fromRGB(45, 45, 45)
+        local ROWS = {
+            {key = "Friend", label = "🔵 الأصدقاء"},
+            {key = "Enemy",  label = "🔴 اللاعبين"},
+            {key = "Bot",    label = "🟢 البوتات"},
+        }
+
+        -- 💾 حفظ اختياراتك مع بقية الإعدادات
+        UI.ConfigRegistry["ESPFilters"] = {
+            default = {Friend = true, Enemy = true, Bot = true},
+            get = function()
+                return {Friend = State.ESPFilters.Friend, Enemy = State.ESPFilters.Enemy, Bot = State.ESPFilters.Bot}
+            end,
+            apply = function(value)
+                if type(value) ~= "table" then return end
+                for key in pairs(State.ESPFilters) do
+                    if type(value[key]) == "boolean" then
+                        State.ESPFilters[key] = value[key]
+                    end
+                end
+            end
+        }
+
+        State.CloseESPPanel = function()
+            local closing = State.espPanel
+            if not closing then return end
+            State.espPanel = nil
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        State.OpenESPPanel = function()
+            if State.espPanel then State.espPanel:Destroy() State.espPanel = nil end
+
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyESPPanel"
+            panel.Size = UDim2.new(0, 0, 0, 0)
+            panel.Position = UDim2.new(0.5, 360, 0.5, -72)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.BackgroundTransparency = 1
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            State.espPanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color = ESP_ACCENT
+            stroke.Thickness = 2
+            stroke.Transparency = 1
+            AddMovingBorderGlow(stroke, 1.5, ESP_ACCENT)
+
+            -- 🌫️ ظهور تدريجي: القائمة بمكانها النهائي وتظهر مع كل اللي فيها شوي شوي
+            panel.Size = UDim2.new(0, 190, 0, 150)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.BackgroundTransparency = 0
+            stroke.Transparency = 0
+            State.FadeInPanel(panel, 0.35)
+            -- ✂️ القص يبقى شغال دايمًا: أي شي يطلع برا حدود القائمة ما يظهر (فتح/إغلاق/تصغير)
+
+            MakeDraggable(panel)
+
+            local titleFrame = Instance.new("Frame")
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+            titleFrame.Parent = panel
+
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -68, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "👁️ ESP"
+            title.TextColor3 = ESP_ACCENT
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = titleFrame
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.TextSize = 14
+            Instance.new("UICorner", closeBtn)
+            closeBtn.Parent = titleFrame
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, ESP_ACCENT)
+
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                -- 🔒 إغلاق X = نفس إطفاء زر ESP بالضبط (مثل قائمة Fly)
+                local setter = UI.ToggleSetters["E   S   P"]
+                if setter then
+                    setter(false, true)
+                else
+                    State.ESPActive = false
+                    HideAllESP()
+                    State.CloseESPPanel()
+                end
+            end)
+
+            -- 🔽 زر تصغير/توسيع القائمة بدون إيقاف الـ ESP (نفس Fly والجاذبية)
+            local bodyItems = {}
+            local collapsed = false
+
+            local minimizeBtn = Instance.new("TextButton")
+            minimizeBtn.Name = "MinimizeESP"
+            minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+            minimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+            minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            minimizeBtn.Text = "−"
+            minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            minimizeBtn.TextScaled = true
+            minimizeBtn.Font = Enum.Font.Arcade
+            minimizeBtn.AutoButtonColor = false
+            minimizeBtn.Parent = titleFrame
+            Instance.new("UICorner", minimizeBtn)
+            local minimizeGlow = Instance.new("UIStroke", minimizeBtn)
+            minimizeGlow.Thickness = 1.5
+            AddMovingBorderGlow(minimizeGlow, 1.5, ESP_ACCENT)
+
+            local function setESPMinimized(minimized)
+                collapsed = minimized
+                minimizeBtn.Text = minimized and "+" or "−"
+                for _, item in ipairs(bodyItems) do
+                    if item and item.Parent then
+                        if not minimized then item.Visible = true end
+                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundTransparency = minimized and 1 or 0,
+                            TextTransparency = minimized and 1 or 0
+                        }):Play()
+                        for _, child in ipairs(item:GetChildren()) do
+                            if child:IsA("UIStroke") then
+                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                    Transparency = minimized and 1 or 0.3
+                                }):Play()
+                            end
+                        end
+                        if minimized then
+                            task.delay(0.13, function()
+                                if collapsed and item.Parent then item.Visible = false end
+                            end)
+                        end
+                    end
+                end
+                State.TweenPanelHeight(panel, minimized and 150 or 38, minimized and 38 or 150, 190)
+            end
+
+            minimizeBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                setESPMinimized(not collapsed)
+            end)
+
+            for i, row in ipairs(ROWS) do
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(0.86, 0, 0, 30)
+                btn.Position = UDim2.new(0.07, 0, 0, 38 + (i - 1) * 36)
+                btn.TextColor3 = Color3.new(1, 1, 1)
+                btn.Font = Enum.Font.Arcade
+                btn.TextSize = 14
+                btn.AutoButtonColor = false
+                Instance.new("UICorner", btn)
+                local btnGlow = Instance.new("UIStroke", btn)
+                btnGlow.Thickness = 1.5
+                btnGlow.Transparency = 0.3
+                AddMovingBorderGlow(btnGlow, 1.5, ESP_ACCENT)
+
+                local function refresh()
+                    local on = State.ESPFilters[row.key]
+                    btn.Text = row.label .. (on and ": تشغيل" or ": إيقاف")
+                    btn.BackgroundColor3 = on and ROW_ON or ROW_OFF
+                end
+                refresh()
+
+                btn.MouseButton1Click:Connect(function()
+                    playClick()
+                    State.ESPFilters[row.key] = not State.ESPFilters[row.key]
+                    refresh()
+                    if SaveConfig then SaveConfig() end
+                end)
+                btn.Parent = panel
+                table.insert(bodyItems, btn)
+            end
+        end
+    end
 
     -- ====================== Heartbeat Loop ======================
     RunService.Heartbeat:Connect(function()
@@ -2212,6 +2724,10 @@ end)
             if _fpsTimer >= 0.4 then
                 local fps = math.floor(_fpsFrames / _fpsTimer + 0.5)
                 _fpsFrames, _fpsTimer = 0, 0
+                -- نرسل القراءة الحالية للمراقب الخارجي بدون إنشاء حلقة FPS ثانية.
+                if _G.SkyPerformanceFpsSink then
+                    _G.SkyPerformanceFpsSink(fps)
+                end
                 if UI.FPSLabel and UI.FPSLabel.Parent then
                     UI.FPSLabel.Text = fps .. " FPS"
                     if fps >= 50 then
@@ -3135,7 +3651,7 @@ end)
         OK("🗑️ تم حذف الحفظ وإعادة كل الإعدادات للأصل")
     end
 
-    local function NewItem(txt, type, call, parent)
+    local function NewItem(txt, type, call, parent, opts)
         local f = Instance.new("Frame", parent)
         f.Size = UDim2.new(1, -10, 0, 65)
         f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -3167,11 +3683,18 @@ end)
         local uip = Instance.new("UITextSizeConstraint", l)
         uip.MaxTextSize = 18
         uip.MinTextSize = 10
+        if type == "Input" and opts and opts.step then
+            l.Size = UDim2.new(0.34, 0, 1, 0) -- نخلي مكان لأزرار + و -
+        end
 
         if type == "Input" then 
             local b = Instance.new("TextBox", f)
             b.Size = UDim2.new(0.3, 0, 0.7, 0)
             b.Position = UDim2.new(0.65, 0, 0.15, 0)
+            if opts and opts.step then
+                b.Size = UDim2.new(0.26, 0, 0.7, 0)
+                b.Position = UDim2.new(0.5, 0, 0.15, 0)
+            end
             b.BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- لون خلفية أغمق ليتناسب مع الثيم
             Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
             local inputStroke = Instance.new("UIStroke", b)
@@ -3220,6 +3743,82 @@ end)
                     BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- يعود للونه الأصلي
                 }):Play()
             end)
+
+            -- ➕➖ أزرار زيادة/نقصان بنفس ستايل مربع الإدخال (اضغط أو اضغط مطولاً)
+            if opts and opts.step then
+                local minV, maxV = opts.min or 0.5, opts.max or 1000
+                local function makeStepBtn(symbol, xPos, delta)
+                    local sb = Instance.new("TextButton", f)
+                    sb.Size = UDim2.new(0.12, 0, 0.7, 0)
+                    sb.Position = UDim2.new(xPos, 0, 0.15, 0)
+                    sb.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                    sb.Text = symbol
+                    sb.TextColor3 = Color3.new(1, 1, 1)
+                    sb.Font = Enum.Font.Arcade
+                    sb.TextScaled = true
+                    sb.AutoButtonColor = false
+                    sb.ZIndex = 7
+                    Instance.new("UICorner", sb).CornerRadius = UDim.new(0, 8)
+                    local sbc = Instance.new("UITextSizeConstraint", sb)
+                    sbc.MaxTextSize = 22
+                    sbc.MinTextSize = 10
+                    local sbStroke = Instance.new("UIStroke", sb)
+                    sbStroke.Color = Color3.fromRGB(170, 0, 255)
+                    sbStroke.Thickness = 2
+                    sbStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                    sbStroke.Transparency = 0.7
+                    AddTabGlow(sbStroke, 1.5, parent)
+
+                    sb.MouseEnter:Connect(function()
+                        _TweenS:Create(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+                        }):Play()
+                    end)
+                    sb.MouseLeave:Connect(function()
+                        _TweenS:Create(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                        }):Play()
+                    end)
+
+                    local function applyStep()
+                        local cur = tonumber(b.Text) or 0
+                        local nv = math.clamp(math.floor((cur + delta) * 10 + 0.5) / 10, minV, maxV)
+                        b.Text = tostring(nv)
+                        call(b.Text)
+                    end
+
+                    local holding, longPress = false, false
+                    sb.InputBegan:Connect(function(input)
+                        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                        holding = true
+                        longPress = false
+                        task.delay(0.45, function()
+                            if not holding or not sb.Parent then return end
+                            longPress = true
+                            while holding and sb.Parent do
+                                applyStep()
+                                task.wait(0.12)
+                            end
+                            SaveConfig()
+                        end)
+                    end)
+                    sb.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                            holding = false
+                        end
+                    end)
+                    sb.MouseButton1Click:Connect(function()
+                        playClick()
+                        if not longPress then
+                            applyStep()
+                            SaveConfig()
+                        end
+                        longPress = false
+                    end)
+                end
+                makeStepBtn("-", 0.36, -opts.step)
+                makeStepBtn("+", 0.78, opts.step)
+            end
         elseif type == "ButtonOnce" then
             local btn = Instance.new("TextButton", f)
             btn.Size = UDim2.new(0.3, 0, 0.7, 0)
@@ -3366,11 +3965,167 @@ end)
         end
     end, UI.Page6)
 
+    -- ====================== 🧱 منصة ثابتة (تاب السكربت) ======================
+    do
+        -- 🧩 قائمة جاهزة بستايل السكربت (حدود بلون التاب + سحب + تصغير + X + ظهور تدريجي)
+        local function MakePanel(name, titleText, h, page, toggleName)
+            local color = GetTabColorForInstance(page)
+            local panel = Instance.new("Frame")
+            panel.Name, panel.Size, panel.AnchorPoint = name, UDim2.new(0, 190, 0, h), Vector2.new(0.5, 0.5)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.BackgroundColor3, panel.ClipsDescendants, panel.ZIndex = Color3.fromRGB(15, 15, 15), true, 1
+            panel.Parent = NG
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color, stroke.Thickness = color, 2
+            AddTabGlow(stroke, 1.5, page)
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -68, 0, 32), UDim2.new(0, 12, 0, 0), 1
+            title.Text, title.TextColor3, title.Font, title.TextSize = titleText, color, Enum.Font.Arcade, 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+
+            local function small(text, x, textColor)
+                local b = Instance.new("TextButton", panel)
+                b.Size, b.Position, b.BackgroundColor3 = UDim2.new(0, 26, 0, 26), UDim2.new(1, x, 0, 3), Color3.fromRGB(35, 35, 35)
+                b.Text, b.TextColor3, b.TextScaled, b.Font, b.AutoButtonColor = text, textColor, true, Enum.Font.Arcade, false
+                Instance.new("UICorner", b)
+                local g = Instance.new("UIStroke", b)
+                g.Thickness = 1.5
+                AddTabGlow(g, 1.5, page)
+                return b
+            end
+
+            local body, collapsed = {}, false
+            small("X", -32, Color3.fromRGB(255, 70, 70)).MouseButton1Click:Connect(function()
+                playClick()
+                local setter = UI.ToggleSetters[toggleName]
+                if setter then setter(false, true) end
+            end)
+            local minBtn = small("−", -62, Color3.new(1, 1, 1))
+            minBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                collapsed = not collapsed
+                minBtn.Text = collapsed and "+" or "−"
+                for _, item in ipairs(body) do
+                    if not collapsed then item.Visible = true end
+                    task.delay(0.2, function() if collapsed then item.Visible = false end end)
+                end
+                State.TweenPanelHeight(panel, collapsed and h or 38, collapsed and 38 or h, 190)
+            end)
+            return panel, body
+        end
+
+        -- 🧱 منطق المنصة: تتبعك أفقيًا وتثبت الارتفاع لحظة التشغيل
+        local plat, conn
+        local function stop()
+            if conn then conn:Disconnect() conn = nil end
+            if plat then plat:Destroy() plat = nil end
+        end
+        local function start()
+            stop()
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp then return false end
+            local y = hrp.Position.Y - 3.5
+            plat = Instance.new("Part")
+            plat.Name, plat.Size, plat.Anchored = "SkyPlatform", Vector3.new(6, 1, 6), true
+            plat.BrickColor, plat.Material = BrickColor.new("Bright blue"), Enum.Material.SmoothPlastic
+            plat.Position = Vector3.new(hrp.Position.X, y, hrp.Position.Z)
+            plat.Parent = workspace
+            conn = RunService.RenderStepped:Connect(function()
+                local r = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if r and plat then plat.Position = Vector3.new(r.Position.X, y, r.Position.Z) end
+            end)
+            return true
+        end
+
+        State.platformOn = false
+        State.ClosePlatformPanel = function()
+            stop()
+            State.platformOn = false
+            local closing = State.platformPanel
+            State.platformPanel = nil
+            if closing then
+                State.FadeOutPanel(closing, 0.35)
+                task.delay(0.4, function() closing:Destroy() end)
+            end
+        end
+
+        State.OpenPlatformPanel = function()
+            if State.platformPanel then State.platformPanel:Destroy() end
+            local panel, body = MakePanel("SkyPlatformPanel", "🧱 منصة ثابتة", 96, UI.Page6, "منصة ثابتة")
+            State.platformPanel = panel
+
+            -- 🔘 زر التشغيل/الإيقاف بنفس شكل أزرار التابات
+            local btn = Instance.new("TextButton", panel)
+            btn.Size, btn.Position, btn.BackgroundColor3 = UDim2.new(0.86, 0, 0, 42), UDim2.new(0.07, 0, 0, 42), Color3.fromRGB(25, 25, 25)
+            btn.TextColor3, btn.TextSize, btn.Font, btn.AutoButtonColor, btn.ZIndex = Color3.new(1, 1, 1), 16, Enum.Font.Arcade, false, 7
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+            local st = Instance.new("UIStroke", btn)
+            st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            local glow = AddMovingBorderGlow(st, 1.5, TOGGLE_OFF_COLOR)
+            table.insert(body, btn)
+            _pressFeedback(btn)
+
+            local function refresh()
+                local on, c = State.platformOn, GetTabColorForInstance(UI.Page6)
+                btn.Text = _TranslateText(on and "إيقاف" or "تشغيل")
+                st.Color, st.Transparency, st.Thickness = on and c or TOGGLE_OFF_COLOR, on and 0 or 0.7, on and 3 or 2
+                SetGlowColor(glow, on and c or TOGGLE_OFF_COLOR)
+                _activeGlow(st, on, c)
+            end
+            refresh()
+
+            local function hover(inside)
+                _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(inside and 35 or 25, inside and 35 or 25, inside and 35 or 25)}):Play()
+                if not State.platformOn then
+                    _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                end
+            end
+            btn.MouseEnter:Connect(function() hover(true) end)
+            btn.MouseLeave:Connect(function() hover(false) end)
+
+            btn.MouseButton1Click:Connect(function()
+                playClick()
+                if State.platformOn then
+                    stop()
+                    State.platformOn = false
+                elseif start() then
+                    State.platformOn = true
+                else
+                    return WARN("⚠️ ما قدرت أشغّل المنصة: الشخصية مو موجودة")
+                end
+                OK(State.platformOn and "🧱 تم تشغيل المنصة" or "🧱 تم إيقاف المنصة")
+                refresh()
+            end)
+        end
+
+        NewItem("منصة ثابتة", "Button", function(s)
+            if s then State.OpenPlatformPanel() else State.ClosePlatformPanel() end
+        end, UI.Page6)
+    end
+
     -- المميزات
     NewItem("السرعه", "Input", function(v) 
         local n = tonumber(v) 
-        if n then State.targetSpeed = n; State.speedActive = true; OK("⚡ السرعة: "..n) end 
-    end, UI.Page1)
+        if n then
+            State.targetSpeed = n
+            State.speedActive = true
+            local ch = LocalPlayer.Character
+            local hm = ch and ch:FindFirstChildOfClass("Humanoid")
+            local rigName = State.GetRigName(hm)
+            State.rigType = rigName
+            local effective = n * (State.SpeedProfiles[rigName] or State.SpeedProfiles.R6).walkScale
+            if rigName == "R15" then
+                OK("⚡ السرعة (R15): "..n.." = "..effective, "flySpeed")
+            else
+                OK("⚡ السرعة (R6): "..n, "flySpeed")
+            end
+        end 
+    end, UI.Page1, {step = 1, min = 0.5, max = 1000})
 
     NewItem("قوة القفز", "Input", function(v) 
         local val = tonumber(v)
@@ -3428,12 +4183,8 @@ end)
                 if State.flyPanel then
                     local closing = State.flyPanel
                     State.flyPanel = nil
-                    TweenService:Create(closing, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-                        Size = UDim2.new(0, 0, 0, 0),
-                        Position = UDim2.new(0.5, 360, 0.5, -72),
-                        BackgroundTransparency = 1
-                    }):Play()
-                    task.delay(0.35, function() if closing then closing:Destroy() end end)
+                    State.FadeOutPanel(closing, 0.35)
+                    task.delay(0.4, function() if closing then closing:Destroy() end end)
                 end
                 OK("🔒 إغلاق قائمة الطيران")
             end
@@ -3458,8 +4209,10 @@ end)
         State.ESPActive = s
         if s then
             Notify("👁️ ESP", "مفعل", Color3.fromRGB(0, 255, 170))
+            State.OpenESPPanel() -- تظهر قائمة اختيار الأهداف
         else
             HideAllESP()
+            State.CloseESPPanel()
             Notify("🔇 ESP", "معطل", Color3.fromRGB(0, 255, 170))
         end
     end, UI.Page1)
@@ -3748,7 +4501,7 @@ local function UpdatePlayerList()
                     end
                     -- 5) نرجع السرعة الطبيعية
                     if h and h.Parent then
-                        h.WalkSpeed = State.speedActive and State.targetSpeed or 16
+                        h.WalkSpeed = State.speedActive and State.GetWalkSpeed(h) or 16
                     end
                 end)
 
@@ -3817,6 +4570,387 @@ local function UpdatePlayerList()
 
     NewSlider("F   O   V", 70, 120, function(v) Camera.FieldOfView = v end, UI.Page3)
     NewItem("تنوير المكان", "Button", function(s) State.FullBrightActive = s; if s then Notify("💡 تنوير", "مفعل", Color3.fromRGB(255, 230, 0)) else Notify("🌙 تنوير", "إضاءة عادية", Color3.fromRGB(255, 230, 0)) end end, UI.Page3)
+
+    -- 🌍 زر الجاذبية: تشغيل/إيقاف من تاب المساعدة + قائمة عائمة خارج القائمة الأساسية فيها + و- للتحكم بالجاذبية تدريجيًا
+    -- 🎯 نفس بالضبط ستايل وأنيميشن قائمة Fly (شريط تحميل، فتح Back-easing، ظهور تدريجي للعناصر)
+    do
+        local ASSIST_BLUE = Color3.fromRGB(0, 170, 255) -- 🎨 نفس لون تاب المساعدة
+        local DEFAULT_GRAVITY = workspace.Gravity
+        local GRAVITY_STEP = 15
+        local MIN_GRAVITY = 5
+        local MAX_GRAVITY = 600
+
+        State.gravityValue = math.clamp(tonumber(State.gravityValue) or DEFAULT_GRAVITY, MIN_GRAVITY, MAX_GRAVITY)
+        State.gravityPanel = nil
+        State.gravityCollapsed = false
+
+        State.gravityValueLabel = nil
+        local gravityBodyItems = {}
+        -- 💾 تسجيل قيمة الجاذبية قبل تحميل الإعدادات، حتى تُستعاد تلقائيًا عند بدء السكربت.
+        UI.ConfigRegistry["الجاذبية - القيمة"] = {
+            get = function() return State.gravityValue end,
+            default = DEFAULT_GRAVITY,
+            apply = function(value)
+                local loaded = math.clamp(math.floor(tonumber(value) or DEFAULT_GRAVITY), MIN_GRAVITY, MAX_GRAVITY)
+                State.gravityValue = loaded
+                workspace.Gravity = loaded
+                if State.gravityValueLabel then
+                    State.gravityValueLabel.Text = "الجاذبية: " .. loaded
+                end
+            end
+        }
+
+        local function closeGravityPanel(animated)
+            if State.gravityPanel then
+                local closing = State.gravityPanel
+                State.gravityPanel = nil
+                State.gravityValueLabel = nil
+                if animated then
+                    State.FadeOutPanel(closing, 0.35)
+                    task.delay(0.4, function() if closing then closing:Destroy() end end)
+                else
+                    closing:Destroy()
+                end
+            end
+        end
+
+        local function openGravityPanel()
+            closeGravityPanel()
+
+            -- 🖼️ نفس إطار قائمة Fly بالضبط: حجم يبدأ من صفر ويتوسع بـ Back-easing، شفافية 1 → 0
+            State.gravityPanel = Instance.new("Frame")
+            State.gravityPanel.Name = "SkyGravityPanel"
+            State.gravityPanel.Size = UDim2.new(0, 0, 0, 0)
+            State.gravityPanel.Position = UDim2.new(0.5, 360, 0.5, -72)
+            State.gravityPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+            State.gravityPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            State.gravityPanel.BackgroundTransparency = 1
+            State.gravityPanel.ClipsDescendants = true
+            State.gravityPanel.Parent = NG
+            State.gravityPanel.ZIndex = 1
+            Instance.new("UICorner", State.gravityPanel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", State.gravityPanel)
+            stroke.Color = ASSIST_BLUE
+            stroke.Thickness = 2
+            stroke.Transparency = 1
+            AddMovingBorderGlow(stroke, 1.5, ASSIST_BLUE)
+
+            -- شريط تحميل رفيع يمشي مرة وحدة وقت فتح لوحة الجاذبية (نفس لوحة Fly بالضبط)
+            local GravLoadingBar = Instance.new("Frame", State.gravityPanel)
+            GravLoadingBar.Size = UDim2.new(0, 0, 0, 3)
+            GravLoadingBar.Position = UDim2.new(0, 0, 0, 0)
+            GravLoadingBar.BackgroundColor3 = ASSIST_BLUE
+            GravLoadingBar.BorderSizePixel = 0
+            GravLoadingBar.ZIndex = 20
+            TweenService:Create(GravLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Size = UDim2.new(1, 0, 0, 3)
+            }):Play()
+            task.delay(0.6, function()
+                TweenService:Create(GravLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    BackgroundTransparency = 1
+                }):Play()
+                task.delay(0.3, function() if GravLoadingBar then GravLoadingBar:Destroy() end end)
+            end)
+
+            -- أنيميشن فتح مثل القائمة الرئيسية (نفس Fly بالضبط)
+            -- 🌫️ ظهور تدريجي: القائمة بمكانها النهائي وتظهر مع كل اللي فيها شوي شوي
+            State.gravityPanel.Size = UDim2.new(0, 190, 0, 148)
+            State.gravityPanel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            State.gravityPanel.BackgroundTransparency = 0
+            stroke.Transparency = 0
+            State.FadeInPanel(State.gravityPanel, 0.35)
+            -- ✂️ القص يبقى شغال دايمًا: أي شي يطلع برا حدود القائمة ما يظهر (فتح/إغلاق/تصغير)
+
+            MakeDraggable(State.gravityPanel)
+
+            local titleFrame = Instance.new("Frame")
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+            titleFrame.Parent = State.gravityPanel
+
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -68, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "🌍 الجاذبية"
+            title.TextColor3 = ASSIST_BLUE
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = titleFrame
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.TextSize = 14
+            Instance.new("UICorner", closeBtn)
+            closeBtn.Parent = titleFrame
+            local closeBtnGlow = Instance.new("UIStroke", closeBtn)
+            closeBtnGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeBtnGlow, 1.5, ASSIST_BLUE)
+
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                -- 🔒 إغلاق X = نفس إطفاء زر الجاذبية بتاب المساعدة بالضبط (نفس فكرة زر Fly)
+                local setter = UI.ToggleSetters["الجاذبية"]
+                if setter then
+                    setter(false, true)
+                else
+                    closeGravityPanel(true)
+                    workspace.Gravity = DEFAULT_GRAVITY
+                end
+            end)
+
+            -- 🔽 زر تصغير/توسيع لوحة الجاذبية دون إيقاف الجاذبية.
+            local minimizeBtn = Instance.new("TextButton")
+            minimizeBtn.Name = "MinimizeGravity"
+            minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+            minimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+            minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            minimizeBtn.Text = "−"
+            minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            minimizeBtn.TextScaled = true
+            minimizeBtn.Font = Enum.Font.Arcade
+            minimizeBtn.AutoButtonColor = false
+            minimizeBtn.Parent = titleFrame
+            Instance.new("UICorner", minimizeBtn)
+            local minimizeGlow = Instance.new("UIStroke", minimizeBtn)
+            minimizeGlow.Thickness = 1.5
+            AddMovingBorderGlow(minimizeGlow, 1.5, ASSIST_BLUE)
+
+            local function setGravityItemTransparency(item, hidden)
+                if not item or not item.Parent then return end
+                local goal = {}
+                if item:IsA("TextLabel") then
+                    goal.TextTransparency = hidden and 1 or 0
+                elseif item:IsA("TextButton") then
+                    goal.BackgroundTransparency = hidden and 1 or (item.Name == "ResetGravity" and 0.05 or 0)
+                    goal.TextTransparency = hidden and 1 or 0
+                end
+                if next(goal) then
+                    TweenService:Create(item, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+                end
+                    for _, child in ipairs(item:GetChildren()) do
+                        if child:IsA("UIStroke") then
+                            TweenService:Create(child, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                Transparency = hidden and 1 or (item.Name == "ResetGravity" and 0.1 or 0.3)
+                            }):Play()
+                        end
+                    end
+            end
+
+            local function setGravityMinimized(minimized)
+                State.gravityCollapsed = minimized
+                minimizeBtn.Text = minimized and "+" or "−"
+                for _, item in ipairs(gravityBodyItems) do
+                    setGravityItemTransparency(item, minimized)
+                end
+                State.TweenPanelHeight(State.gravityPanel, minimized and 148 or 38, minimized and 38 or 148, 190)
+            end
+
+            minimizeBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(State.gravityPanel) then return end
+                playClick()
+                setGravityMinimized(not State.gravityCollapsed)
+            end)
+
+            -- 🔢 القيمة الحالية للجاذبية — نفس مكان ونمط "السرعة" بلوحة Fly
+            State.gravityValueLabel = Instance.new("TextLabel")
+            State.gravityValueLabel.Size = UDim2.new(1, 0, 0, 22)
+            State.gravityValueLabel.Position = UDim2.new(0, 0, 0, 42)
+            State.gravityValueLabel.BackgroundTransparency = 1
+            State.gravityValueLabel.TextTransparency = 1
+            State.gravityValueLabel.Text = "الجاذبية: " .. math.floor(State.gravityValue)
+            State.gravityValueLabel.TextColor3 = Color3.new(1, 1, 1)
+            State.gravityValueLabel.Font = Enum.Font.Arcade
+            State.gravityValueLabel.TextSize = 14
+            State.gravityValueLabel.Parent = State.gravityPanel
+            table.insert(gravityBodyItems, State.gravityValueLabel)
+            task.delay(0.05, function()
+                if State.gravityValueLabel and State.gravityValueLabel.Parent and not State.gravityCollapsed then
+                    setGravityItemTransparency(State.gravityValueLabel, false)
+                end
+            end)
+            task.delay(0.05, function()
+                if State.gravityValueLabel then
+                    TweenService:Create(State.gravityValueLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                end
+            end)
+
+            local function applyGravity(newVal)
+                newVal = math.clamp(math.floor(newVal), MIN_GRAVITY, MAX_GRAVITY)
+                State.gravityValue = newVal
+                workspace.Gravity = newVal
+                if State.gravityValueLabel then State.gravityValueLabel.Text = "الجاذبية: " .. newVal end
+                SaveConfig()
+                OK("🌍 الجاذبية: " .. newVal, "gravity")
+            end
+
+            local function resetGravity()
+                State.gravityValue = DEFAULT_GRAVITY
+                workspace.Gravity = DEFAULT_GRAVITY
+                if State.gravityValueLabel then
+                    State.gravityValueLabel.Text = "الجاذبية: " .. math.floor(DEFAULT_GRAVITY)
+                end
+                SaveConfig()
+                OK("↩ تم إرجاع الجاذبية الطبيعية", "gravity")
+            end
+
+            -- ➖ / ➕ — نفس زري + و- بلوحة Fly بالضبط (نفس الحجم والموضع والأنيميشن المتدرج)
+            local minusBtn = Instance.new("TextButton")
+            minusBtn.Size = UDim2.new(0.38, 0, 0, 30)
+            minusBtn.Position = UDim2.new(0.06, 0, 0, 72)
+            minusBtn.BackgroundColor3 = Color3.fromRGB(0, 90, 140)
+            minusBtn.BackgroundTransparency = 1
+            minusBtn.TextTransparency = 1
+            minusBtn.Text = "-"
+            minusBtn.TextColor3 = Color3.new(1, 1, 1)
+            minusBtn.TextScaled = true
+            minusBtn.Font = Enum.Font.Arcade
+            minusBtn.TextSize = 16
+            Instance.new("UICorner", minusBtn)
+            minusBtn.Parent = State.gravityPanel
+            table.insert(gravityBodyItems, minusBtn)
+            local minusBtnGlow = Instance.new("UIStroke", minusBtn)
+            minusBtnGlow.Thickness = 1.5
+            minusBtnGlow.Transparency = 1
+            AddMovingBorderGlow(minusBtnGlow, 1.5, ASSIST_BLUE)
+            task.delay(0.05, function()
+                if minusBtn then
+                    TweenService:Create(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    TweenService:Create(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                end
+            end)
+            local function bindGravityHold(button, delta)
+                local holding = false
+                local longPress = false
+                button.InputBegan:Connect(function(input)
+                    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+                    holding = true
+                    longPress = false
+                    task.delay(0.45, function()
+                        if not holding or not button.Parent then return end
+                        longPress = true
+                        while holding and button.Parent do
+                            applyGravity(State.gravityValue + delta)
+                            task.wait(0.08)
+                        end
+                    end)
+                end)
+                button.InputEnded:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                        holding = false
+                    end
+                end)
+                button.MouseButton1Click:Connect(function()
+                    playClick()
+                    if not longPress then
+                        applyGravity(State.gravityValue + delta)
+                    end
+                    longPress = false
+                end)
+            end
+            bindGravityHold(minusBtn, -GRAVITY_STEP)
+
+            local plusBtn = Instance.new("TextButton")
+            plusBtn.Size = UDim2.new(0.38, 0, 0, 30)
+            plusBtn.Position = UDim2.new(0.56, 0, 0, 72)
+            plusBtn.BackgroundColor3 = Color3.fromRGB(0, 90, 140)
+            plusBtn.BackgroundTransparency = 1
+            plusBtn.TextTransparency = 1
+            plusBtn.Text = "+"
+            plusBtn.TextColor3 = Color3.new(1, 1, 1)
+            plusBtn.TextScaled = true
+            plusBtn.Font = Enum.Font.Arcade
+            plusBtn.TextSize = 16
+            Instance.new("UICorner", plusBtn)
+            plusBtn.Parent = State.gravityPanel
+            table.insert(gravityBodyItems, plusBtn)
+            local plusBtnGlow = Instance.new("UIStroke", plusBtn)
+            plusBtnGlow.Thickness = 1.5
+            plusBtnGlow.Transparency = 1
+            AddMovingBorderGlow(plusBtnGlow, 1.5, ASSIST_BLUE)
+            task.delay(0.05, function()
+                if plusBtn then
+                    TweenService:Create(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    TweenService:Create(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                end
+            end)
+            bindGravityHold(plusBtn, GRAVITY_STEP)
+
+            -- 🔄 زر Reset لإرجاع الجاذبية للقيمة الافتراضية.
+            local resetBtn = Instance.new("TextButton")
+            resetBtn.Name = "ResetGravity"
+            resetBtn.Size = UDim2.new(1, -30, 0, 30)
+            resetBtn.Position = UDim2.new(0, 15, 0, 108)
+            resetBtn.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+            resetBtn.BackgroundTransparency = 1
+            resetBtn.TextTransparency = 1
+            resetBtn.Text = "↩ Reset الجاذبية"
+            resetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            resetBtn.TextSize = 13
+            resetBtn.Font = Enum.Font.Gotham
+            resetBtn.TextStrokeColor3 = Color3.fromRGB(255, 255, 255)
+            resetBtn.TextStrokeTransparency = 1
+            resetBtn.AutoButtonColor = false
+            resetBtn.Parent = State.gravityPanel
+            table.insert(gravityBodyItems, resetBtn)
+            Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 8)
+
+            local resetGlow = Instance.new("UIStroke", resetBtn)
+            resetGlow.Color = ASSIST_BLUE
+            resetGlow.Thickness = 1.5
+            resetGlow.Transparency = 1
+            resetGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            AddMovingBorderGlow(resetGlow, 1.5, ASSIST_BLUE)
+            task.delay(0.05, function()
+                if resetBtn then
+                    TweenService:Create(resetBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        BackgroundTransparency = 0.05,
+                        TextTransparency = 0
+                    }):Play()
+                    TweenService:Create(resetGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Transparency = 0.1
+                    }):Play()
+                end
+            end)
+
+            -- ✨ أنيميشن خفيف عند الضغط، مثل بقية أزرار القائمة.
+            _pressFeedback(resetBtn)
+
+            resetBtn.MouseButton1Click:Connect(function()
+                playClick()
+                resetGravity()
+            end)
+
+            applyGravity(State.gravityValue)
+            task.delay(0.05, function()
+                if State.gravityPanel and State.gravityPanel.Parent and not State.gravityCollapsed then
+                    for _, item in ipairs(gravityBodyItems) do
+                        if item and item.Parent then
+                            setGravityItemTransparency(item, false)
+                        end
+                    end
+                end
+            end)
+        end
+
+        NewItem("الجاذبية", "Button", function(act)
+            if act then
+                openGravityPanel()
+            else
+                closeGravityPanel(true)
+                workspace.Gravity = DEFAULT_GRAVITY
+                OK("🌍 تم إرجاع الجاذبية الطبيعية")
+            end
+        end, UI.Page3)
+    end
 
     -- 🚁 كاميرا حرة (Free Cam) — الإعداد يصير مرة وحدة بس، مو كل ضغطة
     
@@ -4175,12 +5309,8 @@ end)
                 if State.tpPanel then
                     local closing = State.tpPanel
                     State.tpPanel = nil
-                    TweenService:Create(closing, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-                        Size = UDim2.new(0, 0, 0, 0),
-                        Position = UDim2.new(0.5, 365, 0.5, -42),
-                        BackgroundTransparency = 1
-                    }):Play()
-                    task.delay(0.35, function() if closing then closing:Destroy() end end)
+                    State.FadeOutPanel(closing, 0.35)
+                    task.delay(0.4, function() if closing then closing:Destroy() end end)
                 end
                 Notify("🔒 انتقال", "إغلاق قائمة الانتقال", Color3.fromRGB(0, 200, 170))
             end
@@ -8520,6 +9650,434 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+
+-- 📉 تنبيه الأداء البسيط: مستقل عن واجهة السكربت حتى لا يمنع تشغيلها.
+local SkyPerformancePromptShown = false
+-- يبدأ الفحص مباشرة؛ لا تظهر نافذة تجريبية عند تشغيل السكربت.
+local SkyAutoFPSCheck = true
+local SkyAutomaticMode = false
+local SkyLowFpsSeconds = 0
+local SkyLowFpsPromptLatched = false
+local SkyPerformanceMode = false
+local SkyRecoveryCheck = false
+local SkyRecoverySeconds = 0
+local SkyRecoveryPromptShown = false
+local SkySavedGradients = {}
+local SkySavedEffects = {}
+local function SkyEnablePerformanceMode()
+    if SkyPerformanceMode then
+        SkyAutoFPSCheck = true
+        SkyRecoveryCheck = true
+        return
+    end
+    SkyPerformanceMode = true
+    -- حفظ مؤثرات الـGlow ثم فصلها مؤقتًا حتى يمكن إعادتها لاحقًا.
+    for _, item in ipairs(game.CoreGui:GetDescendants()) do
+        if item:IsA("UIGradient") then
+            table.insert(SkySavedGradients, {item = item, parent = item.Parent})
+            item.Parent = nil
+        end
+    end
+    -- إيقاف المؤثرات البصرية الثقيلة الموجودة في واجهات السكربت فقط.
+    for _, item in ipairs(game.CoreGui:GetDescendants()) do
+        if item:IsA("ParticleEmitter") or item:IsA("Trail") or item:IsA("Beam") then
+            table.insert(SkySavedEffects, {item = item, enabled = item.Enabled})
+            item.Enabled = false
+        end
+    end
+    -- يبدأ فحص العودة للوضع الطبيعي مباشرة بعد إتمام تخفيف المؤثرات.
+    SkyAutoFPSCheck = true
+    SkyRecoveryCheck = true
+    SkyRecoverySeconds = 0
+end
+
+local function SkyRestorePerformanceMode()
+    if not SkyPerformanceMode then return end
+    for _, data in ipairs(SkySavedGradients) do
+        if data.item and data.parent and data.parent.Parent then
+            data.item.Parent = data.parent
+        end
+    end
+    for _, data in ipairs(SkySavedEffects) do
+        if data.item and data.item.Parent then
+            data.item.Enabled = data.enabled
+        end
+    end
+    SkySavedGradients = {}
+    SkySavedEffects = {}
+    SkyPerformanceMode = false
+    SkyRecoveryCheck = false
+    SkyRecoverySeconds = 0
+end
+
+local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMode)
+    -- نفس شاشة التحميل الأساسية عند تشغيل Sky: شاشة سوداء كاملة + نفس الخط/الشريط.
+    -- لا توجد أي قائمة أو صندوق فوقها أثناء التحميل.
+    local loadingGui = Instance.new("ScreenGui")
+    loadingGui.Name = "SkyFullscreenPerformanceLoading"
+    loadingGui.IgnoreGuiInset = true
+    loadingGui.ResetOnSpawn = false
+    loadingGui.DisplayOrder = 1000001
+    loadingGui.Parent = game.CoreGui
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    bg.BackgroundTransparency = 1
+    bg.BorderSizePixel = 0
+    bg.Parent = loadingGui
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 42)
+    title.Position = UDim2.new(0, 0, 0.42, 0)
+    title.BackgroundTransparency = 1
+    title.Text = loadingTitle or "S    K    Y"
+    title.TextColor3 = Color3.fromRGB(190, 50, 255)
+    title.TextTransparency = 1
+    title.Font = Enum.Font.Arcade
+    title.TextSize = 25
+    title.Parent = bg
+
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, 0, 0, 24)
+    status.Position = UDim2.new(0, 0, 0.51, 0)
+    status.BackgroundTransparency = 1
+    status.Text = message or "تهيئة السكربت..."
+    status.TextColor3 = Color3.fromRGB(210, 210, 210)
+    status.TextTransparency = 1
+    status.Font = Enum.Font.Arcade
+    status.TextSize = 13
+    status.Parent = bg
+
+    local credits = Instance.new("TextLabel")
+    credits.Size = UDim2.new(1, -40, 0, 42)
+    credits.AnchorPoint = Vector2.new(0.5, 0)
+    credits.Position = UDim2.new(0.5, 0, 0.66, 0)
+    credits.BackgroundTransparency = 1
+    credits.Text = "المطور  : AAbbooyi"
+    credits.TextColor3 = Color3.fromRGB(230, 210, 255)
+    credits.TextTransparency = 1
+    credits.Font = Enum.Font.Arcade
+    credits.TextSize = 14
+    credits.TextWrapped = true
+    credits.Parent = bg
+
+    local back = Instance.new("Frame")
+    back.Size = UDim2.new(0, 260, 0, 6)
+    back.AnchorPoint = Vector2.new(0.5, 0.5)
+    back.Position = UDim2.new(0.5, 0, 0.60, 0)
+    back.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+    back.BackgroundTransparency = 1
+    back.BorderSizePixel = 0
+    back.Parent = bg
+    Instance.new("UICorner", back).CornerRadius = UDim.new(1, 0)
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 0, 1, 0)
+    bar.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+    bar.BackgroundTransparency = 1
+    bar.BorderSizePixel = 0
+    bar.Parent = back
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    _TweenS:Create(bg, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    task.wait(0.35)
+    _TweenS:Create(title, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    task.wait(0.25)
+    _TweenS:Create(status, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    _TweenS:Create(credits, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    _TweenS:Create(back, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    task.wait(0.2)
+    _TweenS:Create(bar, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    task.wait(0.35)
+
+    local steps
+    if loadingMode == "restore" then
+        -- شاشة استرجاع الوضع الطبيعي: إعادة كل الأنميشن والأشياء التي تم تعطيلها.
+        title.Text = loadingTitle or "يتم تحميل كل الأنميشن"
+        status.Text = message or "يتم تحميل كل الأنميشن والأشياء الأخرى..."
+        steps = {
+            {0.12, 0.60, "يتم تحميل كل الأنميشن...", 0.30},
+            {0.28, 0.65, "يتم تحميل الأشياء والمؤثرات الأخرى...", 0.30},
+            {0.46, 0.70, "يتم إعادة الأنميشن التي تم تعطيلها...", 0.35},
+            {0.64, 0.70, "يتم إعادة المؤثرات والإعدادات الطبيعية...", 0.35},
+            {0.82, 0.65, "يتم تجهيز كل الأشياء للعمل بشكل طبيعي...", 0.35},
+            {0.94, 0.55, "اللمسات الأخيرة...", 0.30},
+            {1, 0.50, "تم تحميل كل الأنميشن والأشياء الأخرى", 0.45},
+        }
+    else
+        -- شاشة انخفاض FPS: حذف/تعطيل الأنميشن التي تستهلك FPS والأشياء الثقيلة.
+        title.Text = loadingTitle or "يتم حذف الأنميشن التي تخفف الـ FPS"
+        status.Text = message or "يتم حذف الأنميشن التي تخفف الـ FPS..."
+        steps = {
+            {0.12, 0.60, "يتم فحص الأنميشن التي تخفف الـ FPS...", 0.30},
+            {0.28, 0.65, "يتم تجهيز الأنميشن التي سيتم تعطيلها...", 0.30},
+            {0.46, 0.70, "يتم حذف الأنميشن التي تخفف الـ FPS...", 0.35},
+            {0.64, 0.70, "يتم تعطيل الأشياء الثقيلة...", 0.35},
+            {0.82, 0.65, "يتم تحسين إعدادات الأداء...", 0.35},
+            {0.94, 0.55, "اللمسات الأخيرة...", 0.30},
+            {1, 0.50, "تم حذف الأنميشن وتحسين الأداء", 0.45},
+        }
+    end
+
+    for _, stepData in ipairs(steps) do
+        status.Text = stepData[3]
+        _TweenS:Create(bar, TweenInfo.new(stepData[2], Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Size = UDim2.new(stepData[1], 0, 1, 0)
+        }):Play()
+        task.wait(stepData[2] + stepData[4])
+    end
+
+    if onDone then
+        onDone()
+    end
+
+    _TweenS:Create(bg, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
+    _TweenS:Create(title, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    _TweenS:Create(status, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    _TweenS:Create(credits, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    _TweenS:Create(back, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+    _TweenS:Create(bar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+    task.wait(0.5)
+    if loadingGui then loadingGui:Destroy() end
+end
+
+local function SkyShowPerformancePrompt(autoMode, recoveryMode)
+    -- رسالة ارتفاع FPS مسموحة بعد شاشة التحميل السابقة.
+    if SkyPerformancePromptShown and not recoveryMode then return end
+    if recoveryMode and SkyRecoveryPromptShown then return end
+    if recoveryMode then SkyRecoveryPromptShown = true end
+    SkyPerformancePromptShown = true
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SkySimplePerformancePrompt"
+    gui.IgnoreGuiInset = true
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 1000000
+    gui.Parent = game.CoreGui
+
+    local black = Instance.new("Frame", gui)
+    black.Size = UDim2.new(1, 0, 1, 0)
+    black.BackgroundColor3 = Color3.new(0, 0, 0)
+    black.BackgroundTransparency = 1
+    black.BorderSizePixel = 0
+    black.ZIndex = 1
+
+    local box = Instance.new("Frame", gui)
+    box.Size = UDim2.new(0, 360, 0, 390)
+    box.Position = UDim2.new(0.5, 0, 1.2, 0)
+    box.AnchorPoint = Vector2.new(0.5, 0.5)
+    box.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    box.BorderSizePixel = 0
+    box.ZIndex = 2
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 14)
+
+    local boxLimit = Instance.new("UISizeConstraint", box)
+    boxLimit.MaxSize = Vector2.new(390, 430)
+    boxLimit.MinSize = Vector2.new(300, 360)
+
+    local edge = Instance.new("UIStroke", box)
+    edge.Thickness = 4
+    edge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    local edgeGlow = Instance.new("UIGradient", edge)
+    edgeGlow.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(235, 70, 255)),
+        ColorSequenceKeypoint.new(0.30, Color3.fromRGB(100, 0, 150)),
+        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(3, 3, 5)),
+        ColorSequenceKeypoint.new(0.70, Color3.fromRGB(100, 0, 150)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(235, 70, 255)),
+    })
+    task.spawn(function()
+        while edge and edge.Parent do
+            edgeGlow.Rotation = (edgeGlow.Rotation + 2) % 360
+            task.wait(0.035)
+        end
+    end)
+
+    local title = Instance.new("TextLabel", box)
+    title.Size = UDim2.new(1, -30, 0, 42)
+    title.Position = UDim2.new(0.5, 0, 0, 22)
+    title.AnchorPoint = Vector2.new(0.5, 0)
+    title.BackgroundTransparency = 1
+    title.Text = recoveryMode and "⚠️ تنبيه أداء" or (autoMode and "يتم منع الأنميشن" or "⚠️ تنبيه أداء")
+    title.TextColor3 = Color3.fromRGB(205, 80, 255)
+    title.Font = Enum.Font.ArialBold
+    title.TextSize = 24
+    title.TextTransparency = 1
+    title.ZIndex = 3
+
+    local text = Instance.new("TextLabel", box)
+    text.Size = UDim2.new(1, -36, 0, 100)
+    text.Position = UDim2.new(0.5, 0, 0, 78)
+    text.AnchorPoint = Vector2.new(0.5, 0)
+    text.BackgroundTransparency = 1
+    text.Text = recoveryMode and "تنبيه: الـ FPS ارتفع إلى 60 أو أكثر.\nهل تبي ترجع الوضع الطبيعي؟" or (autoMode and "تنبيه: الـ FPS نازل...\nسيتم منع الأنميشن الآن لتحسين الأداء." or "الـ FPS قاعد ينزل، هل تبي أشيل الأنميشن؟\nإيقافه ممكن يحسن الأداء شوي.")
+    text.TextColor3 = Color3.fromRGB(240, 240, 240)
+    text.Font = Enum.Font.Arial
+    text.TextSize = 17
+    text.TextWrapped = true
+    text.TextTransparency = 1
+    text.ZIndex = 3
+
+    local yes = Instance.new("TextButton", box)
+    yes.Size = UDim2.new(0.78, 0, 0, 48)
+    yes.Position = UDim2.new(0.5, 0, 0, 205)
+    yes.AnchorPoint = Vector2.new(0.5, 0)
+    yes.BackgroundColor3 = Color3.fromRGB(45, 8, 65)
+    yes.Text = recoveryMode and "لا، خله نفس ما هو" or "إيه، شيل الأنميشن"
+    yes.TextColor3 = Color3.new(1, 1, 1)
+    yes.Font = Enum.Font.ArialBold
+    yes.TextSize = 16
+    yes.ZIndex = 3
+    Instance.new("UICorner", yes).CornerRadius = UDim.new(0, 9)
+    local yesGlow = Instance.new("UIStroke", yes)
+    yesGlow.Thickness = 3
+    local yesGradient = Instance.new("UIGradient", yesGlow)
+    yesGradient.Color = edgeGlow.Color
+
+    local no = Instance.new("TextButton", box)
+    no.Size = UDim2.new(0.78, 0, 0, 48)
+    no.Position = UDim2.new(0.5, 0, 0, 265)
+    no.AnchorPoint = Vector2.new(0.5, 0)
+    no.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    no.Text = recoveryMode and "إيه، خليه الوضع الطبيعي" or "لا، خله كما هو"
+    no.TextColor3 = Color3.new(1, 1, 1)
+    no.Font = Enum.Font.ArialBold
+    no.TextSize = 16
+    no.ZIndex = 3
+    Instance.new("UICorner", no).CornerRadius = UDim.new(0, 9)
+    local noGlow = Instance.new("UIStroke", no)
+    noGlow.Thickness = 3
+    local noGradient = Instance.new("UIGradient", noGlow)
+    noGradient.Color = edgeGlow.Color
+
+    local automatic = Instance.new("TextButton", box)
+    automatic.Size = UDim2.new(0.78, 0, 0, 48)
+    automatic.Position = UDim2.new(0.5, 0, 0, 325)
+    automatic.AnchorPoint = Vector2.new(0.5, 0)
+    automatic.BackgroundColor3 = Color3.fromRGB(35, 8, 48)
+    automatic.Text = "خليه تلقائي"
+    automatic.TextColor3 = Color3.fromRGB(245, 220, 255)
+    automatic.Font = Enum.Font.ArialBold
+    automatic.TextSize = 16
+    automatic.ZIndex = 3
+    Instance.new("UICorner", automatic).CornerRadius = UDim.new(0, 9)
+    local automaticGlow = Instance.new("UIStroke", automatic)
+    automaticGlow.Thickness = 3
+    local automaticGradient = Instance.new("UIGradient", automaticGlow)
+    automaticGradient.Color = edgeGlow.Color
+    automatic.Visible = not recoveryMode
+
+    local function close()
+        _TweenS:Create(black, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
+        _TweenS:Create(box, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, 0, 1.2, 0)
+        }):Play()
+        task.delay(0.32, function() if gui then gui:Destroy() end end)
+    end
+
+    yes.MouseButton1Click:Connect(function()
+        if recoveryMode then
+            -- إبقاء وضع الأداء كما هو بدون إعادة المؤثرات.
+            SkyRecoveryCheck = false
+            SkyRecoverySeconds = 0
+            SkyPerformancePromptShown = false
+            close()
+            return
+        end
+        close()
+        task.delay(0.35, function()
+            SkyShowFullscreenLoading("جاري حذف الأشياء الثقيلة وتحسين الـ FPS...", function()
+                SkyEnablePerformanceMode()
+                SkyPerformancePromptShown = true
+                SkyLowFpsPromptLatched = true
+            end, "يتم حذف الأنميشن التي تخفف الـ FPS", "low")
+        end)
+    end)
+    no.MouseButton1Click:Connect(function()
+        if recoveryMode then
+            -- إعادة المؤثرات التي تم فصلها سابقًا، والعودة للوضع الطبيعي.
+            close()
+            task.delay(0.35, function()
+                SkyShowFullscreenLoading("يتم تحميل كل الأنميشن والأشياء الأخرى...", function()
+                    SkyRestorePerformanceMode()
+                    SkyPerformancePromptShown = false
+                end, "يتم تحميل كل الأنميشن", "restore")
+            end)
+            return
+        end
+        -- إبقاء الفحص فعالًا، مع مهلة قصيرة حتى لا تتكرر النافذة بسرعة.
+        close()
+        task.delay(8, function()
+            SkyPerformancePromptShown = false
+        end)
+    end)
+    automatic.MouseButton1Click:Connect(function()
+        -- «خليه تلقائي»: أولًا تختفي القائمة بالكامل، ثم تظهر شاشة تحميل Sky الكاملة.
+        -- لا يظهر أي صندوق/قائمة أثناء التحميل. بعد انتهاء التحميل فقط يبدأ الوضع التلقائي.
+        SkyAutomaticMode = true
+        SkyAutoFPSCheck = true
+        SkyLowFpsSeconds = 0
+        close()
+        task.delay(0.35, function()
+            SkyPerformancePromptShown = true
+            SkyLowFpsPromptLatched = true
+            SkyShowFullscreenLoading("قاعد يحمل الأغراض المطلوبة ويجهز حذف الأشياء الثقيلة...", function()
+                SkyEnablePerformanceMode()
+                SkyAutomaticMode = true
+                SkyAutoFPSCheck = true
+                SkyRecoveryCheck = true
+                SkyRecoverySeconds = 0
+            end, "يتم حذف الأنميشن التي تخفف الـ FPS", "low")
+        end)
+    end)
+
+    _TweenS:Create(black, TweenInfo.new(0.5), {
+        BackgroundTransparency = autoMode and 0 or 0.42
+    }):Play()
+    _TweenS:Create(box, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, 0, 0.52, 0)
+    }):Play()
+    task.delay(0.25, function()
+        _TweenS:Create(title, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+        _TweenS:Create(text, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
+    end)
+end
+
+-- لا تظهر القائمة عند التشغيل؛ تظهر فقط بعد رصد هبوط FPS.
+_G.SkyEnableFPSAutoPrompt = function()
+    SkyAutoFPSCheck = true
+    SkyPerformancePromptShown = false
+end
+-- استقبال قراءة العداد الموجود أصلًا؛ لا يوجد RenderStepped إضافي للمراقبة.
+_G.SkyPerformanceFpsSink = function(fps)
+    if not SkyAutoFPSCheck then return end
+    -- بعد تفعيل وضع الأداء نستمر في فحص الارتفاع حتى لو ظهرت شاشة التحميل سابقًا.
+    if SkyPerformancePromptShown and not SkyRecoveryCheck then return end
+    if SkyPerformanceMode or SkyRecoveryCheck then
+        -- بعد الضغط على «خليه تلقائي»: عند 55 FPS أو أكثر يظهر خيار الوضع الطبيعي.
+        if fps >= 55 then
+            SkyRecoverySeconds = SkyRecoverySeconds + 0.4
+            if SkyRecoverySeconds >= 2 then
+                SkyShowPerformancePrompt(false, true)
+            end
+        else
+            SkyRecoverySeconds = 0
+        end
+        return
+    end
+    if fps <= 35 then
+        if SkyLowFpsPromptLatched then return end
+        SkyLowFpsSeconds = SkyLowFpsSeconds + 0.4
+        if SkyLowFpsSeconds >= 2 then
+            SkyLowFpsPromptLatched = true
+            SkyShowPerformancePrompt(SkyAutomaticMode)
+        end
+    else
+        SkyLowFpsSeconds = 0
+        SkyLowFpsPromptLatched = false
+    end
+end
 
 -- 💾 تصريح مسبق: تُملأ لاحقًا بدالة حفظ مكان زر R وزر القفل، وتُستدعى عند نهاية السحب
 local SaveExtraButtonPositions
