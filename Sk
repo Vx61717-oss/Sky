@@ -418,6 +418,8 @@ local function removeNotificationRecord(category, F)
     updateNotificationPositions()
 end
 
+local _fadeNotificationContents
+
 local function trimNotificationQueue(category)
     local q = _notificationQueues[category]
     local limit = _notificationLimits[category]
@@ -427,11 +429,12 @@ local function trimNotificationQueue(category)
             task.spawn(function()
                 local inner = old:FindFirstChild("NotificationInner")
                 if inner then
-                    _TweenS:Create(inner, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                        Position = UDim2.new(0, 35, 0, 0), BackgroundTransparency = 1
+                    _fadeNotificationContents(inner, 0.30)
+                    _TweenS:Create(inner, TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                        Position = UDim2.new(0, 330, 0, 0)
                     }):Play()
                 end
-                task.wait(0.18)
+                task.wait(0.32)
                 if old.Parent then old:Destroy() end
                 updateNotificationPositions()
             end)
@@ -450,21 +453,74 @@ local _liveNotifFrames = {}
 
 -- ينتظر ويطفي الإشعار بعد مدته؛ لو صار تحديث أحدث لنفس liveKey أثناء الانتظار
 -- (رقم Gen تغيّر) يتوقف هذا الإخفاء القديم ويسيب المهمة للتحديث الأحدث.
+-- يختفي كل محتوى الإشعار مع بعض:
+-- الخلفية + الحواف + الـGlow + الشريط + الصورة + كل النصوص والعناصر الداخلية.
+-- الاعتماد على جميع العناصر الداخلية يمنع بقاء أي عنصر ظاهر لو أضيف عنصر جديد لاحقًا.
+_fadeNotificationContents = function(I, duration)
+    if not I or not I.Parent then return end
+
+    for _, obj in ipairs(I:GetDescendants()) do
+        if obj:IsA("UIStroke") then
+            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Transparency = 1
+            }):Play()
+
+        elseif obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
+            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                TextTransparency = 1,
+                BackgroundTransparency = 1
+            }):Play()
+
+        elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                ImageTransparency = 1,
+                BackgroundTransparency = 1
+            }):Play()
+
+        elseif obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("ViewportFrame") then
+            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                BackgroundTransparency = 1
+            }):Play()
+        end
+    end
+
+    _TweenS:Create(I, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        BackgroundTransparency = 1
+    }):Play()
+end
+
+-- ينتظر ويطفي الإشعار بعد مدته؛ لو صار تحديث أحدث لنفس liveKey أثناء الانتظار
+-- (رقم Gen تغيّر) يتوقف هذا الإخفاء القديم ويسيب المهمة للتحديث الأحدث.
 local function _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, category, gen, liveKey)
     task.wait(category == "presence" and 3.2 or 2.8)
     if not F.Parent then return end
     if gen ~= nil and F:GetAttribute("Gen") ~= gen then return end
-    _TweenS:Create(I, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-        Position = UDim2.new(0, 20, 0, -4), BackgroundTransparency = 1
+
+    -- نخفي كل عناصر الإشعار في نفس الوقت ثم نحرك الحاوية للخارج.
+    _fadeNotificationContents(I, 0.55)
+    _TweenS:Create(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        Position = UDim2.new(0, 330, 0, 0)
     }):Play()
-    _TweenS:Create(Stroke, TweenInfo.new(0.18), {Transparency = 1}):Play()
-    _TweenS:Create(TL, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
-    _TweenS:Create(ML, TweenInfo.new(0.18), {TextTransparency = 1}):Play()
-    if AvatarImg then _TweenS:Create(AvatarImg, TweenInfo.new(0.18), {ImageTransparency = 1}):Play() end
-    task.wait(0.23)
+
+    task.wait(0.56)
     removeNotificationRecord(category, F)
     if F.Parent then F:Destroy() end
     if liveKey and _liveNotifFrames[liveKey] == F then _liveNotifFrames[liveKey] = nil end
+end
+
+-- 🔔 صوت تنبيه خاص بخروج اللاعب المحدد
+local _selectedExitAlertSound = Instance.new("Sound")
+_selectedExitAlertSound.Name = "SkySelectedPlayerExitAlert"
+_selectedExitAlertSound.SoundId = "rbxassetid://94505524995268"
+_selectedExitAlertSound.Volume = 1.15
+_selectedExitAlertSound.Looped = false
+_selectedExitAlertSound.Parent = game:GetService("SoundService")
+_ownSounds[_selectedExitAlertSound] = true
+
+local function PlaySelectedExitAlert()
+    _selectedExitAlertSound:Stop()
+    _selectedExitAlertSound.TimePosition = 0
+    _selectedExitAlertSound:Play()
 end
 
 function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
@@ -517,7 +573,7 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     I.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     I.BorderSizePixel = 0
     I.Size = UDim2.new(1, 0, 0, 48)
-    I.Position = UDim2.new(0, 35, 0, 0)
+    I.Position = UDim2.new(0, 330, 0, 0)
     I.BackgroundTransparency = 1
     I.ZIndex = 52
     Instance.new("UICorner", I).CornerRadius = UDim.new(0, 12)
@@ -606,25 +662,36 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
 
     task.spawn(function()
         pcall(function()
-            _TweenS:Create(I, TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Position = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 0.08
+            -- دخول هادئ وبطيء من اليمين لليسار، مع ظهور تدريجي خفيف مثل شاشة التحميل.
+            _TweenS:Create(I, TweenInfo.new(0.58, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(0, 0, 0, 0)
             }):Play()
-            _TweenS:Create(TL, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
-            _TweenS:Create(ML, TweenInfo.new(0.25), {TextTransparency = 0}):Play()
+            _TweenS:Create(I, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 0.08
+            }):Play()
+            _TweenS:Create(TL, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+            _TweenS:Create(ML, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
             if AvatarImg then
-                _TweenS:Create(AvatarImg, TweenInfo.new(0.25), {ImageTransparency = 0}):Play()
+                _TweenS:Create(AvatarImg, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
             end
 
             if shake then
-                task.wait(0.35)
+                -- 🚨 إنذار واضح للاعب المحدد عند خروجه: حوالي ثانية وباهتزاز أقوى.
+                task.wait(0.12)
                 if not F.Parent then return end
-                for _ = 1, 2 do
-                    _TweenS:Create(I, TweenInfo.new(0.045), {Position = UDim2.new(0, 4, 0, 0)}):Play()
-                    task.wait(0.045)
-                    _TweenS:Create(I, TweenInfo.new(0.045), {Position = UDim2.new(0, -4, 0, 0)}):Play()
-                    task.wait(0.045)
+                local shakeOffsets = {10, -10, 9, -9, 8, -8, 7, -7, 6, -6, 5, -5, 4, -4, 3, -3, 0}
+                for _, offset in ipairs(shakeOffsets) do
+                    if not F.Parent then return end
+                    local duration = (math.abs(offset) >= 8) and 0.055 or 0.045
+                    local tween = _TweenS:Create(I, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                        Position = UDim2.new(0, offset, 0, 0)
+                    })
+                    tween:Play()
+                    tween.Completed:Wait()
                 end
-                _TweenS:Create(I, TweenInfo.new(0.05), {Position = UDim2.new(0, 0, 0, 0)}):Play()
+                _TweenS:Create(I, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Position = UDim2.new(0, 0, 0, 0)
+                }):Play()
             end
 
             _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, category, liveKey and 0 or nil, liveKey)
@@ -2481,17 +2548,8 @@ end)
         end
     end)
 
-    Players.PlayerRemoving:Connect(function(player)
-        if State.selectedPlayer == player then
-            _disconnectSelectedDeathHooks()
-            WARN("🔴 اللاعب ["..player.Name.."] غادر اللعبة!")
-            State.selectedPlayer = nil
-            if UpdatePlayerCard then UpdatePlayerCard() end
-            State.sittingOnHead = false
-            State.hmmActive = false
-            State.flingEnabled = false
-        end
-    end)
+    -- ملاحظة: إشعار خروج اللاعب المحدد يتم التعامل معه في PlayerRemoving الرئيسي
+    -- أسفل قائمة اللاعبين، حتى لا يتعارض مع إشعار الخروج العام أو يختفي بسبب تحديث القائمة.
 
     -- ====================== بناء الواجهة البنفسجية الرئيسية ======================
     UI.MainFrame.Parent = ScreenGui
@@ -4259,18 +4317,6 @@ end)
                         Camera.CameraSubject = hum
                     end
                 end
-                -- إذا كان التطيير مفعلاً، يبقى مفعلاً ويرجع يستهدف الشخصية الجديدة تلقائياً.
-                if State.flingEnabled then
-                    task.defer(function()
-                        if State.selectedPlayer == p and State.flingEnabled then
-                            local root = newChar:FindFirstChild("HumanoidRootPart")
-                                or newChar:WaitForChild("HumanoidRootPart", 5)
-                            if root then
-                                RESPAWN_NOTIFY("تم استئناف التطيير على "..p.Name)
-                            end
-                        end
-                    end)
-                end
             end
         end)
     end
@@ -4420,21 +4466,63 @@ local function UpdatePlayerList()
     end)
     
     Players.PlayerRemoving:Connect(function(p)
-        if State._respawnConns[p] then State._respawnConns[p]:Disconnect(); State._respawnConns[p] = nil end
-        UpdatePlayerList()
-        
+        -- نحفظ هل اللاعب الخارج هو اللاعب المحدد قبل أن نغيّر أي حالة
+        -- لأن بعض أنظمة القائمة قد تنظف الاختيار أثناء PlayerRemoving.
+        local wasSelected = (State.selectedPlayer == p)
+
+        if State._respawnConns[p] then
+            State._respawnConns[p]:Disconnect()
+            State._respawnConns[p] = nil
+        end
+
+        -- إشعار الخروج يجب أن يرسل أولاً، حتى لو كان اللاعب محدداً.
         local isFriend = false
         pcall(function()
-            isFriend = game.Players.LocalPlayer:IsFriendsWith(p.UserId)
+            isFriend = LocalPlayer:IsFriendsWith(p.UserId)
         end)
-        
-        if isFriend then
-            -- إشعار أحمر مع إطار أزرق للصديق
-            Notify("🔴 صديق غادر", p.DisplayName.." (@"..p.Name..") طلع من الماب", Color3.fromRGB(255, 0, 0), false, p.UserId, Color3.fromRGB(0, 120, 255))
+
+        -- نفس إشعار الخروج العادي للجميع.
+        -- إذا كان اللاعب هو المحدد، نهز الإشعار كإنذار حتى تلاحظه بدون تغيير شكله.
+        if wasSelected then
+            -- 🔔 نفس إشعار الخروج العادي + صوت إنذار واضح لأن اللاعب المحدد خرج.
+            PlaySelectedExitAlert()
+            Notify(
+                "🔴 غادر لاعب",
+                p.DisplayName.." (@"..p.Name..") طلع من الماب",
+                Color3.fromRGB(255, 0, 0),
+                true,
+                p.UserId
+            )
+        elseif isFriend then
+            Notify(
+                "🔴 صديق غادر",
+                p.DisplayName.." (@"..p.Name..") طلع من الماب",
+                Color3.fromRGB(255, 0, 0),
+                false,
+                p.UserId,
+                Color3.fromRGB(0, 120, 255)
+            )
         else
-            -- إشعار عادي للاعبين الآخرين
-            Notify("🔴 غادر لاعب", p.DisplayName.." (@"..p.Name..") طلع من الماب", Color3.fromRGB(255, 0, 0), false, p.UserId)
+            Notify(
+                "🔴 غادر لاعب",
+                p.DisplayName.." (@"..p.Name..") طلع من الماب",
+                Color3.fromRGB(255, 0, 0),
+                false,
+                p.UserId
+            )
         end
+
+        -- بعد إنشاء الإشعار ننظف حالة اللاعب المحدد فقط إذا كان هو الخارج.
+        if wasSelected then
+            _disconnectSelectedDeathHooks()
+            State.selectedPlayer = nil
+            if UpdatePlayerCard then UpdatePlayerCard() end
+            State.sittingOnHead = false
+            State.hmmActive = false
+            State.flingEnabled = false
+        end
+
+        UpdatePlayerList()
     end)
     UpdatePlayerList()
 
@@ -5366,7 +5454,140 @@ end)
         end
         WARN("❌ لم يتم العثور على سيرفر")
     end
-    NewItem("سيرفر", "Button", function(s) if s then teleportToSmallestServer() end end, UI.Page3)
+    do -- 🌐 معزول داخل do لتفادي حد 200 متغير محلي في السكربت
+        -- 🌐 قائمة تأكيد زر السيرفر: تطلع من تحت لنص الشاشة بأنميشن وفيها زرّين (انقلني / لا تنقلني)
+        local _serverPromptOpen = false
+        local function ShowServerPrompt()
+            if _serverPromptOpen then return end
+            _serverPromptOpen = true
+
+            -- 🎨 لون التاب (الأزرق) يتبع لون تاب الإعدادات
+            local tabColor = Color3.fromRGB(0, 140, 255)
+            pcall(function() tabColor = GetTabColorForInstance(UI.Page3) or tabColor end)
+
+            local promptGui = Instance.new("ScreenGui")
+            promptGui.Name = "SkyServerPrompt"
+            promptGui.ResetOnSpawn = false
+            promptGui.IgnoreGuiInset = true
+            promptGui.DisplayOrder = 1300
+            promptGui.Parent = game.CoreGui
+
+            -- خلفية معتمة (الضغط عليها = لا تنقلني)
+            local dim = Instance.new("TextButton", promptGui)
+            dim.Size = UDim2.new(1, 0, 1, 0)
+            dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            dim.BackgroundTransparency = 1
+            dim.BorderSizePixel = 0
+            dim.Text = ""
+            dim.AutoButtonColor = false
+            dim.ZIndex = 200
+
+            local panel = Instance.new("Frame", promptGui)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.Size = UDim2.new(0, 330, 0, 300)
+            panel.Position = UDim2.new(0.5, 0, 1.4, 0) -- يبدأ تحت الشاشة
+            panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            panel.BorderSizePixel = 0
+            panel.Active = true
+            panel.ZIndex = 201
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = tabColor
+            panelStroke.Thickness = 2.2
+            pcall(function() AddMovingBorderGlow(panelStroke, 2, tabColor) end)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size = UDim2.new(1, -24, 0, 30)
+            title.Position = UDim2.new(0, 12, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Text = "🌐 سيرفر"
+            title.TextColor3 = tabColor
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 20
+            title.ZIndex = 202
+
+            -- نص المعلومة: كل سطر لحاله وبينهم مسافة
+            local info = Instance.new("TextLabel", panel)
+            info.Size = UDim2.new(1, -28, 0, 190)
+            info.Position = UDim2.new(0, 14, 0, 50)
+            info.BackgroundTransparency = 1
+            info.Text = "معلومة :  بعض  الأحيان  إذا ضغطت  على  زر  السيرفر\n\nيمكن  يختلف  عليك  السكربت\n\nأو في ميزة ما تكون موجودة . .\n\nفاعذرنا"
+            info.TextColor3 = Color3.fromRGB(235, 235, 235)
+            info.Font = Enum.Font.Arcade
+            info.TextSize = 18
+            info.TextWrapped = true
+            info.TextXAlignment = Enum.TextXAlignment.Center
+            info.TextYAlignment = Enum.TextYAlignment.Top
+            info.ZIndex = 202
+
+            local function makeBtn(text, xPos)
+                local b = Instance.new("TextButton", panel)
+                b.Size = UDim2.new(0.5, -20, 0, 40)
+                b.Position = UDim2.new(xPos, xPos == 0 and 14 or 6, 1, -54)
+                b.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                b.BorderSizePixel = 0
+                b.Text = text
+                b.TextColor3 = Color3.fromRGB(255, 255, 255)
+                b.Font = Enum.Font.Arcade
+                b.TextSize = 17
+                b.AutoButtonColor = false
+                b.ZIndex = 203
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 9)
+                local st = Instance.new("UIStroke", b)
+                st.Color = tabColor
+                st.Thickness = 2
+                st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                -- ✨ حافة متحركة (أزرق + أسود) مثل باقي أزرار السكربت
+                pcall(function() AddMovingBorderGlow(st, 1.5, tabColor) end)
+                return b
+            end
+            local yesBtn = makeBtn("انقلني", 0.5)
+            local noBtn = makeBtn("لا تنقلني", 0)
+
+            -- دخول: من تحت الى النص
+            _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+
+            local closing = false
+            local function closePrompt(afterClose)
+                if closing then return end
+                closing = true
+                _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                t:Play()
+                t.Completed:Wait()
+                promptGui:Destroy()
+                _serverPromptOpen = false
+                if afterClose then afterClose() end
+            end
+
+            yesBtn.MouseButton1Click:Connect(function()
+                playClick()
+                task.spawn(function()
+                    closePrompt(function()
+                        task.spawn(teleportToSmallestServer)
+                    end)
+                end)
+            end)
+            local function cancel()
+                playClick()
+                task.spawn(closePrompt)
+            end
+            noBtn.MouseButton1Click:Connect(cancel)
+            dim.MouseButton1Click:Connect(cancel)
+        end
+
+        NewItem("سيرفر", "Button", function(s)
+            if s then
+                ShowServerPrompt()
+                -- نرجّع الزر لحالته الطبيعية عشان ما يبقى "إيقاف"
+                task.defer(function()
+                    local setter = UI.ToggleSetters["سيرفر"]
+                    if setter then setter(false) end
+                end)
+            end
+        end, UI.Page3)
+    end
 
     -- 🌌 زر أجواء الماب — ضغطة وحدة تبدّل جو، ثاني ضغطة جو ثاني... وبعد آخر جو يرجع عادي
     do
@@ -6842,7 +7063,7 @@ end)
 
     -- 🔔 صوت خاص لإشعار الرسائل الجديدة (مثل تنبيه واتساب/سناب)
     local msgNotifySound = Instance.new("Sound")
-    msgNotifySound.SoundId = "rbxassetid://119896940405402"
+    msgNotifySound.SoundId = "rbxassetid://94505524995268"
     msgNotifySound.Volume = 1
     msgNotifySound.Parent = SoundService
     _ownSounds[msgNotifySound] = true
