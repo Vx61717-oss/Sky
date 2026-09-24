@@ -10201,6 +10201,7 @@ end)
         -- بما إن السكربت أصلاً يمسح كل تاريخ الدردشة عند كل تشغيل (فوق)، فما فيه رسائل قديمة أصلاً؛
         -- فنبدأ من وقت التشغيل الحالي، عشان أول رسالة/فقاعة توصل فعليًا تظهر من أول مرة.
         local _lastSeenTimestamp = os.time()
+        local _shownPrivateAlertIds = {} -- 🔔 كل تنبيه خاص يظهر مرة وحدة بس (بمعرفه)، حتى لو ظل موجود بالجلب لين يوصل تنبيه جديد
         local _handledBadWordMsgIds = {} -- 🧹 كل رسالة مسيئة نعالجها مرة وحدة بس، حتى لو تكررت بنفس الجلب قبل ما ينفذ حذفها من السيرفر
         local _debugChat = true -- 🐞 خله true لين نتأكد إن كل شي يشتغل تمام، بعدها تقدر تخليه false
         task.spawn(function()
@@ -10275,8 +10276,14 @@ end)
                             local fallback = "msg:" .. tostring(m.timestamp) .. ":" .. tostring(m.sender) .. ":" .. tostring(m.text)
                             if not existing[key] and not existing[fallback] then
                                 if m.chatType == "private" and tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId then
-                                    if m.sender ~= game.Players.LocalPlayer.Name and showPrivateAlert then
-                                        showPrivateAlert(m.text)
+                                    -- 🔒 التنبيه الخاص ما ينرسم بالدردشة، فما يدخل في existing؛ لذلك نسجله هنا بمعرفه
+                                    -- عشان أي رسالة عامة/أخوياك/فقاعة جديدة ما ترجّعه مرة ثانية.
+                                    local privateAlertKey = m.id and tostring(m.id) or fallback
+                                    if not _shownPrivateAlertIds[privateAlertKey] then
+                                        _shownPrivateAlertIds[privateAlertKey] = true
+                                        if m.sender ~= game.Players.LocalPlayer.Name and showPrivateAlert then
+                                            showPrivateAlert(m.text)
+                                        end
                                     end
                                 elseif not senderMuted and not incomingBadWord
                                     and m.chatType ~= "bubble"
