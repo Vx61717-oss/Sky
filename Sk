@@ -9531,8 +9531,23 @@ end)
             local decodedOk, moderation = pcall(function()
                 return game:GetService("HttpService"):JSONDecode(response.Body)
             end)
-            if not decodedOk or type(moderation) ~= "table" then return end
+            if not decodedOk then return end
+            moderation = (type(moderation) == "table") and moderation or {}
             local now = os.time()
+
+            -- ✅ أي كتم محلي عندنا لمستخدم صار غير موجود بالسيرفر (أو خلص وقته) = نفك كتمه فورًا.
+            -- بدون هذا، فك الكتم من الأدمن ما ينعكس أبد عند اللاعب المكتوم، ويبقى "معلق".
+            for userId in pairs(localChatMutes) do
+                local record = moderation[tostring(userId)]
+                local untilTime = record and tonumber(record["until"])
+                if not untilTime or untilTime <= now then
+                    localChatMutes[userId] = nil
+                    if userId == game.Players.LocalPlayer.UserId and updateChatMuteDisplay then
+                        updateChatMuteDisplay(now)
+                    end
+                end
+            end
+
             for userId, record in pairs(moderation) do
                 local untilTime = tonumber(record and record["until"])
                 if untilTime and untilTime > now then
@@ -9939,7 +9954,25 @@ end)
         unmutePlayerBtn.MouseButton1Click:Connect(function()
             if not selectedInfoUserId then return end
             localChatMutes[selectedInfoUserId] = nil
+            if updateChatMuteDisplay and selectedInfoUserId == game.Players.LocalPlayer.UserId then
+                updateChatMuteDisplay(os.time())
+            end
             task.spawn(function()
+                -- ✅ نكتب "until = 0" صراحة بدل ما نعتمد على DELETE وحده؛
+                -- بعض برامج الإكسبلويت تفشل بصمت بطلبات DELETE، فيضل سجل الكتم عالق بالسيرفر
+                -- وأي لاعب يحدّث الكتم عنده (refreshChatMutes) يرجّعه له تلقائيًا.
+                pcall(function()
+                    request({
+                        Url = moderationUrlFor(selectedInfoUserId),
+                        Method = "PUT",
+                        Headers = { ["Content-Type"] = "application/json" },
+                        Body = game:GetService("HttpService"):JSONEncode({
+                            ["until"] = 0,
+                            reason = "unmuted_by_developer",
+                            updatedAt = os.time()
+                        })
+                    })
+                end)
                 pcall(function()
                     request({Url = moderationUrlFor(selectedInfoUserId), Method = "DELETE"})
                 end)
@@ -10080,7 +10113,8 @@ end)
                 ["userId"] = myUserId,
                 ["jobId"] = game.JobId,
                 ["placeId"] = game.PlaceId,
-                ["chatType"] = "bubble"
+                ["chatType"] = "bubble",
+                ["mode"] = currentChatMode
             }
 
             box.Text = ""
@@ -10163,7 +10197,11 @@ end)
 
 
         local lastData = ""
-        local _lastSeenTimestamp = nil -- nil = أول تحميل، ما نبلّغ عن رسائل قديمة
+        -- ⏱️ ما نبدأ بـ nil (يبلع أول رسالة تجي كـ"بيانات قديمة" ولا يبلّغ عنها).
+        -- بما إن السكربت أصلاً يمسح كل تاريخ الدردشة عند كل تشغيل (فوق)، فما فيه رسائل قديمة أصلاً؛
+        -- فنبدأ من وقت التشغيل الحالي، عشان أول رسالة/فقاعة توصل فعليًا تظهر من أول مرة.
+        local _lastSeenTimestamp = os.time()
+        local _handledBadWordMsgIds = {} -- 🧹 كل رسالة مسيئة نعالجها مرة وحدة بس، حتى لو تكررت بنفس الجلب قبل ما ينفذ حذفها من السيرفر
         local _debugChat = true -- 🐞 خله true لين نتأكد إن كل شي يشتغل تمام، بعدها تقدر تخليه false
         task.spawn(function()
             while true do
@@ -10218,8 +10256,11 @@ end)
 
                         for _, m in ipairs(msgs) do
                             -- إذا وصلت رسالة مسيئة من نسخة قديمة، اكتم صاحبها واحذفها محليًا ومن المصدر.
+                            -- 🧹 مرة وحدة بس لكل رسالة (بمعرفها)، حتى لو ظلت تظهر بالجلب لين يكتمل حذفها من السيرفر.
                             local incomingBadWord = findBadChatWord(m.text)
-                            if incomingBadWord ~= nil and m.userId then
+                            local badWordMsgKey = m.id and tostring(m.id) or nil
+                            if incomingBadWord ~= nil and m.userId and (not badWordMsgKey or not _handledBadWordMsgIds[badWordMsgKey]) then
+                                if badWordMsgKey then _handledBadWordMsgIds[badWordMsgKey] = true end
                                 setChatMute(m.userId, incomingBadWord)
                                 if m.id then
                                     task.spawn(function()
@@ -10287,7 +10328,12 @@ end)
                                     and tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId then
                                     -- يعرض كتنبيه عائم فقط.
                                 elseif m.chatType == "bubble" and not notificationMuted and not notificationBadWord then
-                                    lastOtherBubble = m
+                                    -- 🔔 الفقاعة تحترم نفس إعدادات (عام / أخوياك) زي باقي الرسائل.
+                                    local isFriendsBubble = m.mode == "friends"
+                                    local bubbleNotifyEnabled = isFriendsBubble and chatNotifyFriendsEnabled or chatNotifyGeneralEnabled
+                                    if bubbleNotifyEnabled then
+                                        lastOtherBubble = m
+                                    end
                                 elseif not notificationMuted and not notificationBadWord
                                     and (m.chatType ~= "private" or tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId) then
                                     local isFriendsNotification = m.chatType == "friends"
@@ -10308,6 +10354,22 @@ end)
                             playMsgNotify()
                         end
 
+                        -- 💬 الفقاعة تظهر فوق رأس صاحبها بشكل مستقل تمامًا عن عداد الرسائل غير المقروءة،
+                        -- عشان توصل حتى لو هي وحدها الجديدة (خويك يسولف فقاعات بس بدون رسائل دردشة عادية).
+                        if lastOtherBubble then
+                            _lastSeenTimestamp = newestTimestamp
+                            local friendPlayer = nil
+                            for _, p in ipairs(game.Players:GetPlayers()) do
+                                if (lastOtherBubble.userId and p.UserId == lastOtherBubble.userId) or p.Name == lastOtherBubble.sender then
+                                    friendPlayer = p
+                                    break
+                                end
+                            end
+                            if friendPlayer then
+                                showMessageAboveHead(lastOtherBubble.text, friendPlayer, false)
+                            end
+                        end
+
                         if _lastSeenTimestamp == nil then
                             -- أول تحميل: نسجل آخر توقيت بس بدون ما نزعج المستخدم برسائل قديمة
                             _lastSeenTimestamp = newestTimestamp
@@ -10326,19 +10388,6 @@ end)
                                 -- 💬 بوب أب إشعار فقط عندما تكون خارج الدردشة.
                                 playMsgNotify()
                                 Notify("💬 " .. lastOtherMsg.sender, lastOtherMsg.chatType == "private" and ("تنبيه: " .. tostring(lastOtherMsg.text)) or lastOtherMsg.text, lastOtherMsg.chatType == "private" and Color3.fromRGB(255, 45, 50) or Color3.fromRGB(170, 0, 255), true)
-                            end
-                            -- 💬 فقط رسائل chatType="bubble" تظهر فوق رأس صاحبها.
-                            if lastOtherBubble then
-                                local friendPlayer = nil
-                                for _, p in ipairs(game.Players:GetPlayers()) do
-                                    if (lastOtherBubble.userId and p.UserId == lastOtherBubble.userId) or p.Name == lastOtherBubble.sender then
-                                        friendPlayer = p
-                                        break
-                                    end
-                                end
-                                if friendPlayer then
-                                    showMessageAboveHead(lastOtherBubble.text, friendPlayer, false)
-                                end
                             end
                         end
                     end
