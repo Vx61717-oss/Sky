@@ -8316,6 +8316,35 @@ end)
         friendsChatStroke.Transparency = 0.2
         AddMovingBorderGlow(friendsChatStroke, 1.2, Color3.fromRGB(0, 140, 255))
 
+        -- 🔴 رقم رسائل أخوياك الجديدة: يطلع بزاوية زر «أخوياك» لما خويي يرسل بدردشة أخوياك وأنا مو فيها.
+        -- (العام ما له رقم). يصفّر أول ما أفتح تاب أخوياك.
+        local _FriendsBadge = {count = 0, seen = {}}
+        do
+            local lbl = Instance.new("TextLabel", friendsChatBtn)
+            lbl.Name = "FriendsUnreadBadge"
+            lbl.AnchorPoint = Vector2.new(1, 0)
+            lbl.Position = UDim2.new(1, -4, 0, 2)
+            lbl.Size = UDim2.new(0, 18, 0, 18)
+            lbl.BackgroundColor3 = Color3.fromRGB(255, 60, 70)
+            lbl.BorderSizePixel = 0
+            lbl.Text = "0"
+            lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            lbl.Font = Enum.Font.Arcade
+            lbl.TextSize = 11
+            lbl.Visible = false
+            lbl.ZIndex = 25
+            Instance.new("UICorner", lbl).CornerRadius = UDim.new(1, 0)
+            _FriendsBadge.label = lbl
+        end
+        function _FriendsBadge.set(n)
+            _FriendsBadge.count = n
+            local lbl = _FriendsBadge.label
+            if not lbl then return end
+            lbl.Visible = n > 0
+            lbl.Text = n > 99 and "99+" or tostring(n)
+            lbl.Size = UDim2.new(0, n > 99 and 28 or (n > 9 and 24 or 18), 0, 18)
+        end
+
         -- 🤝 قايمة الأصدقاء: روبلوكس يخزّن نتيجة IsFriendsWith، فالصديق الجديد (اللي انضاف وأنت داخل اللعبة)
         -- ممكن ما يبان صديق لين تعيد الدخول. عشان كذا نجيب القايمة الحديثة من موقع روبلوكس كل فترة
         -- ونجمعها مع IsFriendsWith.
@@ -8420,6 +8449,7 @@ end)
             if currentChatMode == mode then return end
             currentChatMode = mode
             local isFriends = mode == "friends"
+            if isFriends and State._chatPageOpen then _FriendsBadge.set(0) end
 
             -- 💾 نحفظ آخر وضع (عام/أخوياك) عشان يرجع بعد إعادة تشغيل السكربت (مثل الانتقال لسيرفر ثاني)
             pcall(function()
@@ -10717,6 +10747,9 @@ end)
         end
         function _Aux.run()
             _Aux.last = os.clock()
+            if currentChatMode == "friends" and State._chatPageOpen and _FriendsBadge.count > 0 then
+                _FriendsBadge.set(0)
+            end
                 -- 🟢 نبعت "أنا موجود بالدردشة" بس وتاب الدردشة يكون مفتوح عندي فعلاً
                 if State._chatPageOpen then
                     task.spawn(function()
@@ -10888,6 +10921,14 @@ end)
                                     and m.chatType ~= "private" -- 🔒 التنبيهات الخاصة ما تنرسم بالدردشة أبداً (لا عندي ولا عند غيري)
                                     and not (m.chatType == "developer" and m.developerMessage == true) then
                                     chatMessageCache["id:" .. tostring(m.id)] = m
+                                    -- 🔢 رسالة من خويي بدردشة أخوياك: نزيد الرقم إذا ما أنا فاتح تاب أخوياك (مرة وحدة لكل رسالة)
+                                    if m.chatType == "friends" and m.sender ~= game.Players.LocalPlayer.Name and m.id
+                                        and not _FriendsBadge.seen[m.id] and isChatFriend(m.userId) then
+                                        _FriendsBadge.seen[m.id] = true
+                                        if not (currentChatMode == "friends" and State._chatPageOpen) then
+                                            _FriendsBadge.set(_FriendsBadge.count + 1)
+                                        end
+                                    end
                                     if isChatMessageVisible(m) then
                                         addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId)
                                     end
