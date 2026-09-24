@@ -14,6 +14,16 @@ local setClipboardText = setclipboard or toclipboard
 
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
+-- 🛑 لو انحطت أكثر من نسخة من اللودر في الطابور، تشتغل نسخة وحدة بس والباقي يوقف
+do
+    local okCG, cg = pcall(function() return game:GetService("CoreGui") end)
+    if okCG and cg then
+        if cg:FindFirstChild("SkyQueuedRunMarker") then return end
+        local marker = Instance.new("Folder")
+        marker.Name = "SkyQueuedRunMarker"
+        marker.Parent = cg
+    end
+end
 -- SKY Secure Loader (Base64 Encoded)
 local function b64decode(data)
     local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -36,15 +46,32 @@ pcall(function()
 end)
 ]===]
 
-local function QueueSkyScriptAfterTeleport()
-    local queueTeleport = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
-    if type(queueTeleport) ~= "function" then
-        return false
-    end
+local QueueSkyScriptAfterTeleport
+do
+    -- 🔒 الطابور يبقى موجود لين يصير انتقال فعلي، فلو نضيف نسخة مع كل ضغطة (حتى لو الانتقال فشل)
+    -- كل النسخ تتراكم وتشتغل مرة وحدة عند أول انتقال. لذلك نضيف نسخة وحدة بس لكل جلسة.
+    local alreadyQueued = false
+    QueueSkyScriptAfterTeleport = function(cancel)
+        if cancel then
+            -- الانتقال فشل فعلياً: نمسح الطابور (لو المنفّذ يدعم ذلك) عشان ما يشتغل السكربت لوحده بعدين
+            local clearQueue = clear_teleport_queue or clearteleportqueue
+            if type(clearQueue) == "function" then
+                if pcall(clearQueue) then alreadyQueued = false end
+            end
+            return
+        end
+        if alreadyQueued then return true end
+        local queueTeleport = queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+        if type(queueTeleport) ~= "function" then
+            return false
+        end
 
-    return pcall(function()
-        queueTeleport(SKY_TELEPORT_LOADER)
-    end)
+        local ok = pcall(function()
+            queueTeleport(SKY_TELEPORT_LOADER)
+        end)
+        if ok then alreadyQueued = true end
+        return ok
+    end
 end
 
 -- شاشة تحميل بسيطة بدل مقدمة S K Y
@@ -7965,14 +7992,15 @@ end)
         -- 🟢 يبان لما خويك يكون فاتح تاب الدردشة عنده
         local onlineLabel = Instance.new("TextLabel", chatContainer)
         onlineLabel.Name = "OnlineLabel"
-        onlineLabel.Size = UDim2.new(0.45, -8, 0, 22)
-        onlineLabel.Position = UDim2.new(0.55, 0, 0, 4)
+        -- 📍 انتقل لليسار تحت عنوان "الدردشة" (بعيد عن الجرس وعن شريط عام/أخوياك)
+        onlineLabel.Size = UDim2.new(0, 80, 0, 14)
+        onlineLabel.Position = UDim2.new(0, 8, 0, 24)
         onlineLabel.BackgroundTransparency = 1
         onlineLabel.Text = ""
         onlineLabel.TextColor3 = Color3.fromRGB(0, 230, 100)
         onlineLabel.Font = Enum.Font.Arcade
-        onlineLabel.TextSize = 12
-        onlineLabel.TextXAlignment = Enum.TextXAlignment.Right
+        onlineLabel.TextSize = 11
+        onlineLabel.TextXAlignment = Enum.TextXAlignment.Left
         onlineLabel.ZIndex = 7
 
         -- ✍️ يبان لما خويك يكون قاعد يكتب
@@ -7997,6 +8025,7 @@ end)
         local currentChatMode = "general"
         local chatMessageCache = {}
         local addChatMsg
+        local inputBox -- ⬅️ معرّف هنا فوق (كان يتعرّف بعد switchChatMode فيصير nil جواها ويوقف الدالة قبل ما تعيد بناء الرسائل)
 
         local chatModeBar = Instance.new("Frame", chatContainer)
         chatModeBar.Name = "ChatModeBar"
@@ -8287,24 +8316,37 @@ end)
         friendsChatStroke.Transparency = 0.2
         AddMovingBorderGlow(friendsChatStroke, 1.2, Color3.fromRGB(0, 140, 255))
 
+        -- 🤝 قايمة الأصدقاء: روبلوكس يخزّن نتيجة IsFriendsWith، فالصديق الجديد (اللي انضاف وأنت داخل اللعبة)
+        -- ممكن ما يبان صديق لين تعيد الدخول. عشان كذا نجيب القايمة الحديثة من موقع روبلوكس كل فترة
+        -- ونجمعها مع IsFriendsWith.
+        local _ChatFriends = {set = {}, last = 0, busy = false}
+
         local function isChatFriend(userId)
             userId = tonumber(userId)
             if not userId then return false end
             if userId == game.Players.LocalPlayer.UserId then return true end
+            if _ChatFriends.set[userId] then return true end
             local ok, result = pcall(function()
                 return game.Players.LocalPlayer:IsFriendsWith(userId)
             end)
-            return ok and result == true
+            if ok and result == true then return true end
+            -- ما طلع صديق: يمكن صديق جديد، نحدّث القايمة (بحد أدنى 20 ثانية بين كل تحديث)
+            if _ChatFriends.refresh then _ChatFriends.refresh(false) end
+            return false
         end
 
         local function isChatMessageVisible(m)
             if not m then return false end
             local mode = tostring(m.chatType or "general")
+            if mode == "private" then return false end -- 🔒 التنبيه الخاص ما يبان بالدردشة
+            -- 📍 الرسالة تبان في التاب اللي انكتبت فيه فقط (حتى لو الكاتب خويي):
+            --   • كتبها بالعام  → تبان بتاب العام بس.
+            --   • كتبها بأخوياك → تبان بتاب أخوياك بس، ولأصدقاء الكاتب بس (خصوصية).
             if currentChatMode == "friends" then
                 return mode == "friends" and isChatFriend(m.userId)
             end
             if mode == "friends" then return false end
-            return tonumber(m.userId) == game.Players.LocalPlayer.UserId or not isChatFriend(m.userId)
+            return true
         end
 
         local function clearChatRows()
@@ -8331,11 +8373,61 @@ end)
             end)
         end
 
+        -- 🔄 تحديث قايمة الأصدقاء من موقع روبلوكس. إذا تغيرت نعيد بناء الرسائل عشان تظهر اللي كانت مخفية.
+        function _ChatFriends.refresh(force)
+            if _ChatFriends.busy then return end
+            if not force and os.clock() - _ChatFriends.last < 20 then return end
+            _ChatFriends.busy = true
+            _ChatFriends.last = os.clock()
+            task.spawn(function()
+                local url = "https://friends.roblox.com/v1/users/" .. tostring(game.Players.LocalPlayer.UserId) .. "/friends"
+                local body
+                pcall(function() body = game:HttpGet(url) end)
+                if not body and request then
+                    pcall(function()
+                        local res = request({Url = url, Method = "GET"})
+                        if res and res.StatusCode == 200 then body = res.Body end
+                    end)
+                end
+                _ChatFriends.busy = false
+                if not body then return end
+                local okD, data = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
+                if not okD or type(data) ~= "table" or type(data.data) ~= "table" then return end
+                local newSet, changed = {}, false
+                for _, f in ipairs(data.data) do
+                    local id = tonumber(f.id)
+                    if id then
+                        newSet[id] = true
+                        if not _ChatFriends.set[id] then changed = true end
+                    end
+                end
+                for id in pairs(_ChatFriends.set) do
+                    if not newSet[id] then changed = true end
+                end
+                _ChatFriends.set = newSet
+                if changed then pcall(rebuildChatForMode) end
+            end)
+        end
+        task.spawn(function()
+            while true do
+                _ChatFriends.refresh(true)
+                task.wait(45)
+            end
+        end)
+
         local function switchChatMode(mode)
             mode = mode == "friends" and "friends" or "general"
             if currentChatMode == mode then return end
             currentChatMode = mode
             local isFriends = mode == "friends"
+
+            -- 💾 نحفظ آخر وضع (عام/أخوياك) عشان يرجع بعد إعادة تشغيل السكربت (مثل الانتقال لسيرفر ثاني)
+            pcall(function()
+                if writefile and makefolder and isfolder then
+                    if not isfolder("SkyConfig") then makefolder("SkyConfig") end
+                    writefile("SkyConfig/ChatMode.txt", mode)
+                end
+            end)
 
             -- 🔄 نبدّل مربع الدردشة نفسه، وليس مجرد الفقاعات داخله.
             -- كل قناة تحتفظ برسائلها وموضع تمريرها بشكل مستقل.
@@ -8359,7 +8451,7 @@ end)
             }):Play()
             generalChatBtn.TextColor3 = isFriends and Color3.fromRGB(145,145,155) or Color3.fromRGB(205,180,225)
             friendsChatBtn.TextColor3 = isFriends and Color3.fromRGB(120,190,255) or Color3.fromRGB(145,145,155)
-            inputBox.PlaceholderText = isFriends and "اكتب رسالة لاخوياك..." or "اكتب رسالتك هنا..."
+            if inputBox then inputBox.PlaceholderText = isFriends and "اكتب رسالة لاخوياك..." or "اكتب رسالتك هنا..." end
             rebuildChatForMode()
         end
 
@@ -8400,6 +8492,16 @@ end)
         chatLog = generalChatLog
         chatList = generalChatList
         generalChatLog.Visible = true
+
+        -- 💾 نرجّع آخر وضع دردشة كنت فيه. بدونها السكربت يرجع «عام» كل ما ينعاد تشغيله بعد الانتقال،
+        -- ورسايلك تنرسل كـ«عام» وأخوياك ما يشوفونها (العام يخفي رسائل الأصدقاء).
+        pcall(function()
+            if readfile and isfile and isfile("SkyConfig/ChatMode.txt") then
+                if readfile("SkyConfig/ChatMode.txt") == "friends" then
+                    switchChatMode("friends")
+                end
+            end
+        end)
 
         -- ⬇️ زر "آخر رسالة": يظهر فقط إذا المستخدم طالع فوق في الدردشة
         -- نضع الزر داخل الشريط الثابت أسفل الدردشة حتى لا تقصّه منطقة التمرير أو تخفيه خلف الرسائل.
@@ -8588,12 +8690,12 @@ end)
         
 
         -- 📌 شريط الإرسال ثابت دايم تحت (مرّ لنا من بره كباراميتر) — كذا ما يروح معاك لو سحبت لفوق أو تحت
-        local inputBox = Instance.new("TextBox", ChatInputBar)
+        inputBox = Instance.new("TextBox", ChatInputBar)
         inputBox.AnchorPoint = Vector2.new(1, 0)
         inputBox.Size = UDim2.new(0.45, 0, 1, 0)
         inputBox.Position = UDim2.new(1, -16, 0, 0) -- تحريك مربع كتابة الرسالة أكثر إلى اليسار
         inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-        inputBox.PlaceholderText = "اكتب رسالتك هنا..."
+        inputBox.PlaceholderText = currentChatMode == "friends" and "اكتب رسالة لاخوياك..." or "اكتب رسالتك هنا..."
         inputBox.Text = ""
         inputBox.TextColor3 = Color3.new(1,1,1)
         inputBox.Font = Enum.Font.Arcade
@@ -8882,11 +8984,274 @@ end)
         -- العنصر منفصل عن نص الرسالة حتى لا يغطي الكلام أو يغيّر محاذاته.
         local _otherUserInChat = false
 
+        -- 👀 نظام «مين شاف الرسالة»: كل شخص يدخل الدردشة تطلع صورته تحت آخر رسالة لي بدال «غير مقروء».
+        -- (جدول واحد بدال متغيرات كثيرة عشان ما نوصل حد 200 متغير محلي)
+        local _ReadRx = {
+            present = {},   -- أسماء اللي داخلين الدردشة الحين (غيري)
+            rows = {},      -- لكل رسالة: قايمة اللي شافوها
+            ids = {},       -- كاش اسم -> UserId
+            listOpen = false,
+        }
+
+        function _ReadRx.keyOf(row)
+            return tostring(row:GetAttribute("ChatTimestamp")) .. ":" .. tostring(row:GetAttribute("ChatText"))
+        end
+
+        function _ReadRx.resolve(name, callback)
+            local cached = _ReadRx.ids[name]
+            if cached then callback(cached) return end
+            local plr = game.Players:FindFirstChild(name)
+            if plr then
+                _ReadRx.ids[name] = plr.UserId
+                callback(plr.UserId)
+                return
+            end
+            for _, m in pairs(chatMessageCache) do
+                if type(m) == "table" and m.sender == name and tonumber(m.userId) then
+                    _ReadRx.ids[name] = tonumber(m.userId)
+                    callback(_ReadRx.ids[name])
+                    return
+                end
+            end
+            task.spawn(function()
+                local ok, uid = pcall(function() return game.Players:GetUserIdFromNameAsync(name) end)
+                if ok and uid then
+                    _ReadRx.ids[name] = uid
+                    callback(uid)
+                end
+            end)
+        end
+
+        -- 🎨 لون الحافة حسب الشخص: خويي = أزرق، مو خويي = رصاصي (الأسود ثابت مع التوهج)
+        _ReadRx.GRAY = Color3.fromRGB(145, 145, 155)
+        _ReadRx.BLUE = Color3.fromRGB(0, 140, 255)
+        _ReadRx.friendCache = {}
+
+        function _ReadRx.setAvatar(img, name, stroke, grad)
+            _ReadRx.resolve(name, function(uid)
+                if img and img.Parent then
+                    img.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(uid) .. "&w=150&h=150"
+                end
+                if stroke then
+                    task.spawn(function()
+                        local isFriend = _ReadRx.friendCache[uid]
+                        if isFriend == nil then
+                            isFriend = isChatFriend(uid) == true
+                            _ReadRx.friendCache[uid] = isFriend
+                        end
+                        if stroke.Parent then
+                            local color = isFriend and _ReadRx.BLUE or _ReadRx.GRAY
+                            stroke.Color = color
+                            SetGlowColor(grad, color)
+                        end
+                    end)
+                end
+            end)
+        end
+
+        -- 📋 قائمة كل اللي شافوا الرسالة (تطلع من تحت لنص الشاشة)
+        function _ReadRx.openList(row)
+            if _ReadRx.listOpen then return end
+            local rd = _ReadRx.rows[_ReadRx.keyOf(row)]
+            if not rd or #rd.list == 0 then return end
+            _ReadRx.listOpen = true
+            local purple = Color3.fromRGB(170, 0, 255)
+            local isEn = _SelectedLanguage == "English"
+
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "SkyReadersList"
+            gui.ResetOnSpawn = false
+            gui.IgnoreGuiInset = true
+            gui.DisplayOrder = 1300
+            gui.Parent = game.CoreGui
+
+            local dim = Instance.new("TextButton", gui)
+            dim.Size = UDim2.new(1, 0, 1, 0)
+            dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            dim.BackgroundTransparency = 1
+            dim.BorderSizePixel = 0
+            dim.Text = ""
+            dim.AutoButtonColor = false
+            dim.ZIndex = 200
+
+            local shown = math.min(#rd.list, 5)
+            local panel = Instance.new("Frame", gui)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.Size = UDim2.new(0, 300, 0, 112 + shown * 40)
+            panel.Position = UDim2.new(0.5, 0, 1.4, 0)
+            panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            panel.BorderSizePixel = 0
+            panel.Active = true
+            panel.ZIndex = 201
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = purple
+            panelStroke.Thickness = 2.2
+            pcall(function() AddMovingBorderGlow(panelStroke, 2, purple) end)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size = UDim2.new(1, -24, 0, 30)
+            title.Position = UDim2.new(0, 12, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Text = isEn and "👁️ Seen by" or "👁️ شافوا الرسالة"
+            title.TextColor3 = purple
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 19
+            title.ZIndex = 202
+
+            local scroll = Instance.new("ScrollingFrame", panel)
+            scroll.Size = UDim2.new(1, -28, 0, shown * 40)
+            scroll.Position = UDim2.new(0, 14, 0, 46)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 3
+            scroll.CanvasSize = UDim2.new(0, 0, 0, #rd.list * 40)
+            scroll.ZIndex = 202
+
+            for i, name in ipairs(rd.list) do
+                local item = Instance.new("Frame", scroll)
+                item.Size = UDim2.new(1, -6, 0, 36)
+                item.Position = UDim2.new(0, 0, 0, (i - 1) * 40)
+                item.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                item.BorderSizePixel = 0
+                item.ZIndex = 203
+                Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
+
+                local img = Instance.new("ImageLabel", item)
+                img.Size = UDim2.new(0, 28, 0, 28)
+                img.Position = UDim2.new(0, 6, 0.5, -14)
+                img.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                img.BorderSizePixel = 0
+                img.ZIndex = 204
+                Instance.new("UICorner", img).CornerRadius = UDim.new(1, 0)
+                local imgStroke = Instance.new("UIStroke", img)
+                imgStroke.Thickness = 1.5
+                imgStroke.Color = _ReadRx.GRAY
+                local imgGrad = AddMovingBorderGlow(imgStroke, 1.5, _ReadRx.GRAY)
+                _ReadRx.setAvatar(img, name, imgStroke, imgGrad)
+
+                local nm = Instance.new("TextLabel", item)
+                nm.Size = UDim2.new(1, -46, 1, 0)
+                nm.Position = UDim2.new(0, 42, 0, 0)
+                nm.BackgroundTransparency = 1
+                nm.Text = name
+                nm.TextColor3 = Color3.fromRGB(235, 235, 235)
+                nm.Font = Enum.Font.Arcade
+                nm.TextSize = 13
+                nm.TextXAlignment = Enum.TextXAlignment.Left
+                nm.TextTruncate = Enum.TextTruncate.AtEnd
+                nm.ZIndex = 204
+            end
+
+            local okBtn = Instance.new("TextButton", panel)
+            okBtn.Size = UDim2.new(1, -28, 0, 36)
+            okBtn.Position = UDim2.new(0, 14, 1, -48)
+            okBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            okBtn.BorderSizePixel = 0
+            okBtn.Text = isEn and "OK" or "تمام"
+            okBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            okBtn.Font = Enum.Font.Arcade
+            okBtn.TextSize = 16
+            okBtn.AutoButtonColor = false
+            okBtn.ZIndex = 203
+            Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0, 9)
+            local okStroke = Instance.new("UIStroke", okBtn)
+            okStroke.Color = purple
+            okStroke.Thickness = 2
+            okStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            pcall(function() AddMovingBorderGlow(okStroke, 1.5, purple) end)
+
+            _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+
+            local closing = false
+            local function closeList()
+                if closing then return end
+                closing = true
+                _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                t:Play()
+                t.Completed:Wait()
+                gui:Destroy()
+                _ReadRx.listOpen = false
+            end
+            local function cancel()
+                playClick()
+                task.spawn(closeList)
+            end
+            okBtn.MouseButton1Click:Connect(cancel)
+            dim.MouseButton1Click:Connect(cancel)
+        end
+
+        -- 🎨 يرسم تحت الرسالة: «غير مقروء» لو ما أحد شافها، أو صور اللي شافوها (لين 3 صور + «المزيد»)
+        function _ReadRx.render(row, isLatest)
+            local bubbleObj = row:FindFirstChild("Bubble")
+            if not bubbleObj then return end
+            local readStatus = bubbleObj:FindFirstChild("ReadStatus")
+            local av = bubbleObj:FindFirstChild("ReadAvatars")
+            local rd = _ReadRx.rows[_ReadRx.keyOf(row)]
+            local count = rd and #rd.list or 0
+            local isEn = _SelectedLanguage == "English"
+
+            if readStatus then
+                readStatus.Visible = isLatest and count == 0
+                readStatus.Text = isEn and "Unread" or "غير مقروء"
+                readStatus.TextColor3 = Color3.fromRGB(175, 175, 185)
+            end
+            if not av then return end
+            av.Visible = isLatest and count > 0
+            if not av.Visible then return end
+
+            local sig = table.concat(rd.list, ",")
+            if av:GetAttribute("ReadersSig") == sig then return end
+            av:SetAttribute("ReadersSig", sig)
+            for _, c in ipairs(av:GetChildren()) do
+                if not c:IsA("UIListLayout") then c:Destroy() end
+            end
+
+            for i = 1, math.min(count, 3) do
+                local img = Instance.new("ImageLabel")
+                img.Name = "Reader" .. i
+                img.LayoutOrder = i
+                img.Size = UDim2.new(0, 16, 0, 16)
+                img.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                img.BorderSizePixel = 0
+                img.ZIndex = 10
+                img.Parent = av
+                Instance.new("UICorner", img).CornerRadius = UDim.new(1, 0)
+                local st = Instance.new("UIStroke", img)
+                st.Thickness = 1.2
+                st.Color = _ReadRx.GRAY
+                local stGrad = AddMovingBorderGlow(st, 1.5, _ReadRx.GRAY)
+                _ReadRx.setAvatar(img, rd.list[i], st, stGrad)
+            end
+
+            if count >= 3 then
+                local more = Instance.new("TextButton")
+                more.Name = "MoreReaders"
+                more.LayoutOrder = 10
+                more.AutomaticSize = Enum.AutomaticSize.X
+                more.Size = UDim2.new(0, 0, 0, 16)
+                more.BackgroundTransparency = 1
+                more.Text = isEn and "more" or "المزيد"
+                more.TextColor3 = Color3.fromRGB(200, 150, 255)
+                more.Font = Enum.Font.Arcade
+                more.TextSize = 9
+                more.AutoButtonColor = false
+                more.ZIndex = 11
+                more.Parent = av
+                more.MouseButton1Click:Connect(function()
+                    playClick()
+                    _ReadRx.openList(row)
+                end)
+            end
+        end
+
         local function updateOwnMessageReadState(otherUserInChat)
             local latestOwnRow = nil
             local latestTimestamp = -math.huge
 
-            -- نحدد آخر رسالة لي فقط حتى لا نكرر كلمة الحالة تحت كل الرسائل القديمة.
+            -- نحدد آخر رسالة لي فقط حتى لا نكرر الحالة تحت كل الرسائل القديمة.
             for _, row in ipairs(chatLog:GetChildren()) do
                 if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
                     local rowTimestamp = tonumber(row:GetAttribute("ChatTimestamp")) or 0
@@ -8894,27 +9259,31 @@ end)
                         latestTimestamp = rowTimestamp
                         latestOwnRow = row
                     end
+                end
+            end
 
-                    -- إذا دخل مستخدم آخر صفحة الدردشة، نثبت الرسائل على «مقروء».
-                    if otherUserInChat then
-                        row:SetAttribute("ReadState", "Read")
+            -- أي شخص داخل الدردشة الحين ينضاف لقايمة اللي شافوا آخر رسالة (ويبقى حتى لو طلع بعدين)
+            if latestOwnRow then
+                local key = _ReadRx.keyOf(latestOwnRow)
+                local rd = _ReadRx.rows[key]
+                if not rd then
+                    rd = {list = {}, set = {}}
+                    _ReadRx.rows[key] = rd
+                end
+                for _, name in ipairs(_ReadRx.present) do
+                    if not rd.set[name] then
+                        rd.set[name] = true
+                        table.insert(rd.list, name)
                     end
+                end
+                if #rd.list > 0 then
+                    latestOwnRow:SetAttribute("ReadState", "Read")
                 end
             end
 
             for _, row in ipairs(chatLog:GetChildren()) do
                 if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
-                    local readStatus = row:FindFirstChild("ReadStatus")
-                    if readStatus then
-                        readStatus.Visible = (row == latestOwnRow)
-                        local isRead = row:GetAttribute("ReadState") == "Read"
-                        readStatus.Text = isRead
-                            and (_SelectedLanguage == "English" and "Read" or "مقروء")
-                            or (_SelectedLanguage == "English" and "Unread" or "غير مقروء")
-                        readStatus.TextColor3 = isRead
-                            and Color3.fromRGB(120, 220, 150)
-                            or Color3.fromRGB(175, 175, 185)
-                    end
+                    _ReadRx.render(row, row == latestOwnRow)
                 end
             end
         end
@@ -8998,7 +9367,7 @@ end)
             bubble.BackgroundTransparency = 1 -- يبدأ شفاف عشان الانميشن
             bubble.BorderSizePixel = 0
             bubble.AutomaticSize = Enum.AutomaticSize.Y
-            bubble.Size = UDim2.new(0, calcBubbleWidth(text), 0, 0)
+            bubble.Size = UDim2.new(0, math.max(calcBubbleWidth(text), isMine and 116 or 0), 0, 0) -- رسائلي: عرض أدنى يكفي 3 صور + «المزيد»
             bubble.ZIndex = 9
             bubble.Parent = row
 
@@ -9079,6 +9448,21 @@ end)
                 readStatus.TextSize = 9
                 readStatus.TextXAlignment = Enum.TextXAlignment.Right
                 readStatus.ZIndex = 10
+
+                -- 👥 صور اللي شافوا الرسالة (تبدل كلمة «غير مقروء» أول ما أحد يدخل الدردشة)
+                local readAvatars = Instance.new("Frame", bubble)
+                readAvatars.Name = "ReadAvatars"
+                readAvatars.LayoutOrder = 3
+                readAvatars.BackgroundTransparency = 1
+                readAvatars.Size = UDim2.new(1, 0, 0, 16)
+                readAvatars.Visible = false
+                readAvatars.ZIndex = 10
+                local readAvatarsLayout = Instance.new("UIListLayout", readAvatars)
+                readAvatarsLayout.FillDirection = Enum.FillDirection.Horizontal
+                readAvatarsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+                readAvatarsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                readAvatarsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                readAvatarsLayout.Padding = UDim.new(0, 3)
             end
 
             -- 📍 محاذاة: كلامي يمين، كلام خويي يسار (نفس الشي عند الطرفين لأنه مبني على isMine)
@@ -9912,7 +10296,7 @@ end)
             local username = selectedInfoPlayer and selectedInfoPlayer.Name or tostring(sender)
             local mapName = "غير معروف"
             pcall(function()
-                mapName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name
+                mapName = game:GetService("MarketplaceService"):GetProductInfo(selectedInfoPlaceId or game.PlaceId).Name
             end)
             playerInfoTitle.Text = displayName
             local avatarUserId = selectedInfoPlayer and selectedInfoPlayer.UserId or selectedInfoUserId
@@ -9932,17 +10316,134 @@ end)
             playerInfoFrame.Visible = true
         end
 
-        joinServerBtn.MouseButton1Click:Connect(function()
-            if not selectedInfoPlayer and (not selectedInfoJobId or selectedInfoJobId == "") then return end
-            pcall(function()
-                QueueSkyScriptAfterTeleport()
-                local targetPlace = selectedInfoPlaceId or game.PlaceId
-                local targetJob = selectedInfoJobId
-                if targetJob and targetJob ~= "" then
-                    game:GetService("TeleportService"):TeleportToPlaceInstance(targetPlace, targetJob, game.Players.LocalPlayer)
+        do -- 🌐 معزول داخل do لتفادي حد 200 متغير محلي
+            -- ❤️ قائمة تطلع من تحت لنص الشاشة إذا الانضمام فشل (اللاعب في ماب ثاني)
+            local _joinFailPromptOpen = false
+            local function ShowJoinFailPrompt()
+                if _joinFailPromptOpen then return end
+                _joinFailPromptOpen = true
+
+                local purple = Color3.fromRGB(170, 0, 255)
+
+                local promptGui = Instance.new("ScreenGui")
+                promptGui.Name = "SkyJoinFailPrompt"
+                promptGui.ResetOnSpawn = false
+                promptGui.IgnoreGuiInset = true
+                promptGui.DisplayOrder = 1300
+                promptGui.Parent = game.CoreGui
+
+                -- خلفية معتمة (الضغط عليها = إغلاق)
+                local dim = Instance.new("TextButton", promptGui)
+                dim.Size = UDim2.new(1, 0, 1, 0)
+                dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                dim.BackgroundTransparency = 1
+                dim.BorderSizePixel = 0
+                dim.Text = ""
+                dim.AutoButtonColor = false
+                dim.ZIndex = 200
+
+                local panel = Instance.new("Frame", promptGui)
+                panel.AnchorPoint = Vector2.new(0.5, 0.5)
+                panel.Size = UDim2.new(0, 330, 0, 250)
+                panel.Position = UDim2.new(0.5, 0, 1.4, 0) -- يبدأ تحت الشاشة
+                panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                panel.BorderSizePixel = 0
+                panel.Active = true
+                panel.ZIndex = 201
+                Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+                local panelStroke = Instance.new("UIStroke", panel)
+                panelStroke.Color = purple
+                panelStroke.Thickness = 2.2
+                pcall(function() AddMovingBorderGlow(panelStroke, 2, purple) end)
+
+                local info = Instance.new("TextLabel", panel)
+                info.Size = UDim2.new(1, -28, 1, -84)
+                info.Position = UDim2.new(0, 14, 0, 14)
+                info.BackgroundTransparency = 1
+                info.Text = "إذا ما انتقلت للشخص\n\nما يمديك تنتقل له لأنه في ماب ثاني غير عن مابك\n\nلازم تكونون في نفس الماب ❤️"
+                info.TextColor3 = Color3.fromRGB(235, 235, 235)
+                info.Font = Enum.Font.Arcade
+                info.TextSize = 18
+                info.TextWrapped = true
+                info.TextXAlignment = Enum.TextXAlignment.Center
+                info.TextYAlignment = Enum.TextYAlignment.Center
+                info.ZIndex = 202
+
+                local okBtn = Instance.new("TextButton", panel)
+                okBtn.Size = UDim2.new(1, -28, 0, 40)
+                okBtn.Position = UDim2.new(0, 14, 1, -54)
+                okBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                okBtn.BorderSizePixel = 0
+                okBtn.Text = "تمام"
+                okBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+                okBtn.Font = Enum.Font.Arcade
+                okBtn.TextSize = 17
+                okBtn.AutoButtonColor = false
+                okBtn.ZIndex = 203
+                Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0, 9)
+                local okStroke = Instance.new("UIStroke", okBtn)
+                okStroke.Color = purple
+                okStroke.Thickness = 2
+                okStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                pcall(function() AddMovingBorderGlow(okStroke, 1.5, purple) end)
+
+                -- دخول: من تحت الى النص
+                _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+                _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+
+                local closing = false
+                local function closePrompt()
+                    if closing then return end
+                    closing = true
+                    _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                    local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                    t:Play()
+                    t.Completed:Wait()
+                    promptGui:Destroy()
+                    _joinFailPromptOpen = false
                 end
+                local function cancel()
+                    playClick()
+                    task.spawn(closePrompt)
+                end
+                okBtn.MouseButton1Click:Connect(cancel)
+                dim.MouseButton1Click:Connect(cancel)
+            end
+
+            joinServerBtn.MouseButton1Click:Connect(function()
+                if not selectedInfoPlayer and (not selectedInfoJobId or selectedInfoJobId == "") then return end
+                local targetPlace = tonumber(selectedInfoPlaceId) or game.PlaceId
+                local targetJob = selectedInfoJobId
+                if not targetJob or targetJob == "" then return end
+
+                -- نفس السيرفر أصلاً: ما في شي ننتقل له
+                if targetJob == game.JobId then
+                    Notify("🌐 انضمام", "أنتم في نفس السيرفر أصلاً", Color3.fromRGB(170, 0, 255), true)
+                    return
+                end
+
+                local TeleportSvc = game:GetService("TeleportService")
+                local handled = false
+                local failConn
+                -- لو الانتقال فشل (خطأ من روبلوكس، أو ما صار انتقال خلال ثواني) نطلع القائمة.
+                local function onNotTeleported(definitive)
+                    if handled then return end
+                    handled = true
+                    if failConn then failConn:Disconnect() end
+                    -- فشل مؤكد من روبلوكس: نلغي اللودر المنتظر عشان ما يشتغل السكربت بعدين لوحده
+                    if definitive == true then pcall(QueueSkyScriptAfterTeleport, true) end
+                    ShowJoinFailPrompt()
+                end
+                failConn = TeleportSvc.TeleportInitFailed:Connect(function() onNotTeleported(true) end)
+                task.delay(10, onNotTeleported)
+
+                local ok = pcall(function()
+                    QueueSkyScriptAfterTeleport()
+                    TeleportSvc:TeleportToPlaceInstance(targetPlace, targetJob, game.Players.LocalPlayer)
+                end)
+                if not ok then onNotTeleported(true) end
             end)
-        end)
+        end
         mutePlayerBtn.MouseButton1Click:Connect(function()
             if not selectedInfoUserId then return end
             local minutes = math.floor(tonumber(muteMinutesBox.Text) or 0)
@@ -10204,6 +10705,102 @@ end)
         local _shownPrivateAlertIds = {} -- 🔔 كل تنبيه خاص يظهر مرة وحدة بس (بمعرفه)، حتى لو ظل موجود بالجلب لين يوصل تنبيه جديد
         local _handledBadWordMsgIds = {} -- 🧹 كل رسالة مسيئة نعالجها مرة وحدة بس، حتى لو تكررت بنفس الجلب قبل ما ينفذ حذفها من السيرفر
         local _debugChat = true -- 🐞 خله true لين نتأكد إن كل شي يشتغل تمام، بعدها تقدر تخليه false
+        -- 🔄 الحضور/الكتابة ينجلبون كل 3 ثواني دائماً، حتى لو الرسائل ما تغيرت.
+        -- (قبل: كان «continue» يتخطاهم إذا ما جت رسالة جديدة، فدخول شخص للدردشة ما ينكشف إلا مع رسالة)
+        local _Aux = {last = 0}
+        function _Aux.safe()
+            local okAux, errAux = pcall(_Aux.run)
+            if not okAux and not _Aux.warned then
+                _Aux.warned = true
+                WARN("خطأ في نظام الحضور: " .. tostring(errAux))
+            end
+        end
+        function _Aux.run()
+            _Aux.last = os.clock()
+                -- 🟢 نبعت "أنا موجود بالدردشة" بس وتاب الدردشة يكون مفتوح عندي فعلاً
+                if State._chatPageOpen then
+                    task.spawn(function()
+                        pcall(function()
+                            request({
+                                Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN,
+                                Method = "PATCH",
+                                Headers = {["Content-Type"] = "application/json"},
+                                Body = game:GetService("HttpService"):JSONEncode({
+                                    [game.Players.LocalPlayer.Name] = os.time()
+                                })
+                            })
+                        end)
+                    end)
+                end
+
+                -- ✍️ نجيب هل في حد يكتب الحين (غير نفسي)
+                do
+                    local okT, resT = pcall(function()
+                        return request({Url = TYPING_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+                    end)
+                    if okT and resT and resT.Body then
+                        local okD, typingData = pcall(function()
+                            return game:GetService("HttpService"):JSONDecode(resT.Body)
+                        end)
+                        local myName = game.Players.LocalPlayer.Name
+                        if okD and typingData and typingData.name and typingData.name ~= myName
+                            and typingData.ts and (os.time() - typingData.ts) < 6 then
+                            typingLabel.Text = typingData.name .. " : يكتب..."
+                        else
+                            typingLabel.Text = ""
+                        end
+                    end
+                end
+
+                -- 🟢 نجيب هل خويي متصل (فاتح تاب الدردشة عنده هو الحين)
+                do
+                    local okP, resP = pcall(function()
+                        return request({Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
+                    end)
+                    if okP and resP and resP.Body then
+                        local okD, presenceData = pcall(function()
+                            return game:GetService("HttpService"):JSONDecode(resP.Body)
+                        end)
+                        local myName = game.Players.LocalPlayer.Name
+                        local friendOnline = false
+                        local presentNow = {}
+                        if okD and type(presenceData) == "table" then
+                            -- ⏱️ ساعة جهازي وساعة جهاز الثاني ممكن تختلف (ثواني أو دقايق)، فمقارنة os.time() لحالها
+                            -- تخلي الشخص «مو موجود» غلط. لذلك نعتبره موجود إذا: وقته قريب من وقتي،
+                            -- أو إذا قيمته كانت تتغير باستمرار عندي (يعني يرسل حضور الحين) حتى لو ساعته مختلفة.
+                            local nowClock = os.clock()
+                            _Aux.seen = _Aux.seen or {}
+                            for pname, pts in pairs(presenceData) do
+                                if pname ~= myName and type(pts) == "number" then
+                                    local entry = _Aux.seen[pname]
+                                    if not entry then
+                                        entry = {value = pts, t = nowClock, changed = false}
+                                        _Aux.seen[pname] = entry
+                                    elseif entry.value ~= pts then
+                                        entry.value = pts
+                                        entry.t = nowClock
+                                        entry.changed = true
+                                    end
+                                    local clockFresh = math.abs(os.time() - pts) < 10
+                                    local stillMoving = entry.changed and (nowClock - entry.t) < 15
+                                    if clockFresh or stillMoving then
+                                        friendOnline = true
+                                        table.insert(presentNow, pname)
+                                    end
+                                end
+                            end
+                        end
+                        table.sort(presentNow)
+                        _ReadRx.present = presentNow
+                        onlineLabel.Text = friendOnline and "🟢 متصل" or ""
+                        _otherUserInChat = friendOnline
+                        -- إذا لم يوجد أحد آخر داخل قائمة الدردشة تبقى رسائلي «غير مقروءة».
+                        -- عند ظهور صديق/مستخدم آخر في الحضور تتحول إلى «مقروء».
+                        updateOwnMessageReadState(friendOnline)
+                    end
+                end
+
+        end
         task.spawn(function()
             while true do
                 local success, response = pcall(function()
@@ -10222,6 +10819,7 @@ end)
                     -- نحدّث الكتم في كل دورة، وليس فقط عند وصول رسالة جديدة.
                     refreshChatMutes()
                     if response.Body == lastData then
+                        if os.clock() - _Aux.last >= 3 then _Aux.safe() end
                         task.wait(1)
                         continue
                     end
@@ -10287,6 +10885,7 @@ end)
                                     end
                                 elseif not senderMuted and not incomingBadWord
                                     and m.chatType ~= "bubble"
+                                    and m.chatType ~= "private" -- 🔒 التنبيهات الخاصة ما تنرسم بالدردشة أبداً (لا عندي ولا عند غيري)
                                     and not (m.chatType == "developer" and m.developerMessage == true) then
                                     chatMessageCache["id:" .. tostring(m.id)] = m
                                     if isChatMessageVisible(m) then
@@ -10400,64 +10999,8 @@ end)
                     end
                 end
 
-                -- 🟢 نبعت "أنا موجود بالدردشة" بس وتاب الدردشة يكون مفتوح عندي فعلاً
-                task.spawn(function()
-                        pcall(function()
-                            request({
-                                Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN,
-                                Method = "PATCH",
-                                Headers = {["Content-Type"] = "application/json"},
-                                Body = game:GetService("HttpService"):JSONEncode({
-                                    [game.Players.LocalPlayer.Name] = os.time()
-                                })
-                            })
-                        end)
-                    end)
-
-                -- ✍️ نجيب هل في حد يكتب الحين (غير نفسي)
-                do
-                    local okT, resT = pcall(function()
-                        return request({Url = TYPING_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
-                    end)
-                    if okT and resT and resT.Body then
-                        local okD, typingData = pcall(function()
-                            return game:GetService("HttpService"):JSONDecode(resT.Body)
-                        end)
-                        local myName = game.Players.LocalPlayer.Name
-                        if okD and typingData and typingData.name and typingData.name ~= myName
-                            and typingData.ts and (os.time() - typingData.ts) < 6 then
-                            typingLabel.Text = typingData.name .. " : يكتب..."
-                        else
-                            typingLabel.Text = ""
-                        end
-                    end
-                end
-
-                -- 🟢 نجيب هل خويي متصل (فاتح تاب الدردشة عنده هو الحين)
-                do
-                    local okP, resP = pcall(function()
-                        return request({Url = PRESENCE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"})
-                    end)
-                    if okP and resP and resP.Body then
-                        local okD, presenceData = pcall(function()
-                            return game:GetService("HttpService"):JSONDecode(resP.Body)
-                        end)
-                        local myName = game.Players.LocalPlayer.Name
-                        local friendOnline = false
-                        if okD and presenceData then
-                            for pname, pts in pairs(presenceData) do
-                                if pname ~= myName and type(pts) == "number" and (os.time() - pts) < 10 then
-                                    friendOnline = true
-                                end
-                            end
-                        end
-                        onlineLabel.Text = friendOnline and "🟢 متصل" or ""
-                        _otherUserInChat = friendOnline
-                        -- إذا لم يوجد أحد آخر داخل قائمة الدردشة تبقى رسائلي «غير مقروءة».
-                        -- عند ظهور صديق/مستخدم آخر في الحضور تتحول إلى «مقروء».
-                        updateOwnMessageReadState(friendOnline)
-                    end
-                end
+                -- 🟢 حضور + ✍️ كتابة (دالة مستقلة عشان تشتغل حتى لو ما تغيرت الرسائل)
+                _Aux.safe()
 
                 task.wait(3)
             end
