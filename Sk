@@ -1169,6 +1169,48 @@ local function RunMyOriginalScript()
     local LocalPlayer = Players.LocalPlayer
     local Workspace = game:GetService("Workspace")
 
+    -- 👑 اسم المطور فوق الرأس
+    local function AddDeveloperTag(character)
+        if not character then return end
+        local head = character:FindFirstChild("Head") or character:WaitForChild("Head", 5)
+        if not head then return end
+
+        local oldTag = head:FindFirstChild("SkyDeveloperTag")
+        if oldTag then oldTag:Destroy() end
+
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "SkyDeveloperTag"
+        billboard.Adornee = head
+        billboard.Size = UDim2.new(0, 190, 0, 34)
+        billboard.StudsOffset = Vector3.new(0, 2.7, 0)
+        billboard.AlwaysOnTop = true
+        billboard.MaxDistance = 1000
+        billboard.Parent = head
+
+        local label = Instance.new("TextLabel")
+        label.Name = "DeveloperText"
+        label.Size = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.Text = "👑المطور👑 : Sk"
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextStrokeColor3 = Color3.fromRGB(170, 0, 255)
+        label.TextStrokeTransparency = 0
+        label.Font = Enum.Font.Arcade
+        label.TextScaled = true
+        label.Parent = billboard
+    end
+
+    local function SetupDeveloperTag()
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        AddDeveloperTag(character)
+    end
+
+    SetupDeveloperTag()
+    LocalPlayer.CharacterAdded:Connect(function(character)
+        task.wait(0.5)
+        AddDeveloperTag(character)
+    end)
+
 
     -- ==================== صوت الموت (مرة واحدة لكل موت) ====================
     local DeathSound = Instance.new("Sound")
