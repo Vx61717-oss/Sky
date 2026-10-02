@@ -3096,8 +3096,7 @@ end)
     ChatInputBar.AnchorPoint = Vector2.new(0, 1)
     -- ⌨️ مربع الكتابة: داخل مساحة التاب وبعيد عن الحافة السفلية
     ChatInputBar.Position = UDim2.new(0, 5, 1, -58)
-    -- ↩️ الشريط صار أطول قليلًا فقط لاستيعاب معاينة الرد فوق مربع الكتابة.
-    ChatInputBar.Size = UDim2.new(1, -10, 0, 78)
+    ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
     ChatInputBar.BackgroundTransparency = 1
     ChatInputBar.ZIndex = 15
     ChatInputBar.Visible = false -- يبان بس وتاب الدردشة مفتوح
@@ -7389,7 +7388,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page5.Visible = true
         ChatInputBar.Parent = ChatPanel
         ChatInputBar.Position = UDim2.new(0, 5, 1, -55)
-        ChatInputBar.Size = UDim2.new(1, -10, 0, 78)
+        ChatInputBar.Size = UDim2.new(1, -10, 0, 44)
         ChatInputBar.Visible = true
 
         -- أزيل الخط الفاصل البنفسجي من قائمة الدردشة.
@@ -8136,20 +8135,6 @@ end)
         local addChatMsg
         local inputBox -- ⬅️ معرّف هنا فوق (كان يتعرّف بعد switchChatMode فيصير nil جواها ويوقف الدالة قبل ما تعيد بناء الرسائل)
 
-        -- ↩️ نظام الرد على الرسائل
-        -- نخزن الرسالة المختارة هنا، ثم نعرض معاينتها فوق مربع الكتابة.
-        local replyState = {
-            active = false,
-            sender = "",
-            text = "",
-            userId = nil,
-        }
-        local replyPreview
-        local replyPreviewText
-        local replyPreviewName
-        local replyPreviewAvatar
-        local clearReply
-
         local chatModeBar = Instance.new("Frame", chatContainer)
         chatModeBar.Name = "ChatModeBar"
         chatModeBar.AnchorPoint = Vector2.new(0.5, 0)
@@ -8535,7 +8520,7 @@ end)
             end
             table.sort(items, function(a,b) return (tonumber(a.timestamp) or 0) < (tonumber(b.timestamp) or 0) end)
             for _, m in ipairs(items) do
-                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyToSender, m.replyToText, m.replyToUserId, m.replyToId, m.replyToClientId, m.replyToTimestamp)
+                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId)
             end
             task.defer(function()
                 if chatLog and chatLog.Parent then
@@ -8865,100 +8850,8 @@ end)
         -- 📌 شريط الإرسال ثابت دايم تحت (مرّ لنا من بره كباراميتر) — كذا ما يروح معاك لو سحبت لفوق أو تحت
         inputBox = Instance.new("TextBox", ChatInputBar)
         inputBox.AnchorPoint = Vector2.new(1, 0)
-        inputBox.Size = UDim2.new(0.45, 0, 0, 44)
-        inputBox.Position = UDim2.new(1, -16, 0, 34) -- مربع الكتابة يبقى تحت معاينة الرد
-
-        -- ↩️ معاينة الرد: صغيرة، فوق مربع الكتابة مباشرة، والصورة يسار والنص رمادي خفيف.
-        replyPreview = Instance.new("Frame", ChatInputBar)
-        replyPreview.Name = "ReplyPreview"
-        replyPreview.Position = UDim2.new(1, -16, 0, 1)
-        replyPreview.AnchorPoint = Vector2.new(1, 0)
-        replyPreview.Size = UDim2.new(0.45, 0, 0, 30)
-        replyPreview.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
-        replyPreview.BackgroundTransparency = 0.12
-        replyPreview.BorderSizePixel = 0
-        replyPreview.Visible = false
-        replyPreview.ZIndex = 20
-        Instance.new("UICorner", replyPreview).CornerRadius = UDim.new(0, 9)
-
-        local replyPreviewStroke = Instance.new("UIStroke", replyPreview)
-        replyPreviewStroke.Color = Color3.fromRGB(95, 95, 105)
-        replyPreviewStroke.Thickness = 1
-        replyPreviewStroke.Transparency = 0.35
-
-        local replyPreviewLine = Instance.new("Frame", replyPreview)
-        replyPreviewLine.Size = UDim2.new(0, 2, 1, -8)
-        replyPreviewLine.Position = UDim2.new(0, 5, 0, 4)
-        replyPreviewLine.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
-        replyPreviewLine.BorderSizePixel = 0
-        replyPreviewLine.ZIndex = 21
-        Instance.new("UICorner", replyPreviewLine).CornerRadius = UDim.new(1, 0)
-
-        replyPreviewAvatar = Instance.new("ImageLabel", replyPreview)
-        replyPreviewAvatar.Size = UDim2.new(0, 22, 0, 22)
-        replyPreviewAvatar.Position = UDim2.new(0, 11, 0.5, -11)
-        replyPreviewAvatar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        replyPreviewAvatar.BorderSizePixel = 0
-        replyPreviewAvatar.ZIndex = 21
-        Instance.new("UICorner", replyPreviewAvatar).CornerRadius = UDim.new(1, 0)
-
-        replyPreviewName = Instance.new("TextLabel", replyPreview)
-        replyPreviewName.Size = UDim2.new(1, -60, 0, 10)
-        replyPreviewName.Position = UDim2.new(0, 39, 0, 3)
-        replyPreviewName.BackgroundTransparency = 1
-        replyPreviewName.Text = ""
-        replyPreviewName.TextColor3 = Color3.fromRGB(185, 185, 195)
-        replyPreviewName.Font = Enum.Font.Arcade
-        replyPreviewName.TextSize = 8
-        replyPreviewName.TextXAlignment = Enum.TextXAlignment.Left
-        replyPreviewName.TextTruncate = Enum.TextTruncate.AtEnd
-        replyPreviewName.ZIndex = 21
-
-        replyPreviewText = Instance.new("TextLabel", replyPreview)
-        replyPreviewText.Size = UDim2.new(1, -60, 0, 12)
-        replyPreviewText.Position = UDim2.new(0, 39, 0, 13)
-        replyPreviewText.BackgroundTransparency = 1
-        replyPreviewText.Text = ""
-        replyPreviewText.TextColor3 = Color3.fromRGB(145, 145, 155)
-        replyPreviewText.Font = Enum.Font.Arcade
-        replyPreviewText.TextSize = 9
-        replyPreviewText.TextXAlignment = Enum.TextXAlignment.Left
-        replyPreviewText.TextTruncate = Enum.TextTruncate.AtEnd
-        replyPreviewText.ZIndex = 21
-
-        local replyCancel = Instance.new("TextButton", replyPreview)
-        replyCancel.Name = "ReplyCancel"
-        replyCancel.Size = UDim2.new(0, 24, 0, 24)
-        replyCancel.Position = UDim2.new(1, -4, 0.5, -12)
-        replyCancel.AnchorPoint = Vector2.new(1, 0)
-        replyCancel.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-        replyCancel.BackgroundTransparency = 0.1
-        replyCancel.Text = "×"
-        replyCancel.TextColor3 = Color3.fromRGB(175, 175, 185)
-        replyCancel.Font = Enum.Font.Arcade
-        replyCancel.TextSize = 16
-        replyCancel.ZIndex = 22
-        Instance.new("UICorner", replyCancel).CornerRadius = UDim.new(1, 0)
-
-        clearReply = function()
-            replyState.active = false
-            replyState.sender = ""
-            replyState.text = ""
-            replyState.userId = nil
-            replyState.id = nil
-            replyState.clientId = nil
-            replyState.timestamp = nil
-            if replyPreview then
-                replyPreview.Visible = false
-            end
-            if replyPreviewName then replyPreviewName.Text = "" end
-            if replyPreviewText then replyPreviewText.Text = "" end
-            if replyPreviewAvatar then replyPreviewAvatar.Image = "" end
-        end
-        replyCancel.MouseButton1Click:Connect(function()
-            playClick()
-            clearReply()
-        end)
+        inputBox.Size = UDim2.new(0.45, 0, 1, 0)
+        inputBox.Position = UDim2.new(1, -16, 0, 0) -- تحريك مربع كتابة الرسالة أكثر إلى اليسار
         inputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
         inputBox.PlaceholderText = currentChatMode == "friends" and "اكتب رسالة لاخوياك..." or "اكتب رسالتك هنا..."
         inputBox.Text = ""
@@ -9245,9 +9138,317 @@ end)
             end
         end)
 
+        -- حالة قراءة رسائلي: تتغير فقط عندما يظهر مستخدم آخر داخل قائمة الدردشة.
+        -- العنصر منفصل عن نص الرسالة حتى لا يغطي الكلام أو يغيّر محاذاته.
+        local _otherUserInChat = false
+
+        -- 👀 نظام «مين شاف الرسالة»: كل شخص يدخل الدردشة تطلع صورته تحت آخر رسالة لي بدال «غير مقروء».
+        -- (جدول واحد بدال متغيرات كثيرة عشان ما نوصل حد 200 متغير محلي)
+        local _ReadRx = {
+            present = {},   -- أسماء اللي داخلين الدردشة الحين (غيري)
+            rows = {},      -- لكل رسالة: قايمة اللي شافوها
+            ids = {},       -- كاش اسم -> UserId
+            listOpen = false,
+        }
+
+        function _ReadRx.keyOf(row)
+            return tostring(row:GetAttribute("ChatTimestamp")) .. ":" .. tostring(row:GetAttribute("ChatText"))
+        end
+
+        function _ReadRx.resolve(name, callback)
+            local cached = _ReadRx.ids[name]
+            if cached then callback(cached) return end
+            local plr = game.Players:FindFirstChild(name)
+            if plr then
+                _ReadRx.ids[name] = plr.UserId
+                callback(plr.UserId)
+                return
+            end
+            for _, m in pairs(chatMessageCache) do
+                if type(m) == "table" and m.sender == name and tonumber(m.userId) then
+                    _ReadRx.ids[name] = tonumber(m.userId)
+                    callback(_ReadRx.ids[name])
+                    return
+                end
+            end
+            task.spawn(function()
+                local ok, uid = pcall(function() return game.Players:GetUserIdFromNameAsync(name) end)
+                if ok and uid then
+                    _ReadRx.ids[name] = uid
+                    callback(uid)
+                end
+            end)
+        end
+
+        -- 🎨 لون الحافة حسب الشخص: خويي = أزرق، مو خويي = رصاصي (الأسود ثابت مع التوهج)
+        _ReadRx.GRAY = Color3.fromRGB(145, 145, 155)
+        _ReadRx.BLUE = Color3.fromRGB(0, 140, 255)
+        _ReadRx.friendCache = {}
+
+        function _ReadRx.setAvatar(img, name, stroke, grad)
+            _ReadRx.resolve(name, function(uid)
+                if img and img.Parent then
+                    img.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(uid) .. "&w=150&h=150"
+                end
+                if stroke then
+                    task.spawn(function()
+                        local isFriend = _ReadRx.friendCache[uid]
+                        if isFriend == nil then
+                            isFriend = isChatFriend(uid) == true
+                            _ReadRx.friendCache[uid] = isFriend
+                        end
+                        if stroke.Parent then
+                            local color = isFriend and _ReadRx.BLUE or _ReadRx.GRAY
+                            stroke.Color = color
+                            SetGlowColor(grad, color)
+                        end
+                    end)
+                end
+            end)
+        end
+
+        -- 📋 قائمة كل اللي شافوا الرسالة (تطلع من تحت لنص الشاشة)
+        function _ReadRx.openList(row)
+            if _ReadRx.listOpen then return end
+            local rd = _ReadRx.rows[_ReadRx.keyOf(row)]
+            if not rd or #rd.list == 0 then return end
+            _ReadRx.listOpen = true
+            local purple = Color3.fromRGB(170, 0, 255)
+            local isEn = _SelectedLanguage == "English"
+
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "SkyReadersList"
+            gui.ResetOnSpawn = false
+            gui.IgnoreGuiInset = true
+            gui.DisplayOrder = 1300
+            gui.Parent = game.CoreGui
+
+            local dim = Instance.new("TextButton", gui)
+            dim.Size = UDim2.new(1, 0, 1, 0)
+            dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            dim.BackgroundTransparency = 1
+            dim.BorderSizePixel = 0
+            dim.Text = ""
+            dim.AutoButtonColor = false
+            dim.ZIndex = 200
+
+            local shown = math.min(#rd.list, 5)
+            local panel = Instance.new("Frame", gui)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.Size = UDim2.new(0, 300, 0, 112 + shown * 40)
+            panel.Position = UDim2.new(0.5, 0, 1.4, 0)
+            panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            panel.BorderSizePixel = 0
+            panel.Active = true
+            panel.ZIndex = 201
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = purple
+            panelStroke.Thickness = 2.2
+            pcall(function() AddMovingBorderGlow(panelStroke, 2, purple) end)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size = UDim2.new(1, -24, 0, 30)
+            title.Position = UDim2.new(0, 12, 0, 10)
+            title.BackgroundTransparency = 1
+            title.Text = isEn and "👁️ Seen by" or "👁️ شافوا الرسالة"
+            title.TextColor3 = purple
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 19
+            title.ZIndex = 202
+
+            local scroll = Instance.new("ScrollingFrame", panel)
+            scroll.Size = UDim2.new(1, -28, 0, shown * 40)
+            scroll.Position = UDim2.new(0, 14, 0, 46)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 3
+            scroll.CanvasSize = UDim2.new(0, 0, 0, #rd.list * 40)
+            scroll.ZIndex = 202
+
+            for i, name in ipairs(rd.list) do
+                local item = Instance.new("Frame", scroll)
+                item.Size = UDim2.new(1, -6, 0, 36)
+                item.Position = UDim2.new(0, 0, 0, (i - 1) * 40)
+                item.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+                item.BorderSizePixel = 0
+                item.ZIndex = 203
+                Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
+
+                local img = Instance.new("ImageLabel", item)
+                img.Size = UDim2.new(0, 28, 0, 28)
+                img.Position = UDim2.new(0, 6, 0.5, -14)
+                img.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                img.BorderSizePixel = 0
+                img.ZIndex = 204
+                Instance.new("UICorner", img).CornerRadius = UDim.new(1, 0)
+                local imgStroke = Instance.new("UIStroke", img)
+                imgStroke.Thickness = 1.5
+                imgStroke.Color = _ReadRx.GRAY
+                local imgGrad = AddMovingBorderGlow(imgStroke, 1.5, _ReadRx.GRAY)
+                _ReadRx.setAvatar(img, name, imgStroke, imgGrad)
+
+                local nm = Instance.new("TextLabel", item)
+                nm.Size = UDim2.new(1, -46, 1, 0)
+                nm.Position = UDim2.new(0, 42, 0, 0)
+                nm.BackgroundTransparency = 1
+                nm.Text = name
+                nm.TextColor3 = Color3.fromRGB(235, 235, 235)
+                nm.Font = Enum.Font.Arcade
+                nm.TextSize = 13
+                nm.TextXAlignment = Enum.TextXAlignment.Left
+                nm.TextTruncate = Enum.TextTruncate.AtEnd
+                nm.ZIndex = 204
+            end
+
+            local okBtn = Instance.new("TextButton", panel)
+            okBtn.Size = UDim2.new(1, -28, 0, 36)
+            okBtn.Position = UDim2.new(0, 14, 1, -48)
+            okBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            okBtn.BorderSizePixel = 0
+            okBtn.Text = isEn and "OK" or "تمام"
+            okBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            okBtn.Font = Enum.Font.Arcade
+            okBtn.TextSize = 16
+            okBtn.AutoButtonColor = false
+            okBtn.ZIndex = 203
+            Instance.new("UICorner", okBtn).CornerRadius = UDim.new(0, 9)
+            local okStroke = Instance.new("UIStroke", okBtn)
+            okStroke.Color = purple
+            okStroke.Thickness = 2
+            okStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            pcall(function() AddMovingBorderGlow(okStroke, 1.5, purple) end)
+
+            _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+
+            local closing = false
+            local function closeList()
+                if closing then return end
+                closing = true
+                _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                t:Play()
+                t.Completed:Wait()
+                gui:Destroy()
+                _ReadRx.listOpen = false
+            end
+            local function cancel()
+                playClick()
+                task.spawn(closeList)
+            end
+            okBtn.MouseButton1Click:Connect(cancel)
+            dim.MouseButton1Click:Connect(cancel)
+        end
+
+        -- 🎨 يرسم تحت الرسالة: «غير مقروء» لو ما أحد شافها، أو صور اللي شافوها (لين 3 صور + «المزيد»)
+        function _ReadRx.render(row, isLatest)
+            local bubbleObj = row:FindFirstChild("Bubble")
+            if not bubbleObj then return end
+            local readStatus = bubbleObj:FindFirstChild("ReadStatus")
+            local av = bubbleObj:FindFirstChild("ReadAvatars")
+            local rd = _ReadRx.rows[_ReadRx.keyOf(row)]
+            local count = rd and #rd.list or 0
+            local isEn = _SelectedLanguage == "English"
+
+            if readStatus then
+                readStatus.Visible = isLatest and count == 0
+                readStatus.Text = isEn and "Unread" or "غير مقروء"
+                readStatus.TextColor3 = Color3.fromRGB(175, 175, 185)
+            end
+            if not av then return end
+            av.Visible = isLatest and count > 0
+            if not av.Visible then return end
+
+            local sig = table.concat(rd.list, ",")
+            if av:GetAttribute("ReadersSig") == sig then return end
+            av:SetAttribute("ReadersSig", sig)
+            for _, c in ipairs(av:GetChildren()) do
+                if not c:IsA("UIListLayout") then c:Destroy() end
+            end
+
+            for i = 1, math.min(count, 3) do
+                local img = Instance.new("ImageLabel")
+                img.Name = "Reader" .. i
+                img.LayoutOrder = i
+                img.Size = UDim2.new(0, 16, 0, 16)
+                img.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+                img.BorderSizePixel = 0
+                img.ZIndex = 10
+                img.Parent = av
+                Instance.new("UICorner", img).CornerRadius = UDim.new(1, 0)
+                local st = Instance.new("UIStroke", img)
+                st.Thickness = 1.2
+                st.Color = _ReadRx.GRAY
+                local stGrad = AddMovingBorderGlow(st, 1.5, _ReadRx.GRAY)
+                _ReadRx.setAvatar(img, rd.list[i], st, stGrad)
+            end
+
+            if count >= 3 then
+                local more = Instance.new("TextButton")
+                more.Name = "MoreReaders"
+                more.LayoutOrder = 10
+                more.AutomaticSize = Enum.AutomaticSize.X
+                more.Size = UDim2.new(0, 0, 0, 16)
+                more.BackgroundTransparency = 1
+                more.Text = isEn and "more" or "المزيد"
+                more.TextColor3 = Color3.fromRGB(200, 150, 255)
+                more.Font = Enum.Font.Arcade
+                more.TextSize = 9
+                more.AutoButtonColor = false
+                more.ZIndex = 11
+                more.Parent = av
+                more.MouseButton1Click:Connect(function()
+                    playClick()
+                    _ReadRx.openList(row)
+                end)
+            end
+        end
+
+        local function updateOwnMessageReadState(otherUserInChat)
+            local latestOwnRow = nil
+            local latestTimestamp = -math.huge
+
+            -- نحدد آخر رسالة لي فقط حتى لا نكرر الحالة تحت كل الرسائل القديمة.
+            for _, row in ipairs(chatLog:GetChildren()) do
+                if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
+                    local rowTimestamp = tonumber(row:GetAttribute("ChatTimestamp")) or 0
+                    if rowTimestamp >= latestTimestamp then
+                        latestTimestamp = rowTimestamp
+                        latestOwnRow = row
+                    end
+                end
+            end
+
+            -- أي شخص داخل الدردشة الحين ينضاف لقايمة اللي شافوا آخر رسالة (ويبقى حتى لو طلع بعدين)
+            if latestOwnRow then
+                local key = _ReadRx.keyOf(latestOwnRow)
+                local rd = _ReadRx.rows[key]
+                if not rd then
+                    rd = {list = {}, set = {}}
+                    _ReadRx.rows[key] = rd
+                end
+                for _, name in ipairs(_ReadRx.present) do
+                    if not rd.set[name] then
+                        rd.set[name] = true
+                        table.insert(rd.list, name)
+                    end
+                end
+                if #rd.list > 0 then
+                    latestOwnRow:SetAttribute("ReadState", "Read")
+                end
+            end
+
+            for _, row in ipairs(chatLog:GetChildren()) do
+                if row:IsA("Frame") and row.Name == "MsgRow" and row:GetAttribute("IsMine") then
+                    _ReadRx.render(row, row == latestOwnRow)
+                end
+            end
+        end
+
         local openPlayerInfo
         local showPrivateAlert
-        addChatMsg = function(sender, text, id, userId, timestamp, chatType, jobId, placeId, clientId, replyToSender, replyToText, replyToUserId, replyToId, replyToClientId, replyToTimestamp)
+        addChatMsg = function(sender, text, id, userId, timestamp, chatType, jobId, placeId, clientId)
             local myName = game.Players.LocalPlayer.Name
             local isMine = (sender == myName)
             local isPrivate = (chatType == "private")
@@ -9360,83 +9561,6 @@ end)
             bubbleLayout.SortOrder = Enum.SortOrder.LayoutOrder
             bubbleLayout.Padding = UDim.new(0, 2)
 
-            -- ↩️ معاينة الرسالة التي تم الرد عليها داخل الرسالة المرسلة.
-            -- إذا وصلت الرسالة من Firebase بدون نص الاقتباس لأي سبب، نحاول استرجاع الرسالة الأصلية من الكاش باستخدام معرفها.
-            if (not replyToText or tostring(replyToText) == "") and (replyToId or replyToClientId or replyToTimestamp) then
-                for _, cached in pairs(chatMessageCache) do
-                    if type(cached) == "table" then
-                        local sameId = replyToId and cached.id and tostring(cached.id) == tostring(replyToId)
-                        local sameClient = replyToClientId and cached.clientId and tostring(cached.clientId) == tostring(replyToClientId)
-                        local sameTime = replyToTimestamp and cached.timestamp and tonumber(cached.timestamp) == tonumber(replyToTimestamp)
-                        if sameId or sameClient or sameTime then
-                            replyToSender = replyToSender or cached.sender
-                            replyToText = cached.text
-                            replyToUserId = replyToUserId or cached.userId
-                            break
-                        end
-                    end
-                end
-            end
-            if replyToText and tostring(replyToText) ~= "" then
-                local replyQuote = Instance.new("Frame", bubble)
-                replyQuote.Name = "ReplyQuote"
-                replyQuote.LayoutOrder = 0
-                replyQuote.Size = UDim2.new(1, 0, 0, 27)
-                replyQuote.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
-                replyQuote.BackgroundTransparency = 0.18
-                replyQuote.BorderSizePixel = 0
-                replyQuote.ZIndex = 10
-                Instance.new("UICorner", replyQuote).CornerRadius = UDim.new(0, 7)
-
-                local replyLine = Instance.new("Frame", replyQuote)
-                replyLine.Size = UDim2.new(0, 2, 1, -6)
-                replyLine.Position = UDim2.new(0, 4, 0, 3)
-                replyLine.BackgroundColor3 = isMine and COLOR_MINE or COLOR_OTHER
-                replyLine.BorderSizePixel = 0
-                replyLine.ZIndex = 11
-                Instance.new("UICorner", replyLine).CornerRadius = UDim.new(1, 0)
-
-                -- 👤 صورة الشخص الذي تم الرد عليه حتى يوضح الرد لمن بالضبط.
-                local replyAvatar = Instance.new("ImageLabel", replyQuote)
-                replyAvatar.Name = "ReplyAvatar"
-                replyAvatar.Size = UDim2.new(0, 20, 0, 20)
-                replyAvatar.Position = UDim2.new(0, 9, 0.5, -10)
-                replyAvatar.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-                replyAvatar.BorderSizePixel = 0
-                replyAvatar.ZIndex = 11
-                replyAvatar.Image = ""
-                Instance.new("UICorner", replyAvatar).CornerRadius = UDim.new(1, 0)
-                if replyToUserId then
-                    replyAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(replyToUserId) .. "&w=100&h=100"
-                end
-
-                local replyName = Instance.new("TextLabel", replyQuote)
-                replyName.Size = UDim2.new(1, -42, 0, 10)
-                replyName.Position = UDim2.new(0, 34, 0, 2)
-                replyName.BackgroundTransparency = 1
-                replyName.Text = tostring(replyToSender or "رسالة")
-                replyName.TextColor3 = Color3.fromRGB(170, 170, 180)
-                replyName.TextTransparency = 0.15
-                replyName.Font = Enum.Font.Arcade
-                replyName.TextSize = 8
-                replyName.TextXAlignment = Enum.TextXAlignment.Left
-                replyName.TextTruncate = Enum.TextTruncate.AtEnd
-                replyName.ZIndex = 11
-
-                local replyText = Instance.new("TextLabel", replyQuote)
-                replyText.Size = UDim2.new(1, -42, 0, 11)
-                replyText.Position = UDim2.new(0, 34, 0, 12)
-                replyText.BackgroundTransparency = 1
-                replyText.Text = tostring(replyToText)
-                replyText.TextColor3 = Color3.fromRGB(155, 155, 165)
-                replyText.TextTransparency = 0.2
-                replyText.Font = Enum.Font.Arcade
-                replyText.TextSize = 9
-                replyText.TextXAlignment = Enum.TextXAlignment.Left
-                replyText.TextTruncate = Enum.TextTruncate.AtEnd
-                replyText.ZIndex = 11
-            end
-
             -- 👤 اسم المرسل: لون هادئ حتى ما يخرب شكل الـGlow
             local nameLabel = Instance.new("TextLabel", bubble)
             nameLabel.Name = "SenderName"
@@ -9468,6 +9592,38 @@ end)
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.ZIndex = 10
 
+            -- 📖 حالة الرسالة أسفل النص داخل نفس الفقاعة، مع مساحة مستقلة تلقائيًا.
+            -- لا نستخدم Position ثابتة حتى لا تتداخل مع الرسائل الطويلة أو متعددة الأسطر.
+            if isMine then
+                local readStatus = Instance.new("TextLabel", bubble)
+                readStatus.Name = "ReadStatus"
+                readStatus.LayoutOrder = 3
+                readStatus.BackgroundTransparency = 1
+                readStatus.Size = UDim2.new(1, 0, 0, 12)
+                readStatus.Text = _SelectedLanguage == "English" and "Unread" or "غير مقروء"
+                readStatus.TextColor3 = Color3.fromRGB(175, 175, 185)
+                readStatus.TextTransparency = 1
+                readStatus.Font = Enum.Font.Arcade
+                readStatus.TextSize = 9
+                readStatus.TextXAlignment = Enum.TextXAlignment.Right
+                readStatus.ZIndex = 10
+
+                -- 👥 صور اللي شافوا الرسالة (تبدل كلمة «غير مقروء» أول ما أحد يدخل الدردشة)
+                local readAvatars = Instance.new("Frame", bubble)
+                readAvatars.Name = "ReadAvatars"
+                readAvatars.LayoutOrder = 3
+                readAvatars.BackgroundTransparency = 1
+                readAvatars.Size = UDim2.new(1, 0, 0, 16)
+                readAvatars.Visible = false
+                readAvatars.ZIndex = 10
+                local readAvatarsLayout = Instance.new("UIListLayout", readAvatars)
+                readAvatarsLayout.FillDirection = Enum.FillDirection.Horizontal
+                readAvatarsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+                readAvatarsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                readAvatarsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+                readAvatarsLayout.Padding = UDim.new(0, 3)
+            end
+
             -- 📍 محاذاة: كلامي يمين، كلام خويي يسار (نفس الشي عند الطرفين لأنه مبني على isMine)
             local targetPos
             if isMine then
@@ -9497,36 +9653,6 @@ end)
                     openSelectMenu(bubble, stroke, label, row, liveId)
                 elseif _copyModeActive then
                     openCopyMenu(label)
-                else
-                    -- ↩️ الضغط على الرسالة بدون وضع حذف/نسخ = اختيارها للرد.
-                    if replyPreview and replyPreview.Parent then
-                        replyState.active = true
-                        replyState.sender = tostring(sender or "")
-                        replyState.text = tostring(text or "")
-                        replyState.userId = userId
-                        replyState.id = row:GetAttribute("ChatId")
-                        replyState.clientId = row:GetAttribute("ChatClientId")
-                        replyState.timestamp = row:GetAttribute("ChatTimestamp")
-                        replyPreview.Visible = true
-                        if replyPreviewName then
-                            replyPreviewName.Text = "↩ " .. tostring(sender or "رسالة")
-                        end
-                        if replyPreviewText then
-                            replyPreviewText.Text = tostring(text or "")
-                        end
-                        if replyPreviewAvatar then
-                            if userId then
-                                replyPreviewAvatar.Image = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(userId) .. "&w=100&h=100"
-                            else
-                                replyPreviewAvatar.Image = ""
-                            end
-                        end
-                        if inputBox then
-                            task.defer(function()
-                                if inputBox.Parent then inputBox:CaptureFocus() end
-                            end)
-                        end
-                    end
                 end
             end)
 
@@ -9539,6 +9665,10 @@ end)
                 TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
                 TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
                 TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
+                local readStatus = bubble:FindFirstChild("ReadStatus")
+                if readStatus then
+                    TweenService:Create(readStatus, fadeInfo, {TextTransparency = 0}):Play()
+                end
                 if avatarImg then
                     local avStroke = avatarImg:FindFirstChildOfClass("UIStroke")
                     TweenService:Create(avatarImg, fadeInfo, {ImageTransparency = 0}):Play()
@@ -9546,6 +9676,9 @@ end)
                 end
             end)
 
+            task.defer(function()
+                updateOwnMessageReadState(_otherUserInChat)
+            end)
         end
         
         -- 💬 فقاعة ثابتة فوق الرأس بحجم شاشة واحد.
@@ -10569,23 +10702,16 @@ end)
                 ["jobId"] = game.JobId,
                 ["placeId"] = game.PlaceId,
                 ["chatType"] = currentChatMode,
-                ["clientId"] = clientId,
-                ["replyToSender"] = replyState.active and replyState.sender or nil,
-                ["replyToText"] = replyState.active and replyState.text or nil,
-                ["replyToUserId"] = replyState.active and replyState.userId or nil,
-                ["replyToId"] = replyState.active and replyState.id or nil,
-                ["replyToClientId"] = replyState.active and replyState.clientId or nil,
-                ["replyToTimestamp"] = replyState.active and replyState.timestamp or nil
+                ["clientId"] = clientId
             }
 
             box.Text = ""
             box:ReleaseFocus()
-            clearReply()
 
             chatMessageCache["local:" .. clientId] = data
             -- رسالة محلية فورية داخل قائمة الدردشة، بدون فقاعة فوق الرأس.
             if isChatMessageVisible(data) then
-                addChatMsg(myName, text, nil, myUserId, data.timestamp, data.chatType, data.jobId, data.placeId, clientId, data.replyToSender, data.replyToText, data.replyToUserId, data.replyToId, data.replyToClientId, data.replyToTimestamp)
+                addChatMsg(myName, text, nil, myUserId, data.timestamp, data.chatType, data.jobId, data.placeId, clientId)
             end
 
             task.defer(function()
@@ -10829,7 +10955,12 @@ end)
                             end
                         end
                         table.sort(presentNow)
+                        _ReadRx.present = presentNow
                         onlineLabel.Text = friendOnline and "🟢 متصل" or ""
+                        _otherUserInChat = friendOnline
+                        -- إذا لم يوجد أحد آخر داخل قائمة الدردشة تبقى رسائلي «غير مقروءة».
+                        -- عند ظهور صديق/مستخدم آخر في الحضور تتحول إلى «مقروء».
+                        updateOwnMessageReadState(friendOnline)
                     end
                 end
 
@@ -10887,14 +11018,6 @@ end)
                         end
 
                         for _, m in ipairs(msgs) do
-                            -- ↩️ توحيد بيانات الرد حتى يظهر الاقتباس عند جميع من يشاهد الرسالة، حتى لو كانت الرسالة محفوظة بصيغة قديمة.
-                            m.replyToSender = m.replyToSender or m.replySender or m.replyToName
-                            m.replyToText = m.replyToText or m.replyText or m.replyToMessage
-                            m.replyToUserId = m.replyToUserId or m.replyUserId
-                            m.replyToId = m.replyToId or m.replyId or m.replyToMessageId
-                            m.replyToClientId = m.replyToClientId or m.replyClientId
-                            m.replyToTimestamp = m.replyToTimestamp or m.replyTimestamp
-
                             -- 🧹 لا نعرض رسائل من جلسة/تشغيل قديم.
                             -- هذا يمنع رجوع رسائل الماب السابقة بعد الخروج والدخول وتشغيل السكربت من جديد.
                             local messageTimestamp = tonumber(m.timestamp) or 0
@@ -10945,7 +11068,7 @@ end)
                                         end
                                     end
                                     if isChatMessageVisible(m) then
-                                        addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyToSender, m.replyToText, m.replyToUserId, m.replyToId, m.replyToClientId, m.replyToTimestamp)
+                                        addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId)
                                     end
                                 end
                                 existing[key] = true
