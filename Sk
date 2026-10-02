@@ -8143,9 +8143,6 @@ end)
             sender = "",
             text = "",
             userId = nil,
-            id = nil,
-            clientId = nil,
-            timestamp = nil,
         }
         local replyPreview
         local replyPreviewText
@@ -8505,7 +8502,6 @@ end)
         end
 
         local function clearChatRows()
-            clearReplyLinks()
             for _, child in ipairs(chatLog and chatLog:GetChildren() or {}) do
                 if child:IsA("Frame") and child.Name == "MsgRow" then child:Destroy() end
             end
@@ -8669,183 +8665,6 @@ end)
         chatLog = generalChatLog
         chatList = generalChatList
         generalChatLog.Visible = true
-
-        -- ↪️ خطوط الرد: خط أبيض ثابت على شكل زاوية، يبدأ من يسار رسالتي
-        -- ويصعد/ينزل إلى منتصف الرسالة الأصلية ثم يتجه إليها أفقيًا.
-        local replyLinkLayer = Instance.new("Frame", chatContainer)
-        replyLinkLayer.Name = "ReplyLinkLayer"
-        replyLinkLayer.Size = UDim2.new(1, 0, 1, 0)
-        replyLinkLayer.Position = UDim2.new(0, 0, 0, 0)
-        replyLinkLayer.BackgroundTransparency = 1
-        replyLinkLayer.BorderSizePixel = 0
-        replyLinkLayer.ZIndex = 6
-        replyLinkLayer.Active = false
-
-        local replyLinkEntries = {}
-        local function clearReplyLinks()
-            for i = #replyLinkEntries, 1, -1 do
-                local e = replyLinkEntries[i]
-                if e then
-                    if e.startHorizontal and e.startHorizontal.Parent then e.startHorizontal:Destroy() end
-                    if e.vertical and e.vertical.Parent then e.vertical:Destroy() end
-                    if e.horizontal and e.horizontal.Parent then e.horizontal:Destroy() end
-                end
-                table.remove(replyLinkEntries, i)
-            end
-        end
-
-        local function makeReplyLink(row)
-            local function makeLine(name)
-                local line = Instance.new("Frame", replyLinkLayer)
-                line.Name = name
-                line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                line.BackgroundTransparency = 0.08
-                line.BorderSizePixel = 0
-                line.ZIndex = 6
-                return line
-            end
-
-            local entry = {
-                row = row,
-                startHorizontal = makeLine("ReplyStartHorizontalLine"),
-                vertical = makeLine("ReplyVerticalLine"),
-                horizontal = makeLine("ReplyTargetHorizontalLine"),
-            }
-            table.insert(replyLinkEntries, entry)
-            return entry
-        end
-
-        local refreshReplyLinks
-        local refreshQueued = false
-
-        local function queueReplyLinksRefresh()
-            if refreshQueued then return end
-            refreshQueued = true
-            task.defer(function()
-                refreshQueued = false
-                if replyLinkLayer and replyLinkLayer.Parent then
-                    refreshReplyLinks()
-                end
-            end)
-        end
-
-        refreshReplyLinks = function()
-            local rowsByKey = {}
-            local rows = {}
-
-            -- نجمع الرسائل مرة واحدة فقط وقت الحاجة، بدل إعادة فحصها كل 0.05 ثانية.
-            for _, child in ipairs(chatLog and chatLog:GetChildren() or {}) do
-                if child:IsA("Frame") and child.Name == "MsgRow" then
-                    rows[#rows + 1] = child
-                    local id = tostring(child:GetAttribute("ChatId") or "")
-                    local cid = tostring(child:GetAttribute("ChatClientId") or "")
-                    local ts = tostring(child:GetAttribute("ChatTimestamp") or "")
-                    local sender = tostring(child:GetAttribute("ChatSender") or "")
-                    local text = tostring(child:GetAttribute("ChatText") or "")
-                    if id ~= "" then rowsByKey["id:" .. id] = child end
-                    if cid ~= "" then rowsByKey["cid:" .. cid] = child end
-                    rowsByKey["msg:" .. ts .. ":" .. sender .. ":" .. text] = child
-                end
-            end
-
-            -- نخفي الخطوط التي لم تعد مرتبطة برسالة، بدون Destroy/Create مستمر.
-            for _, entry in ipairs(replyLinkEntries) do
-                local alive = entry.row and entry.row.Parent
-                if entry.startHorizontal then entry.startHorizontal.Visible = false end
-                if entry.vertical then entry.vertical.Visible = false end
-                if entry.horizontal then entry.horizontal.Visible = false end
-                if not alive then
-                    entry.row = nil
-                end
-            end
-
-            for _, row in ipairs(rows) do
-                local replyId = tostring(row:GetAttribute("ReplyToId") or "")
-                local replyClientId = tostring(row:GetAttribute("ReplyToClientId") or "")
-                local replyTs = tostring(row:GetAttribute("ReplyToTimestamp") or "")
-                local replySender = tostring(row:GetAttribute("ReplyToSender") or "")
-                local replyText = tostring(row:GetAttribute("ReplyToText") or "")
-
-                if replyId ~= "" or replyClientId ~= "" or replyText ~= "" then
-                    local target = nil
-                    if replyId ~= "" then target = rowsByKey["id:" .. replyId] end
-                    if not target and replyClientId ~= "" then target = rowsByKey["cid:" .. replyClientId] end
-                    if not target and replyText ~= "" then
-                        target = rowsByKey["msg:" .. replyTs .. ":" .. replySender .. ":" .. replyText]
-                    end
-
-                    if target and target ~= row then
-                        local entry
-                        for _, e in ipairs(replyLinkEntries) do
-                            if e.row == row then entry = e break end
-                        end
-                        if not entry then entry = makeReplyLink(row) end
-
-                        local fromBubble = row:FindFirstChild("Bubble")
-                        local toBubble = target:FindFirstChild("Bubble")
-                        if fromBubble and toBubble and fromBubble.Visible and toBubble.Visible then
-                            local origin = chatContainer.AbsolutePosition
-
-                            local fromX = fromBubble.AbsolutePosition.X - origin.X
-                            local fromY = fromBubble.AbsolutePosition.Y - origin.Y + (fromBubble.AbsoluteSize.Y * 0.5)
-                            local toX = toBubble.AbsolutePosition.X - origin.X
-                            local toY = toBubble.AbsolutePosition.Y - origin.Y + (toBubble.AbsoluteSize.Y * 0.5)
-
-                            -- العمود ثابت في منطقة المنتصف، والخطوط نفسها لا تحتوي أي أنميشن.
-                            local lineX = (chatContainer.AbsoluteSize.X * 0.5) - 28
-
-                            local startLeft = math.min(lineX, fromX)
-                            local startRight = math.max(lineX, fromX)
-                            entry.startHorizontal.Position = UDim2.fromOffset(startLeft, fromY)
-                            entry.startHorizontal.Size = UDim2.fromOffset(math.max(1, startRight - startLeft), 1)
-                            entry.startHorizontal.Visible = true
-
-                            local topY = math.min(fromY, toY)
-                            local bottomY = math.max(fromY, toY)
-                            entry.vertical.Position = UDim2.fromOffset(lineX, topY)
-                            entry.vertical.Size = UDim2.fromOffset(1, math.max(1, bottomY - topY))
-                            entry.vertical.Visible = true
-
-                            local targetLeft = math.min(lineX, toX)
-                            local targetRight = math.max(lineX, toX)
-                            entry.horizontal.Position = UDim2.fromOffset(targetLeft, toY)
-                            entry.horizontal.Size = UDim2.fromOffset(math.max(1, targetRight - targetLeft), 1)
-                            entry.horizontal.Visible = true
-                        end
-                    end
-                end
-            end
-        end
-
-        -- التحديث صار حسب تغيّر الرسائل/التمرير فقط، بدل حلقة كل 0.05 ثانية.
-        -- هذا يمنع إعادة الحساب المستمرة التي كانت تسبب هبوط FPS أثناء رفع/خفض قائمة الدردشة.
-        pcall(function()
-            local function watchChatLog(log, layout)
-                if layout and layout.GetPropertyChangedSignal then
-                    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(queueReplyLinksRefresh)
-                end
-                if log then
-                    if log.GetPropertyChangedSignal then
-                        pcall(function()
-                            log:GetPropertyChangedSignal("CanvasPosition"):Connect(queueReplyLinksRefresh)
-                        end)
-                    end
-                    log.ChildAdded:Connect(queueReplyLinksRefresh)
-                    log.ChildRemoved:Connect(queueReplyLinksRefresh)
-                end
-            end
-
-            -- نراقب القائمتين لأن تبديل عام/أصدقاء يغيّر chatLog.
-            watchChatLog(generalChatLog, generalChatList)
-            watchChatLog(friendsChatLog, friendsChatList)
-
-            if chatContainer and chatContainer.GetPropertyChangedSignal then
-                chatContainer:GetPropertyChangedSignal("AbsolutePosition"):Connect(queueReplyLinksRefresh)
-                chatContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(queueReplyLinksRefresh)
-            end
-        end)
-
-        queueReplyLinksRefresh()
 
         -- 💾 نرجّع آخر وضع دردشة كنت فيه. بدونها السكربت يرجع «عام» كل ما ينعاد تشغيله بعد الانتقال،
         -- ورسايلك تنرسل كـ«عام» وأخوياك ما يشوفونها (العام يخفي رسائل الأصدقاء).
@@ -9070,10 +8889,8 @@ end)
         local replyPreviewLine = Instance.new("Frame", replyPreview)
         replyPreviewLine.Size = UDim2.new(0, 2, 1, -8)
         replyPreviewLine.Position = UDim2.new(0, 5, 0, 4)
-        replyPreviewLine.BackgroundColor3 = Color3.fromRGB(95, 95, 105)
-        replyPreviewLine.BackgroundTransparency = 1
+        replyPreviewLine.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
         replyPreviewLine.BorderSizePixel = 0
-        replyPreviewLine.Visible = false
         replyPreviewLine.ZIndex = 21
         Instance.new("UICorner", replyPreviewLine).CornerRadius = UDim.new(1, 0)
 
@@ -9462,12 +9279,6 @@ end)
             row:SetAttribute("ChatText", tostring(text))
             row:SetAttribute("ChatJobId", tostring(jobId or ""))
             row:SetAttribute("ChatPlaceId", tostring(placeId or game.PlaceId))
-            row:SetAttribute("ReplyToSender", tostring(replyToSender or ""))
-            row:SetAttribute("ReplyToText", tostring(replyToText or ""))
-            row:SetAttribute("ReplyToUserId", tostring(replyToUserId or ""))
-            row:SetAttribute("ReplyToId", tostring(replyToId or ""))
-            row:SetAttribute("ReplyToClientId", tostring(replyToClientId or ""))
-            row:SetAttribute("ReplyToTimestamp", tostring(replyToTimestamp or ""))
             if isMine then
                 row:SetAttribute("ReadState", "Unread")
             end
@@ -9550,7 +9361,22 @@ end)
             bubbleLayout.Padding = UDim.new(0, 2)
 
             -- ↩️ معاينة الرسالة التي تم الرد عليها داخل الرسالة المرسلة.
-            -- صغيرة جدًا حتى لا تأخذ مساحة من قائمة الدردشة.
+            -- إذا وصلت الرسالة من Firebase بدون نص الاقتباس لأي سبب، نحاول استرجاع الرسالة الأصلية من الكاش باستخدام معرفها.
+            if (not replyToText or tostring(replyToText) == "") and (replyToId or replyToClientId or replyToTimestamp) then
+                for _, cached in pairs(chatMessageCache) do
+                    if type(cached) == "table" then
+                        local sameId = replyToId and cached.id and tostring(cached.id) == tostring(replyToId)
+                        local sameClient = replyToClientId and cached.clientId and tostring(cached.clientId) == tostring(replyToClientId)
+                        local sameTime = replyToTimestamp and cached.timestamp and tonumber(cached.timestamp) == tonumber(replyToTimestamp)
+                        if sameId or sameClient or sameTime then
+                            replyToSender = replyToSender or cached.sender
+                            replyToText = cached.text
+                            replyToUserId = replyToUserId or cached.userId
+                            break
+                        end
+                    end
+                end
+            end
             if replyToText and tostring(replyToText) ~= "" then
                 local replyQuote = Instance.new("Frame", bubble)
                 replyQuote.Name = "ReplyQuote"
@@ -11061,6 +10887,14 @@ end)
                         end
 
                         for _, m in ipairs(msgs) do
+                            -- ↩️ توحيد بيانات الرد حتى يظهر الاقتباس عند جميع من يشاهد الرسالة، حتى لو كانت الرسالة محفوظة بصيغة قديمة.
+                            m.replyToSender = m.replyToSender or m.replySender or m.replyToName
+                            m.replyToText = m.replyToText or m.replyText or m.replyToMessage
+                            m.replyToUserId = m.replyToUserId or m.replyUserId
+                            m.replyToId = m.replyToId or m.replyId or m.replyToMessageId
+                            m.replyToClientId = m.replyToClientId or m.replyClientId
+                            m.replyToTimestamp = m.replyToTimestamp or m.replyTimestamp
+
                             -- 🧹 لا نعرض رسائل من جلسة/تشغيل قديم.
                             -- هذا يمنع رجوع رسائل الماب السابقة بعد الخروج والدخول وتشغيل السكربت من جديد.
                             local messageTimestamp = tonumber(m.timestamp) or 0
