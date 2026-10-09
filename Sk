@@ -569,6 +569,7 @@ end
 local function _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, category, gen, liveKey)
     task.wait(category == "presence" and 3.2 or 2.8)
     if not F.Parent then return end
+    if F:GetAttribute("Dismissing") then return end
     if gen ~= nil and F:GetAttribute("Gen") ~= gen then return end
 
     -- نخفي كل عناصر الإشعار في نفس الوقت ثم نحرك الحاوية للخارج.
@@ -645,6 +646,8 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
 
     local I = Instance.new("Frame", F)
     I.Name = "NotificationInner"
+    -- يخلي الإشعار يستقبل ضغطة/لمسة عشان يختفي بأنيميشن بدل ما يختفي فجأة.
+    I.Active = true
     I.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     I.BorderSizePixel = 0
     I.Size = UDim2.new(1, 0, 0, 48)
@@ -724,6 +727,35 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     ML.TextXAlignment = Enum.TextXAlignment.Left
     ML.TextTruncate = Enum.TextTruncate.AtEnd
     ML.ZIndex = 54
+
+    -- 👆 الضغط على الإشعار = إغلاقه فورًا بنفس أنيميشن الاختفاء العادي.
+    -- نستخدم InputBegan لأن NotificationInner عبارة عن Frame وليس TextButton.
+    local notificationClosing = false
+    I.InputBegan:Connect(function(input)
+        if notificationClosing then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        notificationClosing = true
+        F:SetAttribute("Dismissing", true)
+
+        -- نفس حركة الإغلاق التلقائي: يختفي المحتوى تدريجيًا
+        -- وبنفس الوقت يتحرك الإشعار للخارج، بدون اختفاء مفاجئ.
+        _fadeNotificationContents(I, 0.55)
+        _TweenS:Create(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0, 330, 0, 0)
+        }):Play()
+
+        task.delay(0.56, function()
+            removeNotificationRecord(category, F)
+            if F.Parent then F:Destroy() end
+            if liveKey and _liveNotifFrames[liveKey] == F then
+                _liveNotifFrames[liveKey] = nil
+            end
+        end)
+    end)
 
     table.insert(_notificationQueues[category], F)
     trimNotificationQueue(category)
@@ -1071,9 +1103,18 @@ local function RunMyOriginalScript()
     State.selectedPlayer = nil 
     State.sittingOnHead = false
     State.hmmActive = false
+    State.headBangActive = false
     State._hmmPhase = 0
     State.flingEnabled = false
-    State.lastLocation = nil 
+    State.lastLocation = nil
+
+    -- 🧠 التطيير الذكي:
+    State._flingTargetCharacter = nil
+    State._flingTooFar = false
+    State._flingReturned = false
+
+    -- 🛡️ تثبيت الرجوع عند تجاوز الهدف 1000 ستد
+    State._flingReturnLocked = false
 
     State.targetSpeed = 1
     State.speedActive = false
@@ -2541,7 +2582,7 @@ end)
     end
 
     -- ====================== Heartbeat Loop ======================
-    RunService.Heartbeat:Connect(function()
+    RunService.Heartbeat:Connect(function(HeartbeatDelta)
         local Lighting = game:GetService("Lighting")
         if State.NoFallActive then
             local char = LocalPlayer.Character; local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -2572,14 +2613,51 @@ end)
             end
         end
 
-        -- ✅ إذا مات اللاعب المستهدف، لا نوقف التطيير.
-        -- ننتظر الـ Character الجديد وبعد الـ respawn يرجع التطيير تلقائياً.
+        -- 🧠 التطيير الذكي:
+        -- نقارن الهدف بمكانك الأصلي قبل الانتقال له.
+        -- إذا تجاوز 1000 نرجع فوراً وننتظر Respawn، ثم نعيد التطيير.
         if State.flingEnabled and State.selectedPlayer then
             local targetChar = State.selectedPlayer.Character
             local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-            if not targetRoot then
-                -- اللاعب مات/قاعد يرسبن: نخلي State.flingEnabled شغال وننتظر CharacterAdded.
-                -- لا نغير selectedPlayer ولا نوقف التطيير.
+
+            if targetChar and targetChar ~= State._flingTargetCharacter then
+                -- هدف جديد / Respawn: نفك التثبيت ونبدأ دورة جديدة.
+                local oldChar = State._flingTargetCharacter
+                State._flingTargetCharacter = targetChar
+                State._flingTooFar = false
+                State._flingReturned = false
+                State._flingReturnLocked = false
+
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myRoot and oldChar ~= nil then
+                    myRoot.Anchored = false
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+
+            if targetRoot and State.lastLocation then
+                local distanceFromStart = (targetRoot.Position - State.lastLocation.Position).Magnitude
+
+                if distanceFromStart > 1000 and not State._flingReturned then
+                    -- 🚨 الهدف ابتعد أكثر من 1000 ستد.
+                    -- نرجعك مرة واحدة فقط، ثم نوقف تحكم الـ fling بشخصيتك
+                    -- حتى ترجع لك الحركة الطبيعية بالكامل.
+                    State._flingTooFar = true
+                    State._flingReturned = true
+                    State._flingReturnLocked = true
+
+                    local myChar = LocalPlayer.Character
+                    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+                    if myRoot and State.lastLocation then
+                        myRoot.Anchored = false
+                        myRoot.CFrame = State.lastLocation
+                        myRoot.AssemblyLinearVelocity = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                    end
+                end
             end
         end
 
@@ -2604,14 +2682,76 @@ end)
                     local maxBehindDistance = 2.75
                     local wave = (math.sin(State._hmmPhase) + 1) * 0.5
                     local behindDistance = minBehindDistance + wave * (maxBehindDistance - minBehindDistance)
-                    local targetPos = targetRoot.Position - targetRoot.CFrame.LookVector * behindDistance
+                    -- نفس حركة الرجوع والتقدم الأصلية، لكن على نقطة متوقعة
+                    -- حتى يعوض فرق الاتصال أثناء مشي الهدف.
+                    if State._hmmTargetPlayer ~= State.selectedPlayer then
+                        State._hmmTargetPlayer = State.selectedPlayer
+                        State._hmmLastTargetPosition = nil
+                        State._hmmVelocity = nil
+                    end
+
+                    local dt = math.clamp(HeartbeatDelta or 0.05, 0.016, 0.20)
+                    local currentTargetPosition = targetRoot.Position
+                    local measuredVelocity = Vector3.zero
+                    if State._hmmLastTargetPosition then
+                        measuredVelocity = (currentTargetPosition - State._hmmLastTargetPosition) / dt
+                    end
+                    State._hmmLastTargetPosition = currentTargetPosition
+
+                    local targetVelocity = targetRoot.AssemblyLinearVelocity
+                    if targetVelocity.Magnitude < 1 then
+                        local targetHumanoid = tChar:FindFirstChildOfClass("Humanoid")
+                        if targetHumanoid and targetHumanoid.MoveDirection.Magnitude > 0.01 then
+                            targetVelocity = targetHumanoid.MoveDirection * targetHumanoid.WalkSpeed
+                        end
+                    end
+                    if measuredVelocity.Magnitude > targetVelocity.Magnitude then
+                        targetVelocity = measuredVelocity
+                    end
+                    targetVelocity = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
+                    if targetVelocity.Magnitude > 32 then
+                        targetVelocity = targetVelocity.Unit * 32
+                    end
+
+                    State._hmmVelocity = State._hmmVelocity
+                        and State._hmmVelocity:Lerp(targetVelocity, 0.35)
+                        or targetVelocity
+
+                    -- إذا كان الهدف يمشي بوضوح، نوقف تذبذب قدام/ورا
+                    -- ونبقى خلفه بثبات. الحركة البطيئة جدًا تبقي التذبذب الطبيعي.
+                    local slowWalkThreshold = 5.5
+                    if State._hmmVelocity.Magnitude > slowWalkThreshold then
+                        behindDistance = (minBehindDistance + maxBehindDistance) * 0.5
+                    end
+
+                    -- تعويض ديناميكي حسب Ping الهدف واتصالك بدل قيمة ثابتة.
+                    -- نرجعه قليلًا عن القيمة السابقة حتى لا يتقدم أكثر من اللازم.
+                    local targetPing = 0.08
+                    local myPing = 0.08
+                    pcall(function()
+                        targetPing = tonumber(State.selectedPlayer:GetNetworkPing()) or targetPing
+                    end)
+                    pcall(function()
+                        myPing = tonumber(LocalPlayer:GetNetworkPing()) or myPing
+                    end)
+                    -- بعض المشغلات قد تعيد القيمة بالميلي ثانية بدل الثانية.
+                    if targetPing > 2 then targetPing = targetPing / 1000 end
+                    if myPing > 2 then myPing = myPing / 1000 end
+                    local connectionDelay = math.clamp((targetPing + myPing) * 0.5, 0.03, 0.35)
+                    -- زيادة بسيطة فقط لتقليل المسافة المتبقية.
+                    local leadTime = math.clamp(0.34 + connectionDelay * 1.05, 0.34, 0.54)
+                    if State._hmmVelocity.Magnitude > 14 then
+                        leadTime = math.clamp(leadTime + 0.10, 0.36, 0.62)
+                    end
+                    local predictedPosition = currentTargetPosition + State._hmmVelocity * leadTime
+                    local targetPos = predictedPosition - targetRoot.CFrame.LookVector * behindDistance
 
                     local targetCF = CFrame.lookAt(
-                        Vector3.new(targetPos.X, targetRoot.Position.Y, targetPos.Z),
+                        Vector3.new(targetPos.X, currentTargetPosition.Y, targetPos.Z),
                         Vector3.new(
-                            targetRoot.Position.X,
-                            targetRoot.Position.Y,
-                            targetRoot.Position.Z
+                            predictedPosition.X,
+                            currentTargetPosition.Y,
+                            predictedPosition.Z
                         )
                     )
 
@@ -2621,16 +2761,108 @@ end)
                 end
             end
 
-            if State.flingEnabled and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            -- بانق 2: نفس فكرة التوقع، لكن فوق رأس اللاعب مع وضع الجلوس.
+            if State.headBangActive then
+                local myChar = LocalPlayer.Character
+                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+                local targetRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
+                local targetHead = tChar and tChar:FindFirstChild("Head")
+
+                if myRoot and myHumanoid and targetRoot and targetHead then
+                    local headVelocity = targetRoot.AssemblyLinearVelocity
+                    if headVelocity.Magnitude < 1 then
+                        local targetHumanoid = tChar:FindFirstChildOfClass("Humanoid")
+                        if targetHumanoid and targetHumanoid.MoveDirection.Magnitude > 0.01 then
+                            headVelocity = targetHumanoid.MoveDirection * targetHumanoid.WalkSpeed
+                        end
+                    end
+                    headVelocity = Vector3.new(headVelocity.X, 0, headVelocity.Z)
+                    if headVelocity.Magnitude > 32 then
+                        headVelocity = headVelocity.Unit * 32
+                    end
+
+                    local headPing = 0.08
+                    local localPing = 0.08
+                    pcall(function()
+                        headPing = tonumber(State.selectedPlayer:GetNetworkPing()) or headPing
+                    end)
+                    pcall(function()
+                        localPing = tonumber(LocalPlayer:GetNetworkPing()) or localPing
+                    end)
+                    if headPing > 2 then headPing = headPing / 1000 end
+                    if localPing > 2 then localPing = localPing / 1000 end
+                    local headLead = math.clamp(0.38 + ((headPing + localPing) * 0.5) * 1.15, 0.38, 0.62)
+                    local predictedHead = targetHead.Position + headVelocity * headLead
+
+                    -- بانق 2 يكون أمام الوجه، مع نفس حركة الرجوع والتقدم.
+                    State._headBangPhase = (State._headBangPhase or 0) + 0.65
+                    local frontMinDistance = 1.15
+                    local frontMaxDistance = 2.75
+                    local frontWave = (math.sin(State._headBangPhase) + 1) * 0.5
+                    local frontDistance = frontMinDistance + frontWave * (frontMaxDistance - frontMinDistance)
+                    local faceDirection = targetRoot.CFrame.LookVector
+                    local sitPosition = predictedHead + faceDirection * frontDistance
+                    local sitCF = CFrame.lookAt(sitPosition, predictedHead)
+
+                    myRoot.CFrame = sitCF
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myHumanoid.Sit = true
+                    myHumanoid:ChangeState(Enum.HumanoidStateType.Seated)
+                end
+            end
+
+            if State.flingEnabled and not State._flingTooFar and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
                 local myRoot = LocalPlayer.Character.HumanoidRootPart
                 local myHum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
                 -- ✅ حماية من الموت أثناء التطيير
                 if myHum then
                     myHum.Health = myHum.MaxHealth
                 end
-                myRoot.CFrame = tChar:GetModelCFrame() * CFrame.new(0, 0, 1)
-                myRoot.Velocity = Vector3.new(9999, 9999, 9999)
-                myRoot.RotVelocity = Vector3.new(9999, 9999, 9999)
+                -- 🎯 نفس تتبع نــ-ـيـ-ك: سرعة الهدف + MoveDirection + Ping + توقع موقعه القادم
+                local flingTargetRoot = tChar:FindFirstChild("HumanoidRootPart")
+                if flingTargetRoot then
+                    local flingVelocity = flingTargetRoot.AssemblyLinearVelocity
+                    if flingVelocity.Magnitude < 1 then
+                        local targetHumanoid = tChar:FindFirstChildOfClass("Humanoid")
+                        if targetHumanoid and targetHumanoid.MoveDirection.Magnitude > 0.01 then
+                            flingVelocity = targetHumanoid.MoveDirection * targetHumanoid.WalkSpeed
+                        end
+                    end
+
+                    flingVelocity = Vector3.new(flingVelocity.X, 0, flingVelocity.Z)
+                    if flingVelocity.Magnitude > 32 then
+                        flingVelocity = flingVelocity.Unit * 32
+                    end
+
+                    local targetPing = 0.08
+                    local myPing = 0.08
+                    pcall(function()
+                        targetPing = tonumber(State.selectedPlayer:GetNetworkPing()) or targetPing
+                    end)
+                    pcall(function()
+                        myPing = tonumber(LocalPlayer:GetNetworkPing()) or myPing
+                    end)
+                    if targetPing > 2 then targetPing = targetPing / 1000 end
+                    if myPing > 2 then myPing = myPing / 1000 end
+
+                    local connectionDelay = math.clamp((targetPing + myPing) * 0.5, 0.03, 0.35)
+                    local leadTime = math.clamp(0.34 + connectionDelay * 1.05, 0.34, 0.54)
+                    if flingVelocity.Magnitude > 14 then
+                        leadTime = math.clamp(leadTime + 0.10, 0.36, 0.62)
+                    end
+
+                    local predictedPosition = flingTargetRoot.Position + flingVelocity * leadTime
+
+                    -- نثبت قرب الموقع المتوقع بدل الموقع القديم، عشان ما يتأخر التطيير عن الهدف وهو يمشي.
+                    myRoot.CFrame = CFrame.lookAt(
+                        predictedPosition + flingTargetRoot.CFrame.LookVector,
+                        predictedPosition
+                    )
+                    myRoot.Velocity = Vector3.new(9999, 9999, 9999)
+                    myRoot.RotVelocity = Vector3.new(9999, 9999, 9999)
+                end
             end
         end
     end)
@@ -3946,15 +4178,17 @@ end)
             b.TextSize = 16
             b.ZIndex = 7
             b.FocusLost:Connect(function() playClick(); call(b.Text); SaveConfig() end)
-            -- 💾 تسجيل هذا الحقل في نظام حفظ الإعدادات
-            UI.ConfigRegistry[txt] = {
-                get = function() return b.Text end,
-                default = "",
-                apply = function(value)
-                    b.Text = tostring(value)
-                    call(b.Text)
-                end
-            }
+            -- 💾 تسجيل هذا الحقل في نظام حفظ الإعدادات (إلا أزرار تاب السكربت: ما تنحفظ)
+            if parent ~= UI.Page6 then
+                UI.ConfigRegistry[txt] = {
+                    get = function() return b.Text end,
+                    default = "",
+                    apply = function(value)
+                        b.Text = tostring(value)
+                        call(b.Text)
+                    end
+                }
+            end
             -- إضافة تأثيرات hover على مربع الإدخال
             b.MouseEnter:Connect(function()
                 _TweenS:Create(b, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -4144,8 +4378,8 @@ end)
                     SaveConfig()
                 end
             end)
-            -- 💾 تسجيل الأزرار في نظام الحفظ، باستثناء زر السيرفر لأنه أمر لحظي.
-            if txt ~= "سيرفر" then
+            -- 💾 تسجيل الأزرار في نظام الحفظ، باستثناء زر السيرفر (أمر لحظي) وأزرار تاب السكربت (ما تنحفظ).
+            if txt ~= "سيرفر" and parent ~= UI.Page6 then
                 UI.ConfigRegistry[txt] = {
                     get = function() return act end,
                     default = false,
@@ -4187,6 +4421,379 @@ end)
             WARN("⚠️ فشل تحميل/تشغيل Auto E: " .. tostring(err))
         end
     end, UI.Page6)
+
+    -- ====================== 🧩 أزرار تاب 2 اللي تطلع من تاب السكربت (محد يقدر يمسك / طيّر الماسك / قصف القنابل) ======================
+    do
+        local _RS = game:GetService("RunService")
+        local _RepStorage = game:GetService("ReplicatedStorage")
+        local _Plrs = game:GetService("Players")
+        local _me = _Plrs.LocalPlayer
+
+        -- الأزرار تنزل بعد أول كم زر في قائمة التخريب (غيّر الرقم لو تبيها أعلى/أنزل، 0 = أول القائمة)
+        local INSERT_AFTER = 2
+
+        local function triggerStruggleFactory()
+            local lastTick, cooldown = 0, 0.05
+            return function()
+                local t = tick()
+                if t - lastTick >= cooldown then
+                    lastTick = t
+                    pcall(function()
+                        local events = _RepStorage:FindFirstChild("CharacterEvents")
+                        local struggle = events and events:FindFirstChild("Struggle")
+                        if struggle then struggle:FireServer() end
+                    end)
+                end
+            end
+        end
+
+        -- يرتّب أزرار تاب 2 الإضافية بعد أول INSERT_AFTER أزرار
+        local function ReorderTab2()
+            local holder = UI.TrollControls
+            if not holder then return end
+            local idx, extras = 0, {}
+            for _, c in ipairs(holder:GetChildren()) do
+                if c:IsA("Frame") then
+                    if c:GetAttribute("SkyTab2Extra") then
+                        table.insert(extras, c)
+                    else
+                        idx = idx + 1
+                        c.LayoutOrder = idx * 10
+                    end
+                end
+            end
+            table.sort(extras, function(a, b) return a:GetAttribute("SkyTab2Extra") < b:GetAttribute("SkyTab2Extra") end)
+            for j, c in ipairs(extras) do
+                c.LayoutOrder = INSERT_AFTER * 10 + j
+            end
+        end
+
+        local Features = {} -- كل ميزة تسجّل نفسها هنا، وزر واحد في تاب السكربت يطلّعها/يشيلها كلها
+
+        -- يسجّل ميزة: زر مقابل في تاب 2 (يطلع ويختفي مع زر تاب السكربت الواحد)
+        -- cfg: tab6 (اسم زر تاب السكربت) | item (اسم زر تاب 2) | order | start(reject) | stop() | onMsg | offMsg
+        local function MakeFeature(cfg)
+            local frame = nil
+
+            local function AddTab2Item()
+                if frame and frame.Parent then return end
+                local holder = UI.TrollControls
+                if not holder then return end
+                local btn = NewItem(cfg.item, "Button", function(v)
+                    if v then
+                        cfg.start(function()
+                            -- رفض التشغيل: نرجّع الزر لإيقاف
+                            task.defer(function()
+                                local s = UI.ToggleSetters[cfg.item]
+                                if s then s(false) end
+                            end)
+                        end)
+                        OK(cfg.onMsg)
+                    else
+                        cfg.stop()
+                        OK(cfg.offMsg)
+                    end
+                end, holder)
+                frame = btn and btn.Parent
+                if frame then
+                    frame:SetAttribute("SkyTab2Extra", cfg.order)
+                    ReorderTab2()
+                end
+            end
+
+            local function RemoveTab2Item()
+                -- نطفي الميزة أول (يحدّث العدّاد والشارة) وبعدها نحذف الزر
+                local setter = UI.ToggleSetters[cfg.item]
+                if setter then pcall(setter, false) end
+                cfg.stop()
+                UI.ToggleSetters[cfg.item] = nil
+                UI.ConfigRegistry[cfg.item] = nil
+                if frame then pcall(function() frame:Destroy() end) end
+                frame = nil
+            end
+
+            table.insert(Features, {add = AddTab2Item, remove = RemoveTab2Item})
+        end
+
+        -- ------------------------------------------------------------------
+        -- 1) 🛡️ محد يقدر يمسك
+        -- ------------------------------------------------------------------
+        do
+            local conn = nil
+            local locked, lockedCFrame = false, nil
+            local triggerStruggle = triggerStruggleFactory()
+
+            MakeFeature({
+                tab6 = "محد يقدر يمسك",
+                item = "🛡️ محد يقدر يمسك",
+                order = 1,
+                onMsg = "🛡️ محد يقدر يمسك: تشغيل",
+                offMsg = "🛡️ محد يقدر يمسك: إيقاف",
+                start = function()
+                    if conn then return end
+                    locked, lockedCFrame = false, nil
+                    conn = _RS.RenderStepped:Connect(function()
+                        local character = _me.Character
+                        if not character then return end
+                        local humanoid = character:FindFirstChildOfClass("Humanoid")
+                        local rootPart = character:FindFirstChild("HumanoidRootPart")
+                        if not humanoid or not rootPart then return end
+
+                        local velocity = rootPart.AssemblyLinearVelocity
+                        local isRestrained = humanoid.PlatformStand or humanoid.Sit
+                        local isFlyingUp = velocity.Y > 75
+                        local isStopped = velocity.Magnitude < 1 and humanoid.MoveDirection.Magnitude <= 0
+                        local isGrabbed = isStopped and (isRestrained or rootPart.Anchored)
+                        local shouldLock = isRestrained or isFlyingUp or isGrabbed
+
+                        if shouldLock then
+                            if not locked then
+                                locked = true
+                                lockedCFrame = rootPart.CFrame -- نحفظ مكانك لحظة اكتشاف المسك
+                            end
+                            rootPart.AssemblyLinearVelocity = Vector3.zero
+                            rootPart.AssemblyAngularVelocity = Vector3.zero
+                            if lockedCFrame then rootPart.CFrame = lockedCFrame end
+                            triggerStruggle()
+                        else
+                            if locked then locked, lockedCFrame = false, nil end
+                        end
+                    end)
+                end,
+                stop = function()
+                    if conn then conn:Disconnect() conn = nil end
+                    locked, lockedCFrame = false, nil
+                end,
+            })
+        end
+
+        -- ------------------------------------------------------------------
+        -- 2) 🌀 طيّر الماسك (سكربت تد_تد: أي لاعب يلصق فيك أو يمسكك يتطيّر)
+        -- ------------------------------------------------------------------
+        do
+            local hb = nil
+            local evConns = {}
+            local grabbedActive = false
+            local triggerStruggle = triggerStruggleFactory()
+
+            MakeFeature({
+                tab6 = "طيّر الماسك",
+                item = "🌀 طيّر الماسك",
+                order = 2,
+                onMsg = "🌀 طيّر الماسك: تشغيل",
+                offMsg = "🌀 طيّر الماسك: إيقاف",
+                start = function()
+                    if hb then return end
+                    grabbedActive = false
+                    -- مراقبة أحداث الـ Grab
+                    pcall(function()
+                        local grabEvents = _RepStorage:FindFirstChild("GrabEvents")
+                        if grabEvents then
+                            for _, event in ipairs(grabEvents:GetChildren()) do
+                                if event:IsA("RemoteEvent") then
+                                    table.insert(evConns, event.OnClientEvent:Connect(function()
+                                        grabbedActive = true
+                                        task.delay(1, function() grabbedActive = false end)
+                                    end))
+                                end
+                            end
+                        end
+                    end)
+                    hb = _RS.Heartbeat:Connect(function()
+                        local character = _me.Character
+                        if not character then return end
+                        local rootPart = character:FindFirstChild("HumanoidRootPart")
+                        if not rootPart then return end
+                        pcall(function()
+                            for _, otherPlayer in ipairs(_Plrs:GetPlayers()) do
+                                if otherPlayer ~= _me and otherPlayer.Character then
+                                    local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                    if otherRoot then
+                                        local distance = (rootPart.Position - otherRoot.Position).Magnitude
+                                        -- إذا لصق فيك أو تفعّل الـ Grab
+                                        if distance < 4 or grabbedActive then
+                                            otherRoot.AssemblyLinearVelocity = Vector3.new(math.random(-5000, 5000), 7000, math.random(-5000, 5000))
+                                            otherRoot.AssemblyAngularVelocity = Vector3.new(math.random(-4000, 4000), 4000, math.random(-4000, 4000))
+                                            triggerStruggle()
+                                        end
+                                    end
+                                end
+                            end
+                        end)
+                    end)
+                end,
+                stop = function()
+                    if hb then hb:Disconnect() hb = nil end
+                    for _, c in ipairs(evConns) do pcall(function() c:Disconnect() end) end
+                    evConns = {}
+                    grabbedActive = false
+                end,
+            })
+        end
+
+        -- ------------------------------------------------------------------
+        -- 3) 💣 قصف القنابل (سكربت ترتبتي: يقصف اللاعب المحدد في تاب 2)
+        -- ------------------------------------------------------------------
+        do
+            local bombRunning = false
+            local bombGen = 0
+
+            local function GetRemotes()
+                local mt = _RepStorage:FindFirstChild("MenuToys")
+                local be = _RepStorage:FindFirstChild("BombEvents")
+                local ge = _RepStorage:FindFirstChild("GrabEvents")
+                local spawnRemote = mt and mt:FindFirstChild("SpawnToyRemoteFunction")
+                local explodeRemote = be and be:FindFirstChild("BombExplode")
+                local networkRemote = ge and ge:FindFirstChild("SetNetworkOwner")
+                return spawnRemote, explodeRemote, networkRemote
+            end
+
+            local function executePerfectBomb(targetPlayer, spawnRemote, explodeRemote, networkRemote, gen)
+                local function alive() return bombRunning and bombGen == gen end
+                local myRoot = _me.Character and (_me.Character:FindFirstChild("HumanoidRootPart") or _me.Character:FindFirstChild("Torso"))
+                if not myRoot or not targetPlayer or not targetPlayer.Character then return end
+                local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart") or targetPlayer.Character:FindFirstChild("Torso")
+                if not targetRoot then return end
+
+                local folderName = _me.Name .. "SpawnedInToys"
+                local toyFolder = workspace:FindFirstChild(folderName)
+                if toyFolder then
+                    for _, obj in pairs(toyFolder:GetChildren()) do
+                        if obj.Name == "BombMissile" then obj:Destroy() end
+                    end
+                end
+
+                local myHeadCF = myRoot.CFrame * CFrame.new(0, 12, 0)
+                task.spawn(function()
+                    spawnRemote:InvokeServer("BombMissile", myHeadCF, Vector3.new(0, 0, 0))
+                end)
+
+                local bombModel = nil
+                local startTime = tick()
+                while not bombModel and (tick() - startTime) < 2 do
+                    toyFolder = workspace:FindFirstChild(folderName)
+                    if toyFolder then bombModel = toyFolder:FindFirstChild("BombMissile") end
+                    task.wait(0.02)
+                end
+                if not bombModel or not alive() then return end
+
+                local buttonPart = bombModel:WaitForChild("Button", 1)
+                local hitDetector = bombModel:WaitForChild("PartHitDetector", 1)
+                local bodyPart = bombModel:WaitForChild("Body", 1)
+                if not buttonPart or not hitDetector or not bodyPart then return end
+
+                for _, part in pairs(bombModel:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                        part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+
+                task.wait(0.5)
+                if not alive() then return end
+
+                networkRemote:FireServer(buttonPart, buttonPart.CFrame)
+                local clickDetector = buttonPart:FindFirstChildWhichIsA("ClickDetector")
+                if clickDetector and fireclickdetector then
+                    fireclickdetector(clickDetector)
+                end
+
+                if not alive() or not targetRoot or not targetRoot.Parent then return end
+
+                for _, part in pairs(bombModel:GetDescendants()) do
+                    if part:IsA("BasePart") then part.CanCollide = true end
+                end
+
+                local targetVelocity = targetRoot.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
+                local predictedPosition = targetRoot.Position + (targetVelocity * 0.28) + Vector3.new(0, 1.5, 0)
+                local targetCF = CFrame.new(predictedPosition)
+
+                if bombModel:IsA("Model") then bombModel:PivotTo(targetCF) end
+                for _, part in pairs(bombModel:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CFrame = targetCF
+                        part.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        part.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+
+                explodeRemote:FireServer({
+                    ["Radius"] = 50,
+                    ["TimeLength"] = 0.2,
+                    ["Hitbox"] = hitDetector,
+                    ["ExplodesByFire"] = true,
+                    ["MaxForcePerStudSquared"] = 1000,
+                    ["DestroysModel"] = true,
+                    ["Model"] = bombModel,
+                    ["ExplodesByPointy"] = false,
+                    ["ImpactSpeed"] = 35,
+                    ["PositionPart"] = bodyPart,
+                }, predictedPosition)
+            end
+
+            MakeFeature({
+                tab6 = "قصف القنابل",
+                item = "💣 قصف القنابل",
+                order = 3,
+                onMsg = "💣 قصف القنابل: تشغيل",
+                offMsg = "💣 قصف القنابل: إيقاف",
+                start = function(reject)
+                    local target = State.selectedPlayer
+                    if not target then
+                        WARN("⚠️ اختر لاعب من القائمة أول!")
+                        reject()
+                        return
+                    end
+                    local spawnRemote, explodeRemote, networkRemote = GetRemotes()
+                    if not spawnRemote or not explodeRemote or not networkRemote then
+                        WARN("⚠️ ريموتات القنابل مو موجودة بهالماب")
+                        reject()
+                        return
+                    end
+                    bombGen = bombGen + 1
+                    local gen = bombGen
+                    bombRunning = true
+                    task.spawn(function()
+                        while bombRunning and bombGen == gen do
+                            local t = State.selectedPlayer
+                            if not t or not t.Parent then
+                                -- الهدف راح أو انشال التحديد: نوقف
+                                reject()
+                                break
+                            end
+                            pcall(executePerfectBomb, t, spawnRemote, explodeRemote, networkRemote, gen)
+                            task.wait(0.3)
+                        end
+                    end)
+                end,
+                stop = function()
+                    bombRunning = false
+                    bombGen = bombGen + 1
+                end,
+            })
+        end
+
+        -- ------------------------------------------------------------------
+        -- 🎛️ زر واحد في تاب السكربت يطلّع كل أزرار تاب 2 اللي فوق (أو يشيلها كلها)
+        -- ------------------------------------------------------------------
+        NewItem("اطفاء الاشياء", "Toggle", function(v)
+            if v then
+                task.spawn(function()
+                    -- لو انشغل وقت التحميل قبل ما تنبني قائمة التخريب، ننتظرها شوي
+                    for _ = 1, 50 do
+                        if UI.TrollControls then break end
+                        task.wait(0.1)
+                    end
+                    for _, f in ipairs(Features) do f.add() end
+                    OK("➕ انضافت أزرار السكربتات في تاب 2")
+                end)
+            else
+                for _, f in ipairs(Features) do f.remove() end
+                OK("➖ انشالت أزرار السكربتات من تاب 2")
+            end
+        end, UI.Page6)
+    end
 
     -- ====================== 🧱 منصة ثابتة (تاب السكربت) ======================
     do
@@ -4328,6 +4935,358 @@ end)
 
         NewItem("منصة ثابتة", "Button", function(s)
             if s then State.OpenPlatformPanel() else State.ClosePlatformPanel() end
+        end, UI.Page6)
+    end
+
+    -- ====================== 🛡️ منع الزحلقة + تخطي المؤقتات (تاب السكربت) ======================
+    do
+        -- 🧩 قائمة جاهزة بستايل السكربت (حدود بلون التاب + سحب + تصغير + X + ظهور تدريجي)
+        local function MakePanel(name, titleText, h, page, toggleName)
+            local color = GetTabColorForInstance(page)
+            local panel = Instance.new("Frame")
+            panel.Name, panel.Size, panel.AnchorPoint = name, UDim2.new(0, 190, 0, h), Vector2.new(0.5, 0.5)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.BackgroundColor3, panel.ClipsDescendants, panel.ZIndex = Color3.fromRGB(15, 15, 15), true, 1
+            panel.Parent = NG
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color, stroke.Thickness = color, 2
+            AddTabGlow(stroke, 1.5, page)
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -68, 0, 32), UDim2.new(0, 12, 0, 0), 1
+            title.Text, title.TextColor3, title.Font, title.TextSize = titleText, color, Enum.Font.Arcade, 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+
+            local function small(text, x, textColor)
+                local b = Instance.new("TextButton", panel)
+                b.Size, b.Position, b.BackgroundColor3 = UDim2.new(0, 26, 0, 26), UDim2.new(1, x, 0, 3), Color3.fromRGB(35, 35, 35)
+                b.Text, b.TextColor3, b.TextScaled, b.Font, b.AutoButtonColor = text, textColor, true, Enum.Font.Arcade, false
+                Instance.new("UICorner", b)
+                local g = Instance.new("UIStroke", b)
+                g.Thickness = 1.5
+                AddTabGlow(g, 1.5, page)
+                return b
+            end
+
+            local body, collapsed = {}, false
+            small("X", -32, Color3.fromRGB(255, 70, 70)).MouseButton1Click:Connect(function()
+                playClick()
+                local setter = UI.ToggleSetters[toggleName]
+                if setter then setter(false, true) end
+            end)
+            local minBtn = small("−", -62, Color3.new(1, 1, 1))
+            minBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                collapsed = not collapsed
+                minBtn.Text = collapsed and "+" or "−"
+                for _, item in ipairs(body) do
+                    if not collapsed then item.Visible = true end
+                    task.delay(0.2, function() if collapsed then item.Visible = false end end)
+                end
+                State.TweenPanelHeight(panel, collapsed and h or 38, collapsed and 38 or h, 190)
+            end)
+            return panel, body
+        end
+
+        -- 🛡️ منع الزحلقة: يثبّت الفيزياء ويوقف الانزلاق
+        local slipConn
+        local function restorePhysics()
+            local ch = LocalPlayer.Character
+            if ch then
+                for _, part in ipairs(ch:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        pcall(function() part.CustomPhysicalProperties = nil end)
+                    end
+                end
+            end
+        end
+        local function stopSlip()
+            if slipConn then slipConn:Disconnect() slipConn = nil end
+            restorePhysics()
+        end
+        local function startSlip()
+            stopSlip()
+            slipConn = RunService.RenderStepped:Connect(function()
+                local ch = LocalPlayer.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                local root = ch and ch:FindFirstChild("HumanoidRootPart")
+                if not hum or not root or hum.Health <= 0 then return end
+                for _, part in ipairs(ch:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        pcall(function()
+                            part.CustomPhysicalProperties = PhysicalProperties.new(100, 10, 1, 0, 0)
+                        end)
+                    end
+                end
+                local vy = root.AssemblyLinearVelocity.Y
+                if hum.MoveDirection.Magnitude == 0 then
+                    root.AssemblyLinearVelocity = Vector3.new(0, vy, 0)
+                else
+                    local v = hum.MoveDirection * hum.WalkSpeed
+                    root.AssemblyLinearVelocity = Vector3.new(v.X, vy, v.Z)
+                end
+            end)
+        end
+
+        -- ⏱️ تخطي المؤقتات: يصفّر مدة الضغط المطوّل (ProximityPrompt) وقيم الكولداون/التايمر
+        local bypassGen = 0
+        local bypassOrig = setmetatable({}, {__mode = "k"})
+        local function stopBypass()
+            bypassGen = bypassGen + 1
+            for obj, old in pairs(bypassOrig) do
+                pcall(function()
+                    if obj.Parent then
+                        if obj:IsA("ProximityPrompt") then obj.HoldDuration = old else obj.Value = old end
+                    end
+                end)
+            end
+            table.clear(bypassOrig)
+        end
+        local function startBypass()
+            stopBypass()
+            local gen = bypassGen
+            task.spawn(function()
+                while bypassGen == gen do
+                    pcall(function()
+                        for _, obj in ipairs(workspace:GetDescendants()) do
+                            if obj:IsA("ProximityPrompt") then
+                                if obj.HoldDuration ~= 0 then
+                                    if bypassOrig[obj] == nil then bypassOrig[obj] = obj.HoldDuration end
+                                    obj.HoldDuration = 0
+                                end
+                            elseif obj:IsA("NumberValue") or obj:IsA("IntValue") then
+                                local n = obj.Name:lower()
+                                if (n:find("cooldown") or n:find("timer") or n:find("time")) and obj.Value ~= 0 then
+                                    if bypassOrig[obj] == nil then bypassOrig[obj] = obj.Value end
+                                    obj.Value = 0
+                                end
+                            end
+                        end
+                    end)
+                    task.wait(0.5)
+                end
+            end)
+        end
+
+        State.antiSlipOn, State.bypassOn = false, false
+        State.CloseAntiSlipPanel = function()
+            stopSlip()
+            stopBypass()
+            State.antiSlipOn, State.bypassOn = false, false
+            local closing = State.antiSlipPanel
+            State.antiSlipPanel = nil
+            if closing then
+                State.FadeOutPanel(closing, 0.35)
+                task.delay(0.4, function() closing:Destroy() end)
+            end
+        end
+
+        State.OpenAntiSlipPanel = function()
+            if State.antiSlipPanel then State.antiSlipPanel:Destroy() end
+            local PANEL_H = 142
+            local panel, body = MakePanel("SkyAntiSlipPanel", "🛡️ الزحلقة والمؤقتات", PANEL_H, UI.Page6, "مانع الزحلقة والمؤقتات")
+            panel.Position = UDim2.new(0.5, 265, 0.42, 110) -- تحت قائمة المنصة عشان ما يتداخلون
+            State.antiSlipPanel = panel
+
+            -- 🔘 زر تشغيل/إيقاف بنفس شكل أزرار التابات
+            local function MakeToggleBtn(y, label, key, onFn, offFn, okOn, okOff)
+                local btn = Instance.new("TextButton", panel)
+                btn.Size, btn.Position, btn.BackgroundColor3 = UDim2.new(0.86, 0, 0, 40), UDim2.new(0.07, 0, 0, y), Color3.fromRGB(25, 25, 25)
+                btn.TextColor3, btn.TextSize, btn.Font, btn.AutoButtonColor, btn.ZIndex = Color3.new(1, 1, 1), 14, Enum.Font.Arcade, false, 7
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+                local st = Instance.new("UIStroke", btn)
+                st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                local glow = AddMovingBorderGlow(st, 1.5, TOGGLE_OFF_COLOR)
+                table.insert(body, btn)
+                _pressFeedback(btn)
+
+                local function refresh()
+                    local on, c = State[key], GetTabColorForInstance(UI.Page6)
+                    btn.Text = _TranslateText(label .. (on and ": إيقاف" or ": تشغيل"))
+                    st.Color, st.Transparency, st.Thickness = on and c or TOGGLE_OFF_COLOR, on and 0 or 0.7, on and 3 or 2
+                    SetGlowColor(glow, on and c or TOGGLE_OFF_COLOR)
+                    _activeGlow(st, on, c)
+                end
+                refresh()
+
+                local function hover(inside)
+                    local g = inside and 35 or 25
+                    _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
+                    if not State[key] then
+                        _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                    end
+                end
+                btn.MouseEnter:Connect(function() hover(true) end)
+                btn.MouseLeave:Connect(function() hover(false) end)
+
+                btn.MouseButton1Click:Connect(function()
+                    playClick()
+                    if State[key] then
+                        offFn()
+                        State[key] = false
+                    else
+                        onFn()
+                        State[key] = true
+                    end
+                    OK(State[key] and okOn or okOff)
+                    refresh()
+                end)
+            end
+
+            MakeToggleBtn(40, "الزحلقة", "antiSlipOn", startSlip, stopSlip, "🛡️ تم تشغيل منع الزحلقة", "🛡️ تم إيقاف منع الزحلقة")
+            MakeToggleBtn(90, "المؤقتات", "bypassOn", startBypass, stopBypass, "⏱️ تم تشغيل تخطي المؤقتات", "⏱️ تم إيقاف تخطي المؤقتات")
+        end
+
+        NewItem("مانع الزحلقة والمؤقتات", "Button", function(s)
+            if s then State.OpenAntiSlipPanel() else State.CloseAntiSlipPanel() end
+        end, UI.Page6)
+    end
+
+    -- ====================== 🖱️ اوتو كلكر (تاب السكربت) ======================
+    do
+        -- 🧩 قائمة جاهزة بستايل السكربت (حدود بلون التاب + سحب + تصغير + X + ظهور تدريجي)
+        local function MakePanel(name, titleText, h, page, toggleName)
+            local color = GetTabColorForInstance(page)
+            local panel = Instance.new("Frame")
+            panel.Name, panel.Size, panel.AnchorPoint = name, UDim2.new(0, 190, 0, h), Vector2.new(0.5, 0.5)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.BackgroundColor3, panel.ClipsDescendants, panel.ZIndex = Color3.fromRGB(15, 15, 15), true, 1
+            panel.Parent = NG
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color, stroke.Thickness = color, 2
+            AddTabGlow(stroke, 1.5, page)
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -68, 0, 32), UDim2.new(0, 12, 0, 0), 1
+            title.Text, title.TextColor3, title.Font, title.TextSize = titleText, color, Enum.Font.Arcade, 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+
+            local function small(text, x, textColor)
+                local b = Instance.new("TextButton", panel)
+                b.Size, b.Position, b.BackgroundColor3 = UDim2.new(0, 26, 0, 26), UDim2.new(1, x, 0, 3), Color3.fromRGB(35, 35, 35)
+                b.Text, b.TextColor3, b.TextScaled, b.Font, b.AutoButtonColor = text, textColor, true, Enum.Font.Arcade, false
+                Instance.new("UICorner", b)
+                local g = Instance.new("UIStroke", b)
+                g.Thickness = 1.5
+                AddTabGlow(g, 1.5, page)
+                return b
+            end
+
+            local body, collapsed = {}, false
+            small("X", -32, Color3.fromRGB(255, 70, 70)).MouseButton1Click:Connect(function()
+                playClick()
+                local setter = UI.ToggleSetters[toggleName]
+                if setter then setter(false, true) end
+            end)
+            local minBtn = small("−", -62, Color3.new(1, 1, 1))
+            minBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                collapsed = not collapsed
+                minBtn.Text = collapsed and "+" or "−"
+                for _, item in ipairs(body) do
+                    if not collapsed then item.Visible = true end
+                    task.delay(0.2, function() if collapsed then item.Visible = false end end)
+                end
+                State.TweenPanelHeight(panel, collapsed and h or 38, collapsed and 38 or h, 190)
+            end)
+            return panel, body
+        end
+
+        local VirtualUser = game:GetService("VirtualUser")
+        local clickGen = 0
+
+        -- 🖱️ محرك النقر التلقائي (نفس السكربت الأصلي: نقرة كل 0.01 ثانية)
+        local function stopClicker()
+            clickGen = clickGen + 1
+        end
+        local function startClicker()
+            clickGen = clickGen + 1
+            local gen = clickGen
+            task.spawn(function()
+                while clickGen == gen do
+                    pcall(function()
+                        VirtualUser:Button1Down(Vector2.new(0, 0))
+                        task.wait(0.001)
+                        VirtualUser:Button1Up(Vector2.new(0, 0))
+                    end)
+                    task.wait(0.01)
+                end
+            end)
+            return true
+        end
+
+        State.autoClickOn = false
+        State.CloseAutoClickPanel = function()
+            stopClicker()
+            State.autoClickOn = false
+            local closing = State.autoClickPanel
+            State.autoClickPanel = nil
+            if closing then
+                State.FadeOutPanel(closing, 0.35)
+                task.delay(0.4, function() closing:Destroy() end)
+            end
+        end
+
+        State.OpenAutoClickPanel = function()
+            if State.autoClickPanel then State.autoClickPanel:Destroy() end
+            local panel, body = MakePanel("SkyAutoClickPanel", "🖱️ اوتو كلكر", 96, UI.Page6, "اوتو كلكر")
+            panel.Position = UDim2.new(0.5, 265, 0.42, 280) -- تحت القوائم الثانية عشان ما يتداخلون
+            State.autoClickPanel = panel
+
+            -- 🔘 زر التشغيل/الإيقاف بنفس شكل أزرار التابات
+            local btn = Instance.new("TextButton", panel)
+            btn.Size, btn.Position, btn.BackgroundColor3 = UDim2.new(0.86, 0, 0, 42), UDim2.new(0.07, 0, 0, 42), Color3.fromRGB(25, 25, 25)
+            btn.TextColor3, btn.TextSize, btn.Font, btn.AutoButtonColor, btn.ZIndex = Color3.new(1, 1, 1), 16, Enum.Font.Arcade, false, 7
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+            local st = Instance.new("UIStroke", btn)
+            st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            local glow = AddMovingBorderGlow(st, 1.5, TOGGLE_OFF_COLOR)
+            table.insert(body, btn)
+            _pressFeedback(btn)
+
+            local function refresh()
+                local on, c = State.autoClickOn, GetTabColorForInstance(UI.Page6)
+                btn.Text = _TranslateText(on and "إيقاف" or "تشغيل")
+                st.Color, st.Transparency, st.Thickness = on and c or TOGGLE_OFF_COLOR, on and 0 or 0.7, on and 3 or 2
+                SetGlowColor(glow, on and c or TOGGLE_OFF_COLOR)
+                _activeGlow(st, on, c)
+            end
+            refresh()
+
+            local function hover(inside)
+                local g = inside and 35 or 25
+                _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
+                if not State.autoClickOn then
+                    _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                end
+            end
+            btn.MouseEnter:Connect(function() hover(true) end)
+            btn.MouseLeave:Connect(function() hover(false) end)
+
+            btn.MouseButton1Click:Connect(function()
+                playClick()
+                if State.autoClickOn then
+                    stopClicker()
+                    State.autoClickOn = false
+                else
+                    startClicker()
+                    State.autoClickOn = true
+                end
+                OK(State.autoClickOn and "🖱️ تم تشغيل الاوتو كلكر" or "🖱️ تم إيقاف الاوتو كلكر")
+                refresh()
+            end)
+        end
+
+        NewItem("اوتو كلكر", "Button", function(s)
+            if s then State.OpenAutoClickPanel() else State.CloseAutoClickPanel() end
         end, UI.Page6)
     end
 
@@ -4572,6 +5531,7 @@ end)
     local PlayerLayout = Instance.new("UIListLayout", PlayerScroll)
     PlayerLayout.Padding = UDim.new(0, 8)
     PlayerLayout.HorizontalAlignment = "Center"
+    PlayerLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
     local ControlsArea = Instance.new("ScrollingFrame", TrollContainer)
     ControlsArea.Size = UDim2.new(1, -125, 1, 0)
@@ -4581,6 +5541,7 @@ end)
     ControlsArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Instance.new("UIListLayout", ControlsArea).Padding = UDim.new(0, 10)
     ControlsArea.ZIndex = 6
+    UI.TrollControls = ControlsArea -- 🔗 عشان أزرار تنضاف من تابات ثانية (مثل محد يقدر يمسك) تنزل بنفس قائمة أزرار التخريب
 
     State.watchingActive = false
     State._respawnConns = {}
@@ -4664,12 +5625,135 @@ local function _hookSelectedPlayerDeath(player)
     end)
 end
 
+-- 🔴 سهم يدلك على الصديق المحدد (يمين/يسار/فوق/تحت) حتى لو برا الشاشة. للأصدقاء فقط.
+do
+    local _RS = game:GetService("RunService")
+    local _arrowGui = Instance.new("ScreenGui")
+    _arrowGui.Name = "SkyFriendArrow"
+    _arrowGui.ResetOnSpawn = false
+    _arrowGui.IgnoreGuiInset = true
+    _arrowGui.DisplayOrder = 998
+    _arrowGui.Parent = game.CoreGui
+
+    local _arrow = Instance.new("TextLabel", _arrowGui)
+    _arrow.AnchorPoint = Vector2.new(0.5, 0.5)
+    _arrow.Size = UDim2.new(0, 56, 0, 56)
+    _arrow.BackgroundTransparency = 1
+    _arrow.Text = "▲"
+    _arrow.TextColor3 = Color3.new(1, 1, 1)
+    _arrow.Font = Enum.Font.GothamBold
+    _arrow.TextSize = 48
+    _arrow.Visible = false
+
+    -- تدرج: أحمر فوق وأسود تحت
+    local _arrowGrad = Instance.new("UIGradient", _arrow)
+    _arrowGrad.Rotation = 90
+    _arrowGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+    })
+    local _arrowStroke = Instance.new("UIStroke", _arrow)
+    _arrowStroke.Thickness = 1.5
+    _arrowStroke.Color = Color3.fromRGB(255, 40, 40)
+
+    local _dist = Instance.new("TextLabel", _arrowGui)
+    _dist.AnchorPoint = Vector2.new(0.5, 0.5)
+    _dist.Size = UDim2.new(0, 70, 0, 14)
+    _dist.BackgroundTransparency = 1
+    _dist.TextColor3 = Color3.new(1, 1, 1)
+    _dist.Font = Enum.Font.GothamBold
+    _dist.TextSize = 12
+    _dist.Visible = false
+
+    -- نفس تدرج السهم: أحمر فوق وأسود تحت
+    local _distGrad = Instance.new("UIGradient", _dist)
+    _distGrad.Rotation = 90
+    _distGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+    })
+    local _distStroke = Instance.new("UIStroke", _dist)
+    _distStroke.Thickness = 1
+    _distStroke.Color = Color3.fromRGB(255, 40, 40)
+
+    local _lastP, _isF = nil, false
+    _RS.RenderStepped:Connect(function()
+        local p = State.selectedPlayer
+        if p ~= _lastP then
+            _lastP, _isF = p, false
+            if p then
+                task.spawn(function()
+                    local r = IsFriend(p)
+                    if _lastP == p then _isF = r and true or false end
+                end)
+            end
+        end
+
+        local cam = workspace.CurrentCamera
+        local root = p and p.Parent == Players and p.Character and p.Character:FindFirstChild("HumanoidRootPart")
+        if not (p and root and cam) then
+            _arrow.Visible, _dist.Visible = false, false
+            return
+        end
+
+        local pos = root.Position + Vector3.new(0, 3.5, 0)
+        local W, H = _arrowGui.AbsoluteSize.X, _arrowGui.AbsoluteSize.Y
+        local v = cam:WorldToViewportPoint(pos)
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local studs = myRoot and math.floor((myRoot.Position - root.Position).Magnitude) or 0
+
+        -- كل ما بعد اللاعب يكبر السهم (من 56 لين 100)
+        local sz = math.clamp(56 + studs * 0.12, 56, 100)
+        _arrow.Size = UDim2.new(0, sz, 0, sz)
+        _arrow.TextSize = math.floor(sz * 0.85)
+        local m = sz * 0.75
+
+        if v.Z > 0 and v.X > m and v.X < W - m and v.Y > m and v.Y < H - m then
+            -- على الشاشة: سهم لتحت فوق راسه
+            _arrow.Text = "▼"
+            _arrow.Rotation = 0
+            _arrow.Position = UDim2.new(0, v.X, 0, v.Y - sz * 0.6)
+            _dist.Position = UDim2.new(0, v.X, 0, v.Y - sz * 1.1)
+        else
+            -- برا الشاشة: سهم على الحافة باتجاه اللاعب
+            _arrow.Text = "▲"
+            local rel = cam.CFrame:PointToObjectSpace(pos)
+            local d = Vector2.new(rel.X, -rel.Y)
+            if d.Magnitude < 1e-3 then d = Vector2.new(1, 0) end
+            d = d.Unit
+            local sx = math.abs(d.X) > 1e-3 and (W / 2 - m) / math.abs(d.X) or math.huge
+            local sy = math.abs(d.Y) > 1e-3 and (H / 2 - m) / math.abs(d.Y) or math.huge
+            local k = math.min(sx, sy)
+            local px, py = W / 2 + d.X * k, H / 2 + d.Y * k
+            _arrow.Rotation = math.deg(math.atan2(d.X, -d.Y))
+            _arrow.Position = UDim2.new(0, px, 0, py)
+            _dist.Position = UDim2.new(0, px, 0, py + sz * 0.7)
+        end
+        _dist.Text = studs .. " m"
+        _arrow.Visible, _dist.Visible = true, true
+    end)
+end
+
 local function UpdatePlayerList()
+        -- 🔵 الأصدقاء أول القايمة (نحسب حالة الصداقة قبل الترتيب لأن IsFriendsWith ممكن يوقف السكربت لحظة)
+        local _sortedPlayers, _friendFlag = {}, {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                _sortedPlayers[#_sortedPlayers + 1] = p
+                _friendFlag[p] = IsFriend(p) and true or false
+            end
+        end
+        table.sort(_sortedPlayers, function(a, b)
+            if _friendFlag[a] ~= _friendFlag[b] then return _friendFlag[a] end
+            return a.DisplayName:lower() < b.DisplayName:lower()
+        end)
+
         for _, v in pairs(PlayerScroll:GetChildren()) do if v:IsA("Frame") and v.Name == "PlayerCard" then v:Destroy() end end
-        for _, p in pairs(Players:GetPlayers()) do
+        for _idx, p in ipairs(_sortedPlayers) do
             if p ~= LocalPlayer then
                 local card = Instance.new("Frame", PlayerScroll)
                 card.Name = "PlayerCard"
+                card.LayoutOrder = _idx
                 card.Size = UDim2.new(0, 90, 0, 118)
                 card.BackgroundTransparency = 1
                 card.ZIndex = 7
@@ -4797,12 +5881,318 @@ local function UpdatePlayerList()
             if UpdatePlayerCard then UpdatePlayerCard() end
             State.sittingOnHead = false
             State.hmmActive = false
+            State.headBangActive = false
             State.flingEnabled = false
         end
 
         UpdatePlayerList()
     end)
     UpdatePlayerList()
+
+    -- 🎯 زر أداة التحديد (تاب 2) — يعطيك Tool، تمسكه وتضغط على أي لاعب (قريب/بعيد) يتحدد بالقائمة
+    do
+        local SelBtn = Instance.new("TextButton", UI.MainFrame)
+        SelBtn.Name = "SelectToolBtn"
+        SelBtn.Size = UDim2.new(0, 45, 0, 45)
+        SelBtn.Position = UDim2.new(1, -170, 0, 8)
+        SelBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        SelBtn.Text = "🎯"
+        SelBtn.TextSize = 19
+        SelBtn.TextScaled = false
+        SelBtn.Font = Enum.Font.Arcade
+        SelBtn.ZIndex = 6
+        Instance.new("UICorner", SelBtn)
+        local selStroke = Instance.new("UIStroke", SelBtn)
+        selStroke.Thickness = 2.5
+        selStroke.Transparency = 0
+        selStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        UI.SelectToolGlowGrad = AddMovingBorderGlow(selStroke, 1.5, Color3.fromRGB(255, 0, 0))
+
+        local selTool = nil
+        local selOn = false
+
+        local function PlayerFromPart(part)
+            local cur = part
+            while cur and cur ~= workspace do
+                local pl = Players:GetPlayerFromCharacter(cur)
+                if pl then return pl end
+                cur = cur.Parent
+            end
+            return nil
+        end
+
+        -- 🌈 تغيير لون التوهج شوي شوي (مو فجأة): أحمر ↔ أخضر
+        local _glowAnim = {}
+        local function GlowTo(grad, toColor, dur, instant)
+            if not grad then return end
+            local st = _glowAnim[grad]
+            if not st then
+                st = {color = Color3.fromRGB(255, 0, 0), token = 0}
+                _glowAnim[grad] = st
+            end
+            st.token = st.token + 1
+            local myToken = st.token
+            if instant then
+                st.color = toColor
+                SetGlowColor(grad, toColor)
+                return
+            end
+            local from = st.color
+            local total = dur or 0.6
+            task.spawn(function()
+                local t0 = os.clock()
+                while myToken == st.token do
+                    local a = math.clamp((os.clock() - t0) / total, 0, 1)
+                    local c = from:Lerp(toColor, a)
+                    st.color = c
+                    SetGlowColor(grad, c)
+                    if a >= 1 then return end
+                    task.wait(0.03)
+                end
+            end)
+        end
+
+        -- 🎯 أداة تحديد وهمية (واجهة فقط، تبان عندك أنت بس): بعض المابات تخفي الـTool الحقيقي من الشنطة،
+        -- فبدل ما نعتمد على Tool نسوي خانة على الشاشة تتصرف مثله: تضغطها = تمسكها، وتضغط على لاعب = يتحدد.
+        local fakeSlot = Instance.new("TextButton")
+        fakeSlot.Name = "SkyFakeSelectTool"
+        fakeSlot.AnchorPoint = Vector2.new(0.5, 1)
+        fakeSlot.Position = UDim2.new(0.5, 0, 1, -18)
+        fakeSlot.Size = UDim2.new(0, 58, 0, 58)
+        fakeSlot.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+        fakeSlot.BackgroundTransparency = 1
+        fakeSlot.Text = "🎯"
+        fakeSlot.TextSize = 24
+        fakeSlot.TextTransparency = 1
+        fakeSlot.Font = Enum.Font.Arcade
+        fakeSlot.AutoButtonColor = false
+        fakeSlot.Visible = false
+        fakeSlot.ZIndex = 60
+        fakeSlot.Parent = ScreenGui
+        Instance.new("UICorner", fakeSlot).CornerRadius = UDim.new(0, 12)
+        local fakeStroke = Instance.new("UIStroke", fakeSlot)
+        fakeStroke.Thickness = 2.5
+        fakeStroke.Color = Color3.new(1, 1, 1)
+        fakeStroke.Transparency = 1
+        fakeStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local fakeGlow = AddMovingBorderGlow(fakeStroke, 1.5, Color3.fromRGB(255, 0, 0))
+        local fakeLbl = Instance.new("TextLabel", fakeSlot)
+        fakeLbl.BackgroundTransparency = 1
+        fakeLbl.AnchorPoint = Vector2.new(0.5, 1)
+        fakeLbl.Position = UDim2.new(0.5, 0, 1, -3)
+        fakeLbl.Size = UDim2.new(1, -4, 0, 12)
+        fakeLbl.Text = "تحديد لاعب"
+        fakeLbl.Font = Enum.Font.Arcade
+        fakeLbl.TextSize = 9
+        fakeLbl.TextColor3 = Color3.new(1, 1, 1)
+        fakeLbl.TextTransparency = 1
+        fakeLbl.ZIndex = 61
+
+        local fakeX = Instance.new("TextButton", fakeSlot)
+        fakeX.Name = "CloseFakeTool"
+        fakeX.AnchorPoint = Vector2.new(0.5, 0.5)
+        fakeX.Position = UDim2.new(1, -2, 0, 2) -- فوق يمين
+        fakeX.Size = UDim2.new(0, 20, 0, 20)
+        fakeX.BackgroundColor3 = Color3.fromRGB(20, 8, 8)
+        fakeX.BackgroundTransparency = 1
+        fakeX.Text = "X"
+        fakeX.TextColor3 = Color3.new(1, 1, 1)
+        fakeX.TextTransparency = 1
+        fakeX.TextSize = 13
+        fakeX.Font = Enum.Font.Arcade
+        fakeX.AutoButtonColor = false
+        fakeX.Visible = false
+        fakeX.ZIndex = 63
+        Instance.new("UICorner", fakeX).CornerRadius = UDim.new(1, 0)
+        local fakeXStroke = Instance.new("UIStroke", fakeX)
+        fakeXStroke.Thickness = 2
+        fakeXStroke.Color = Color3.new(1, 1, 1)
+        fakeXStroke.Transparency = 1
+        fakeXStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local fakeXGlow = AddMovingBorderGlow(fakeXStroke, 1.5, Color3.fromRGB(255, 0, 0)) -- توهج أحمر
+
+        local fakeEquipped = false
+        local fakeToken = 0
+        local function fakeRefresh(instant)
+            local glowC = fakeEquipped and Color3.fromRGB(0, 255, 80) or Color3.fromRGB(255, 0, 0)
+            local bgC = fakeEquipped and Color3.fromRGB(0, 70, 40) or Color3.fromRGB(20, 20, 24)
+            local xBgC = fakeEquipped and Color3.fromRGB(6, 22, 12) or Color3.fromRGB(20, 8, 8)
+            GlowTo(fakeGlow, glowC, 0.6, instant)
+            GlowTo(fakeXGlow, glowC, 0.6, instant)
+            if instant then
+                fakeSlot.BackgroundColor3 = bgC
+                fakeX.BackgroundColor3 = xBgC
+            else
+                local ci = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(fakeSlot, ci, {BackgroundColor3 = bgC}):Play()
+                TweenService:Create(fakeX, ci, {BackgroundColor3 = xBgC}):Play()
+            end
+        end
+
+        local function DestroyTool()
+            fakeToken = fakeToken + 1
+            fakeEquipped = false
+            fakeSlot.Visible = false
+            fakeX.Visible = false
+            fakeRefresh(true)
+        end
+
+        -- X يظهر بعد أول تحديد لاعب
+        local function showFakeX()
+            if fakeX.Visible then return end
+            fakeX.BackgroundTransparency = 1
+            fakeX.TextTransparency = 1
+            fakeX.Visible = true
+            local fi = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            fakeXStroke.Transparency = 1
+            TweenService:Create(fakeX, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+            TweenService:Create(fakeXStroke, fi, {Transparency = 0}):Play()
+        end
+
+        -- الإغلاق: كل شي (الخانة + X) يتلاشى شوي شوي ويروح
+        local function fadeOutFake()
+            if not fakeSlot.Visible then return end
+            fakeToken = fakeToken + 1
+            local myToken = fakeToken
+            fakeEquipped = false
+            local fo = TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(fakeSlot, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+            TweenService:Create(fakeStroke, fo, {Transparency = 1}):Play()
+            TweenService:Create(fakeLbl, fo, {TextTransparency = 1}):Play()
+            TweenService:Create(fakeX, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+            TweenService:Create(fakeXStroke, fo, {Transparency = 1}):Play()
+            task.delay(0.75, function()
+                if myToken ~= fakeToken then return end
+                fakeSlot.Visible = false
+                fakeX.Visible = false
+                fakeRefresh(true)
+            end)
+        end
+
+        local function GiveTool()
+            fakeToken = fakeToken + 1
+            fakeEquipped = false
+            fakeX.Visible = false
+            fakeRefresh(true)
+            fakeSlot.Visible = true
+            local fi = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(fakeSlot, fi, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
+            TweenService:Create(fakeStroke, fi, {Transparency = 0}):Play()
+            TweenService:Create(fakeLbl, fi, {TextTransparency = 0}):Play()
+        end
+
+        fakeSlot.MouseButton1Click:Connect(function()
+            playClick()
+            fakeEquipped = not fakeEquipped
+            fakeRefresh()
+            if fakeEquipped then
+                OK("🎯 ماسك الأداة: اضغط على أي لاعب")
+            end
+        end)
+
+        local function pickPlayerAt(screenPos)
+            local cam = workspace.CurrentCamera
+            local found = nil
+            pcall(function()
+                local ray = cam:ScreenPointToRay(screenPos.X, screenPos.Y)
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = {LocalPlayer.Character}
+                local res = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+                if res then found = PlayerFromPart(res.Instance) end
+            end)
+            if not found then
+                pcall(function() found = PlayerFromPart(LocalPlayer:GetMouse().Target) end)
+            end
+            return found
+        end
+
+        game:GetService("UserInputService").InputBegan:Connect(function(input, processed)
+            if processed or not fakeEquipped then return end
+            if input.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local startPos = input.Position
+            local conn
+            conn = input.Changed:Connect(function()
+                if input.UserInputState ~= Enum.UserInputState.End then return end
+                conn:Disconnect()
+                if not fakeEquipped then return end
+                if (input.Position - startPos).Magnitude > 12 then return end -- سحب كاميرا مو ضغطة
+                local p = pickPlayerAt(Vector2.new(input.Position.X, input.Position.Y))
+                if not p or p == LocalPlayer then return end
+                playClick()
+                State.selectedPlayer = p
+                _hookSelectedPlayerDeath(p)
+                EVIL_NOTIFY("تم اختيار: " .. p.Name)
+                UpdatePlayerList()
+                showFakeX()
+            end)
+        end)
+
+        local function Refresh(instant)
+            local glowC = selOn and Color3.fromRGB(0, 255, 80) or Color3.fromRGB(255, 0, 0)
+            local bgC = selOn and Color3.fromRGB(0, 120, 60) or Color3.fromRGB(30, 30, 30)
+            local txtC = selOn and Color3.fromRGB(0, 255, 140) or Color3.fromRGB(255, 255, 255)
+            GlowTo(UI.SelectToolGlowGrad, glowC, 0.6, instant)
+            if instant then
+                SelBtn.BackgroundColor3 = bgC
+                SelBtn.TextColor3 = txtC
+            else
+                local ci = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(SelBtn, ci, {BackgroundColor3 = bgC, TextColor3 = txtC}):Play()
+            end
+        end
+        Refresh(true)
+
+        fakeX.MouseButton1Click:Connect(function()
+            playClick()
+            selOn = false
+            State.selectToolOn = false
+            Refresh()
+            fadeOutFake()
+        end)
+
+        SelBtn.MouseButton1Click:Connect(function()
+            playClick()
+            selOn = not selOn
+            State.selectToolOn = selOn
+            if selOn then
+                GiveTool()
+                OK("🎯 أداة التحديد: تشغيل")
+            else
+                DestroyTool()
+                OK("🎯 أداة التحديد: إيقاف")
+            end
+            Refresh()
+        end)
+
+        -- نرجّع الأداة بعد الموت/الريسباون لو كانت شغالة
+        LocalPlayer.CharacterAdded:Connect(function()
+            if selOn then
+                task.wait(0.5)
+                if selOn then GiveTool() end
+            end
+        end)
+
+        -- يبان بس وتاب 2 مفتوح، ويختفي مع زر الزبالة (تصغير / تاب الدردشة)
+        local function SyncVis()
+            local show = UI.Page2.Visible and UI.ResetConfigBtn.Visible
+            if show and not SelBtn.Visible then
+                -- ✨ يظهر بشويش مو فجأة
+                SelBtn.BackgroundTransparency = 1
+                SelBtn.TextTransparency = 1
+                selStroke.Transparency = 1
+                SelBtn.Visible = true
+                local fi = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                TweenService:Create(SelBtn, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                TweenService:Create(selStroke, fi, {Transparency = 0}):Play()
+            elseif not show then
+                SelBtn.Visible = false
+            end
+        end
+        UI.Page2:GetPropertyChangedSignal("Visible"):Connect(SyncVis)
+        UI.ResetConfigBtn:GetPropertyChangedSignal("Visible"):Connect(SyncVis)
+        SyncVis()
+    end
 
     NewItem("مشاهدة اللاعب", "Button", function(s)
         State.watchingActive = s
@@ -4817,22 +6207,53 @@ local function UpdatePlayerList()
             OK("🔙 كاميرا عادية")
         end
     end, ControlsArea)
-    NewItem("جلوس فوق رأسه", "Button", function(s) if s then saveMyPos(); OK("🪑 جالس على: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟")) else OK("🚶 توقف الجلوس") end; State.sittingOnHead = s end, ControlsArea)    NewItem("بانق", "Button", function(s)
+    NewItem("جلوس فوق رأسه", "Button", function(s) if s then saveMyPos(); OK("🪑 جالس على: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟")) else OK("🚶 توقف الجلوس") end; State.sittingOnHead = s end, ControlsArea)    NewItem("نــ-ـيـ-ك", "Button", function(s)
         State.hmmActive = s
         State._hmmPhase = 0
         if s then
-            OK("بانق: تشغيل")
+            OK("نــ-ـيـ-ك: تشغيل")
         else
-            OK("بانق: إيقاف")
+            OK("نــ-ـيـ-ك: إيقاف")
+        end
+    end, ControlsArea)
+    NewItem("يــمــص", "Button", function(s)
+        State.headBangActive = s
+        State._headBangPhase = 0
+        if s then
+            saveMyPos()
+            OK("يــمــص: جلوس فوق رأس اللاعب")
+        else
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Sit = false
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+            OK("يــمــص: إيقاف")
         end
     end, ControlsArea)
     NewItem("تطيير اللاعب", "Button", function(s)
         if s then
             saveMyPos()
+            State._flingTargetCharacter = State.selectedPlayer and State.selectedPlayer.Character or nil
+            State._flingTooFar = false
+            State._flingReturned = false
+            State._flingReturnLocked = false
+
+            local startChar = LocalPlayer.Character
+            local startRoot = startChar and startChar:FindFirstChild("HumanoidRootPart")
+            if startRoot then
+                startRoot.Anchored = false
+            end
+
             EVIL_NOTIFY("جاري تطيير: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟"), true)
             State.flingEnabled = true
         else
             State.flingEnabled = false
+            State._flingTargetCharacter = nil
+            State._flingTooFar = false
+            State._flingReturned = false
+            State._flingReturnLocked = false
 
             local char = LocalPlayer.Character
             local r = char and char:FindFirstChild("HumanoidRootPart")
@@ -8520,7 +9941,7 @@ end)
             end
             table.sort(items, function(a,b) return (tonumber(a.timestamp) or 0) < (tonumber(b.timestamp) or 0) end)
             for _, m in ipairs(items) do
-                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId)
+                addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyTo)
             end
             task.defer(function()
                 if chatLog and chatLog.Parent then
@@ -8576,6 +9997,7 @@ end)
             mode = mode == "friends" and "friends" or "general"
             if currentChatMode == mode then return end
             currentChatMode = mode
+            if State._Reply then State._Reply.clear() end
             local isFriends = mode == "friends"
             if isFriends and State._chatPageOpen then _FriendsBadge.set(0) end
 
@@ -8929,6 +10351,120 @@ end)
             if w < 70 then w = 70 end
             if w > 220 then w = 220 end
             return w
+        end
+
+
+        -- ↩️ نظام الرد على الرسائل: اضغط على رسالة شخص → تظهر صورته وكلامه فوق مربع الكتابة،
+        -- وبعد الإرسال تنحفظ مع رسالتك وتبان للكل فوق رسالتك.
+        -- (داخل do + State عشان ما نزيد المتغيرات المحلية بالدالة)
+        do
+            local R = {target = nil, _serial = 0}
+            State._Reply = R
+
+            -- قص النص (يدعم العربي بدون ما يخرب الحروف)
+            function R.clip(s, maxChars)
+                s = tostring(s or ""):gsub("[\r\n]+", " ")
+                maxChars = maxChars or 60
+                local n = utf8.len(s)
+                if n and n > maxChars then
+                    local cut = utf8.offset(s, maxChars + 1)
+                    if cut then s = s:sub(1, cut - 1) .. "…" end
+                end
+                return s
+            end
+
+            local bar = Instance.new("Frame")
+            bar.Name = "ReplyPreviewBar"
+            bar.AnchorPoint = Vector2.new(1, 1)
+            bar.Size = UDim2.new(0.62, 0, 0, 40)
+            bar.Position = UDim2.new(1, -16, 0, -6)
+            bar.BackgroundColor3 = Color3.fromRGB(14, 12, 20)
+            bar.BackgroundTransparency = 0.08
+            bar.Visible = false
+            bar.ZIndex = 30
+            bar.Parent = ChatInputBar
+            Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 10)
+            local barStroke = Instance.new("UIStroke", bar)
+            barStroke.Thickness = 1.5
+            barStroke.Color = Color3.fromRGB(170, 0, 255)
+            local barGlow = AddMovingBorderGlow(barStroke, 1.5, Color3.fromRGB(170, 0, 255))
+
+            local barAvatar = Instance.new("ImageLabel", bar)
+            barAvatar.Size = UDim2.new(0, 28, 0, 28)
+            barAvatar.Position = UDim2.new(0, 6, 0.5, -14)
+            barAvatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            barAvatar.ZIndex = 31
+            Instance.new("UICorner", barAvatar).CornerRadius = UDim.new(1, 0)
+
+            local barName = Instance.new("TextLabel", bar)
+            barName.BackgroundTransparency = 1
+            barName.Position = UDim2.new(0, 40, 0, 3)
+            barName.Size = UDim2.new(1, -74, 0, 13)
+            barName.Font = Enum.Font.Arcade
+            barName.TextSize = 10
+            barName.TextColor3 = Color3.fromRGB(190, 120, 255)
+            barName.TextXAlignment = Enum.TextXAlignment.Left
+            barName.TextTruncate = Enum.TextTruncate.AtEnd
+            barName.ZIndex = 31
+
+            local barText = Instance.new("TextLabel", bar)
+            barText.BackgroundTransparency = 1
+            barText.Position = UDim2.new(0, 40, 0, 18)
+            barText.Size = UDim2.new(1, -74, 0, 17)
+            barText.Font = Enum.Font.Arcade
+            barText.TextSize = 12
+            barText.TextColor3 = Color3.new(1, 1, 1)
+            barText.TextXAlignment = Enum.TextXAlignment.Left
+            barText.TextTruncate = Enum.TextTruncate.AtEnd
+            barText.TextWrapped = false
+            barText.ZIndex = 31
+
+            local barClose = Instance.new("TextButton", bar)
+            barClose.AnchorPoint = Vector2.new(1, 0.5)
+            barClose.Size = UDim2.new(0, 24, 0, 24)
+            barClose.Position = UDim2.new(1, -6, 0.5, 0)
+            barClose.BackgroundColor3 = Color3.fromRGB(45, 30, 55)
+            barClose.Text = "✕"
+            barClose.TextColor3 = Color3.new(1, 1, 1)
+            barClose.Font = Enum.Font.Arcade
+            barClose.TextSize = 12
+            barClose.ZIndex = 32
+            Instance.new("UICorner", barClose).CornerRadius = UDim.new(1, 0)
+
+            function R.clear()
+                R.target = nil
+                bar.Visible = false
+            end
+
+            function R.set(sender, text, userId)
+                R.target = {
+                    sender = tostring(sender or ""),
+                    text = R.clip(text, 60),
+                    userId = tonumber(userId)
+                }
+                barName.Text = "↩ " .. R.target.sender
+                -- خويي = أزرق، مو خويي = رصاصي
+                local c = Color3.fromRGB(145, 145, 155)
+                if R.target.userId and isChatFriend(R.target.userId) then
+                    c = Color3.fromRGB(0, 140, 255)
+                end
+                barStroke.Color = Color3.new(1, 1, 1)
+                barName.TextColor3 = c
+                SetGlowColor(barGlow, c)
+                barText.Text = R.target.text
+                barAvatar.Image = R.target.userId
+                    and ("rbxthumb://type=AvatarHeadShot&id=" .. tostring(R.target.userId) .. "&w=150&h=150")
+                    or ""
+                bar.Visible = true
+                -- نخلي مربع الكتابة جاهز مباشرة
+                task.defer(function()
+                    if inputBox and inputBox.Parent and bar.Visible then
+                        pcall(function() inputBox:CaptureFocus() end)
+                    end
+                end)
+            end
+
+            barClose.MouseButton1Click:Connect(R.clear)
         end
 
         local function deleteMsgFromServer(id)
@@ -9448,7 +10984,7 @@ end)
 
         local openPlayerInfo
         local showPrivateAlert
-        addChatMsg = function(sender, text, id, userId, timestamp, chatType, jobId, placeId, clientId)
+        addChatMsg = function(sender, text, id, userId, timestamp, chatType, jobId, placeId, clientId, replyTo)
             local myName = game.Players.LocalPlayer.Name
             local isMine = (sender == myName)
             local isPrivate = (chatType == "private")
@@ -9460,6 +10996,8 @@ end)
             local edgeColor = isPrivate and Color3.fromRGB(255, 50, 55) or senderChatColor
             local AVATAR_SIZE = 28
             local AVATAR_GAP = 6
+            local QUOTE_H, QUOTE_GAP = 32, 4
+            local QUOTE_OFFSET = (type(replyTo) == "table" and replyTo.text ~= nil and State._Reply) and (QUOTE_H + QUOTE_GAP) or 0
             -- إزاحة رسائلي قليلًا إلى اليسار حتى لا تدخل في الخط أو حافة القائمة.
             local MY_MESSAGE_LEFT_SHIFT = 12
             local FRIEND_MESSAGE_RIGHT_SHIFT = 12
@@ -9498,10 +11036,10 @@ end)
                 avatarImg.Parent = row
                 if isMine then
                     avatarImg.AnchorPoint = Vector2.new(1, 0)
-                    avatarImg.Position = UDim2.new(1, -(5 + MY_MESSAGE_LEFT_SHIFT), 0, 2)
+                    avatarImg.Position = UDim2.new(1, -(5 + MY_MESSAGE_LEFT_SHIFT), 0, 2 + QUOTE_OFFSET)
                 else
                     avatarImg.AnchorPoint = Vector2.new(0, 0)
-                    avatarImg.Position = UDim2.new(0, 5 + FRIEND_MESSAGE_RIGHT_SHIFT, 0, 2)
+                    avatarImg.Position = UDim2.new(0, 5 + FRIEND_MESSAGE_RIGHT_SHIFT, 0, 2 + QUOTE_OFFSET)
                 end
                 Instance.new("UICorner", avatarImg).CornerRadius = UDim.new(1, 0)
                 local avStroke = Instance.new("UIStroke", avatarImg)
@@ -9526,7 +11064,7 @@ end)
             bubble.BackgroundTransparency = 1 -- يبدأ شفاف عشان الانميشن
             bubble.BorderSizePixel = 0
             bubble.AutomaticSize = Enum.AutomaticSize.Y
-            bubble.Size = UDim2.new(0, math.max(calcBubbleWidth(text), isMine and 116 or 0), 0, 0) -- رسائلي: عرض أدنى يكفي 3 صور + «المزيد»
+            bubble.Size = UDim2.new(0, math.max(calcBubbleWidth(text), (type(replyTo) == "table") and 150 or 0), 0, 0) -- رسائلي: عرض أدنى يكفي 3 صور + «المزيد»
             bubble.ZIndex = 9
             bubble.Parent = row
 
@@ -9579,7 +11117,7 @@ end)
 
             local label = Instance.new("TextLabel", bubble)
             label.Name = "MsgText"
-            label.LayoutOrder = 2
+            label.LayoutOrder = 3
             label.BackgroundTransparency = 1
             label.Size = UDim2.new(1, 0, 0, 0)
             label.AutomaticSize = Enum.AutomaticSize.Y
@@ -9592,50 +11130,114 @@ end)
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.ZIndex = 10
 
-            -- 📖 حالة الرسالة أسفل النص داخل نفس الفقاعة، مع مساحة مستقلة تلقائيًا.
-            -- لا نستخدم Position ثابتة حتى لا تتداخل مع الرسائل الطويلة أو متعددة الأسطر.
-            if isMine then
-                local readStatus = Instance.new("TextLabel", bubble)
-                readStatus.Name = "ReadStatus"
-                readStatus.LayoutOrder = 3
-                readStatus.BackgroundTransparency = 1
-                readStatus.Size = UDim2.new(1, 0, 0, 12)
-                readStatus.Text = _SelectedLanguage == "English" and "Unread" or "غير مقروء"
-                readStatus.TextColor3 = Color3.fromRGB(175, 175, 185)
-                readStatus.TextTransparency = 1
-                readStatus.Font = Enum.Font.Arcade
-                readStatus.TextSize = 9
-                readStatus.TextXAlignment = Enum.TextXAlignment.Right
-                readStatus.ZIndex = 10
 
-                -- 👥 صور اللي شافوا الرسالة (تبدل كلمة «غير مقروء» أول ما أحد يدخل الدردشة)
-                local readAvatars = Instance.new("Frame", bubble)
-                readAvatars.Name = "ReadAvatars"
-                readAvatars.LayoutOrder = 3
-                readAvatars.BackgroundTransparency = 1
-                readAvatars.Size = UDim2.new(1, 0, 0, 16)
-                readAvatars.Visible = false
-                readAvatars.ZIndex = 10
-                local readAvatarsLayout = Instance.new("UIListLayout", readAvatars)
-                readAvatarsLayout.FillDirection = Enum.FillDirection.Horizontal
-                readAvatarsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-                readAvatarsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                readAvatarsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                readAvatarsLayout.Padding = UDim.new(0, 3)
+            -- ↩️ اقتباس الرسالة اللي انرد عليها: صورة صاحبها + كلامه فوق نص رسالتي (يبان للكل)
+            local replyQuote
+            if type(replyTo) == "table" and replyTo.text ~= nil and State._Reply then
+                -- 🎨 اللون حسب الشخص المقتبس من وجهة نظر اللي يشوف: أنا = بنفسجي، خويي = أزرق، غيره = رصاصي
+                local qUserId = tonumber(replyTo.userId)
+                local qBlue = Color3.fromRGB(0, 140, 255)
+                local qGray = Color3.fromRGB(145, 145, 155)
+                local qColor
+                local qIsPurple = false
+                if qUserId and qUserId == game.Players.LocalPlayer.UserId then
+                    -- المقتبس هو أنا: عندي بنفسجي (وعند غيري يحسبونه حسب صداقتهم معي: أزرق/رصاصي)
+                    qColor = Color3.fromRGB(170, 0, 255)
+                    qIsPurple = true
+                else
+                    qColor = (qUserId and isChatFriend(qUserId)) and qBlue or qGray
+                end
+
+                replyQuote = {}
+                local q = Instance.new("Frame", row)
+                q.Name = "ReplyQuote"
+                q.Size = UDim2.new(0, bubble.Size.X.Offset, 0, QUOTE_H)
+                q.BackgroundColor3 = Color3.fromRGB(24, 22, 30)
+                q.BackgroundTransparency = 1
+                q.BorderSizePixel = 0
+                q.ZIndex = 9
+                Instance.new("UICorner", q).CornerRadius = UDim.new(0, 10)
+                local qStroke = Instance.new("UIStroke", q)
+                qStroke.Thickness = 1.5
+                qStroke.Color = qIsPurple and qColor or Color3.new(1, 1, 1) -- أبيض عشان اللون الظاهر = لون التوهج بالضبط
+                qStroke.Transparency = 1
+                AddMovingBorderGlow(qStroke, 1.5, qColor)
+                replyQuote.frame = q
+                replyQuote.stroke = qStroke
+
+                local accent = Instance.new("Frame", q)
+                accent.Size = UDim2.new(0, 3, 1, -8)
+                accent.Position = UDim2.new(0, 4, 0, 4)
+                accent.BackgroundColor3 = qIsPurple and Color3.fromRGB(113, 0, 255) or qColor
+                accent.BackgroundTransparency = 1
+                accent.BorderSizePixel = 0
+                accent.ZIndex = 11
+                Instance.new("UICorner", accent).CornerRadius = UDim.new(1, 0)
+                replyQuote.accent = accent
+
+                local qAvatar = Instance.new("ImageLabel", q)
+                qAvatar.Size = UDim2.new(0, 20, 0, 20)
+                qAvatar.Position = UDim2.new(0, 11, 0.5, -10)
+                qAvatar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                qAvatar.ImageTransparency = 1
+                qAvatar.BackgroundTransparency = 1
+                qAvatar.Image = qUserId and ("rbxthumb://type=AvatarHeadShot&id=" .. tostring(qUserId) .. "&w=150&h=150") or ""
+                qAvatar.ZIndex = 11
+                Instance.new("UICorner", qAvatar).CornerRadius = UDim.new(1, 0)
+                replyQuote.avatar = qAvatar
+
+                local qName = Instance.new("TextLabel", q)
+                qName.BackgroundTransparency = 1
+                qName.Position = UDim2.new(0, 37, 0, 3)
+                qName.Size = UDim2.new(1, -42, 0, 11)
+                qName.Font = Enum.Font.Arcade
+                qName.TextSize = 10
+                qName.TextColor3 = qIsPurple and Color3.fromRGB(113, 0, 255) or qColor
+                qName.TextTransparency = 1
+                qName.TextXAlignment = Enum.TextXAlignment.Left
+                qName.TextTruncate = Enum.TextTruncate.AtEnd
+                qName.Text = "↩ " .. tostring(replyTo.sender or "")
+                qName.ZIndex = 11
+                replyQuote.name = qName
+
+                local qText = Instance.new("TextLabel", q)
+                qText.BackgroundTransparency = 1
+                qText.Position = UDim2.new(0, 37, 0, 16)
+                qText.Size = UDim2.new(1, -42, 0, 13)
+                qText.Font = Enum.Font.Arcade
+                qText.TextSize = 12
+                qText.TextColor3 = Color3.fromRGB(235, 235, 240)
+                qText.TextTransparency = 1
+                qText.TextXAlignment = Enum.TextXAlignment.Left
+                qText.TextTruncate = Enum.TextTruncate.AtEnd
+                qText.TextWrapped = false
+                qText.Text = State._Reply.clip(replyTo.text, 50)
+                qText.ZIndex = 11
+                replyQuote.text = qText
             end
+
+            -- (تم حذف نظام «غير مقروء» وصور المشاهدين)
 
             -- 📍 محاذاة: كلامي يمين، كلام خويي يسار (نفس الشي عند الطرفين لأنه مبني على isMine)
             local targetPos
             if isMine then
                 bubble.AnchorPoint = Vector2.new(1, 0)
                 local rightOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + MY_MESSAGE_LEFT_SHIFT) or (5 + MY_MESSAGE_LEFT_SHIFT)
-                targetPos = UDim2.new(1, -rightOffset, 0, 0)
-                bubble.Position = UDim2.new(1, 25, 0, 0) -- يبدأ خارج الحافة عشان الانميشن
+                targetPos = UDim2.new(1, -rightOffset, 0, QUOTE_OFFSET)
+                bubble.Position = UDim2.new(1, 25, 0, QUOTE_OFFSET) -- يبدأ خارج الحافة عشان الانميشن
+                if replyQuote then
+                    replyQuote.frame.AnchorPoint = Vector2.new(1, 0)
+                    replyQuote.frame.Position = UDim2.new(1, -rightOffset, 0, 0)
+                end
             else
                 bubble.AnchorPoint = Vector2.new(0, 0)
                 local leftOffset = avatarImg and (5 + AVATAR_SIZE + AVATAR_GAP + FRIEND_MESSAGE_RIGHT_SHIFT) or (5 + FRIEND_MESSAGE_RIGHT_SHIFT)
-                targetPos = UDim2.new(0, leftOffset, 0, 0)
-                bubble.Position = UDim2.new(0, leftOffset - 30, 0, 0)
+                targetPos = UDim2.new(0, leftOffset, 0, QUOTE_OFFSET)
+                bubble.Position = UDim2.new(0, leftOffset - 30, 0, QUOTE_OFFSET)
+                if replyQuote then
+                    replyQuote.frame.AnchorPoint = Vector2.new(0, 0)
+                    replyQuote.frame.Position = UDim2.new(0, leftOffset, 0, 0)
+                end
             end
 
             -- نخلي السحاب فيه مساحة إضافية 500 بكسل، لكن ما نغيّر مكان المستخدم
@@ -9653,6 +11255,18 @@ end)
                     openSelectMenu(bubble, stroke, label, row, liveId)
                 elseif _copyModeActive then
                     openCopyMenu(label)
+                elseif (not isMine) and (not isPrivate) and State._Reply then
+                    -- ↩️ ضغطة خفيفة (مو سحب للتمرير) على رسالة شخص ثاني = رد عليه
+                    local startPos = input.Position
+                    local conn
+                    conn = input.Changed:Connect(function()
+                        if input.UserInputState == Enum.UserInputState.End then
+                            conn:Disconnect()
+                            if (input.Position - startPos).Magnitude < 12 then
+                                State._Reply.set(sender, text, userId)
+                            end
+                        end
+                    end)
                 end
             end)
 
@@ -9665,6 +11279,14 @@ end)
                 TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
                 TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
                 TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
+                if replyQuote then
+                    TweenService:Create(replyQuote.frame, fadeInfo, {BackgroundTransparency = 0.25}):Play()
+                    TweenService:Create(replyQuote.stroke, fadeInfo, {Transparency = 0}):Play()
+                    TweenService:Create(replyQuote.accent, fadeInfo, {BackgroundTransparency = 0}):Play()
+                    TweenService:Create(replyQuote.avatar, fadeInfo, {ImageTransparency = 0, BackgroundTransparency = 0}):Play()
+                    TweenService:Create(replyQuote.name, fadeInfo, {TextTransparency = 0.1}):Play()
+                    TweenService:Create(replyQuote.text, fadeInfo, {TextTransparency = 0.05}):Play()
+                end
                 local readStatus = bubble:FindFirstChild("ReadStatus")
                 if readStatus then
                     TweenService:Create(readStatus, fadeInfo, {TextTransparency = 0}):Play()
@@ -10702,16 +12324,19 @@ end)
                 ["jobId"] = game.JobId,
                 ["placeId"] = game.PlaceId,
                 ["chatType"] = currentChatMode,
-                ["clientId"] = clientId
+                ["clientId"] = clientId,
+                ["replyTo"] = State._Reply and State._Reply.target or nil
             }
 
             box.Text = ""
             box:ReleaseFocus()
 
+            if State._Reply then State._Reply.clear() end -- الرد انحفظ داخل data، نفرّغ الشريط
+
             chatMessageCache["local:" .. clientId] = data
             -- رسالة محلية فورية داخل قائمة الدردشة، بدون فقاعة فوق الرأس.
             if isChatMessageVisible(data) then
-                addChatMsg(myName, text, nil, myUserId, data.timestamp, data.chatType, data.jobId, data.placeId, clientId)
+                addChatMsg(myName, text, nil, myUserId, data.timestamp, data.chatType, data.jobId, data.placeId, clientId, data.replyTo)
             end
 
             task.defer(function()
@@ -10741,6 +12366,8 @@ end)
                 end
             end)
         end
+
+
 
         -- 💬 فقاعة الرأس: تظهر فوق الشخصية فقط ولا تدخل قائمة الدردشة.
         local function sendBubbleMsg(box)
@@ -11068,7 +12695,7 @@ end)
                                         end
                                     end
                                     if isChatMessageVisible(m) then
-                                        addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId)
+                                        addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyTo)
                                     end
                                 end
                                 existing[key] = true
