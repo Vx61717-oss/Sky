@@ -1121,6 +1121,9 @@ local function RunMyOriginalScript()
     State.AimBotActive = false
     State.ESPActive = false
     State.ESPFilters = {Friend = true, Enemy = true, Bot = true} -- 👁️ أهداف الـ ESP (تتغير من قائمة ESP)
+    State.AimFilters = {Friend = true, Enemy = true, Bot = true} -- 🎯 أهداف الايم بوت (تتغير من قائمة ايم بوت)
+    State.AimMode = "Smooth" -- 🎯 نمط الايم بوت: "Smooth" سلس / "Instant" مفاجئ (يتغير من قائمة ايم بوت)
+    State.AimSelectedActive = false -- 🎯 ايم بوت على اللاعب المحدد (زر تاب 2)
 
     State.Tracers = {}
     State.Boxes3D = {}
@@ -2016,46 +2019,230 @@ local function RunMyOriginalScript()
     -- توجيه الكاميرا للهدف بشكل ناعم بدل الانتقال الفوري.
     local aimSmoothSpeed = 12
 
-    RunService.RenderStepped:Connect(function(dt)
-        if State.AimBotActive and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local closestPlayer = nil
-            local shortestDistance = math.huge
-            local myRoot = LocalPlayer.Character.HumanoidRootPart
+    -- 🎯 قائمة الأهداف تتجدد بالخلفية كل 0.25 ثانية (الفحص الثقيل ما ينعمل داخل RenderStepped)
+    -- كل هدف: {char = Model, player = Player أو nil للبوتات, category = "Friend" / "Enemy" / "Bot"}
+    State.AimCandidates = {}
 
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer
-                    and player.Character
-                    and player.Character:FindFirstChild("HumanoidRootPart")
-                    and player.Character:FindFirstChild("Head")
-                    -- تجاهل أعضاء فريقك إذا كنت داخل فريق
-                    and (LocalPlayer.Team == nil or player.Team ~= LocalPlayer.Team) then
-                    local targetRoot = player.Character.HumanoidRootPart
-                    local targetHead = player.Character.Head
-                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
-                    if distance < shortestDistance and distance < 300 then
-                        local rayParams = RaycastParams.new()
-                        rayParams.FilterDescendantsInstances = {LocalPlayer.Character}
-                        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-                        rayParams.IgnoreWater = true
+    -- 💀 كشف الموت بدون الاعتماد على الدم (Health) بس، لأن بعض المابات تخلي الشخصية "ميتة" شكلاً والدم باقي.
+    -- فحص سريع (كل فريم): دم صفر / حالة Dead أو Ragdoll / الشخصية راقدة على الأرض.
+    State.AimQuickDead = function(char, hum)
+        if hum.Health <= 0 then return true end
+        local st = hum:GetState()
+        if st == Enum.HumanoidStateType.Dead or st == Enum.HumanoidStateType.Ragdoll then return true end
+        -- راقد: الجذع مايل أكثر من ~65 درجة (نستثني السباحة والجلوس)
+        if st ~= Enum.HumanoidStateType.Swimming and not hum.Sit then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root and root.CFrame.UpVector.Y < 0.4 then return true end
+        end
+        return false
+    end
 
-                        local rayResult = Workspace:Raycast(myRoot.Position, (targetHead.Position - myRoot.Position).Unit * distance, rayParams)
-                        if rayResult and rayResult.Instance and rayResult.Instance:IsDescendantOf(player.Character) then
-                            closestPlayer = player
-                            shortestDistance = distance
+    -- فحص أعمق (بالخلفية كل 0.25 ثانية): مفصل الرقبة انقطع/انعطل، أو علامات Dead/Ragdoll من سكربت الماب.
+    State.AimDeadFlags = {"Dead", "IsDead", "Died", "Ragdoll", "Ragdolled", "Downed", "Knocked", "KnockedOut"}
+    State.AimHadNeck = setmetatable({}, {__mode = "k"})
+    State.AimDeepDead = function(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        for _, name in ipairs(State.AimDeadFlags) do
+            if char:GetAttribute(name) == true or (hum and hum:GetAttribute(name) == true) then return true end
+            local v = char:FindFirstChild(name)
+            if v and v:IsA("BoolValue") and v.Value then return true end
+        end
+        local neck = char:FindFirstChild("Neck", true)
+        if neck then
+            State.AimHadNeck[char] = true
+            if neck:IsA("Motor6D") and (not neck.Enabled or not neck.Part0 or not neck.Part1) then return true end
+        elseif State.AimHadNeck[char] then
+            return true -- كان عنده رقبة وانحذفت = انفكت المفاصل
+        end
+        return false
+    end
+
+    task.spawn(function()
+        -- يرجع true إذا الموديل هذا (أو أحد آبائه) شخصية لاعب حقيقي
+        local function belongsToPlayer(model)
+            local m = model
+            while m and m ~= Workspace do
+                if Players:GetPlayerFromCharacter(m) then return true end
+                m = m.Parent
+            end
+            return false
+        end
+
+        while true do
+            task.wait(0.25)
+
+            if not State.AimBotActive then
+                if #State.AimCandidates > 0 then State.AimCandidates = {} end
+                State.AimLock = nil
+                continue
+            end
+
+            local list = {}
+
+            -- اللاعبون: أصدقاء / لاعبين
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then
+                    local isFriend = false
+                    pcall(function() isFriend = LocalPlayer:IsFriendsWith(p.UserId) end)
+                    local category = isFriend and "Friend" or "Enemy"
+                    if State.AimFilters[category] then
+                        table.insert(list, {char = p.Character, player = p, category = category, dead = State.AimDeepDead(p.Character)})
+                    end
+                end
+            end
+
+            -- البوتات: أي موديل فيه Humanoid وما هو شخصية لاعب
+            if State.AimFilters.Bot then
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Humanoid") then
+                        local model = obj.Parent
+                        if model and model:IsA("Model")
+                            and model:FindFirstChild("HumanoidRootPart")
+                            and model:FindFirstChild("Head")
+                            and not belongsToPlayer(model) then
+                            table.insert(list, {char = model, player = nil, category = "Bot", dead = State.AimDeepDead(model)})
                         end
                     end
                 end
             end
 
-            if closestPlayer and closestPlayer.Character and closestPlayer.Character:FindFirstChild("Head") then
-                local targetPosition = closestPlayer.Character.Head.Position
-                local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPosition)
+            State.AimCandidates = list
+        end
+    end)
+
+    RunService:BindToRenderStep("SkyAimBotMain", Enum.RenderPriority.Camera.Value + 1, function(dt)
+        local activeCamera = Workspace.CurrentCamera or Camera
+        if State.AimBotActive and not State.AimSelectedActive and activeCamera and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local closestHead = nil
+            local shortestDistance = math.huge
+            local myRoot = LocalPlayer.Character.HumanoidRootPart
+
+            -- 💀 المرحلة 1: نفرز الأحياء من الأموات كل فريم، فلو مات الهدف ينتقل فوراً للي بعده.
+            -- جثث الأموات نضيفها لفلتر الـ Raycast عشان ما تسد الطريق على الأهداف الحيّة.
+            local alive = {}
+            local filter = {LocalPlayer.Character}
+            for _, cand in ipairs(State.AimCandidates) do
+                local char = cand.char
+                local hum = char and char.Parent and char:FindFirstChildOfClass("Humanoid")
+                if hum and not cand.dead and not State.AimQuickDead(char, hum) then
+                    table.insert(alive, cand)
+                elseif char then
+                    table.insert(filter, char)
+                end
+            end
+
+            local rayParams = RaycastParams.new()
+            rayParams.FilterDescendantsInstances = filter
+            rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+            rayParams.IgnoreWater = true
+
+            -- 🔒 تثبيت الهدف: بدل ما يغيّر الهدف كل فريم لما اثنين قريبين من بعض أو الرؤية تقطع وترجع،
+            -- نمسك هدف واحد ونبدّل فقط إذا مات/ابتعد/انحجب فترة، أو ظهر هدف أقرب بوضوح بعد مدة تثبيت.
+            local LOCK_HOLD = 0.6        -- أقل مدة نبقى على الهدف قبل ما نفكر نبدّل لأقرب منه
+            local LOCK_LOSE_SIGHT = 0.5  -- كم ثانية نصبر لو انحجب الهدف قبل ما نتركه
+            local SWITCH_RATIO = 0.7     -- الهدف الجديد لازم يكون أقرب بـ 30% على الأقل عشان نبدّل
+            local now = os.clock()
+
+            local valid = {}
+            for _, cand in ipairs(alive) do
+                local char = cand.char
+                local player = cand.player
+                local targetRoot = char:FindFirstChild("HumanoidRootPart")
+                local targetHead = char:FindFirstChild("Head")
+                if State.AimFilters[cand.category]
+                    and targetRoot and targetHead
+                    -- تجاهل أعضاء فريقك إذا كنت داخل فريق (للاعبين فقط)
+                    and (player == nil or LocalPlayer.Team == nil or player.Team ~= LocalPlayer.Team) then
+                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                    if distance < 300 then
+                        table.insert(valid, {char = char, head = targetHead, dist = distance})
+                    end
+                end
+            end
+            table.sort(valid, function(a, b) return a.dist < b.dist end)
+
+            local visCache = {}
+            local function isVisible(t)
+                local v = visCache[t]
+                if v == nil then
+                    local dir = t.head.Position - myRoot.Position
+                    local rayResult = Workspace:Raycast(myRoot.Position, dir.Unit * (dir.Magnitude + 1), rayParams)
+                    v = (rayResult and rayResult.Instance and rayResult.Instance:IsDescendantOf(t.char)) and true or false
+                    visCache[t] = v
+                end
+                return v
+            end
+
+            -- أقرب هدف ظاهر
+            local best = nil
+            for _, t in ipairs(valid) do
+                if isVisible(t) then best = t break end
+            end
+
+            -- الهدف المثبّت حالياً (لو لسا صالح)
+            local lock = State.AimLock
+            local curT = nil
+            if lock then
+                for _, t in ipairs(valid) do
+                    if t.char == lock.char then curT = t break end
+                end
+                if not curT then lock = nil; State.AimLock = nil end -- مات / ابتعد / انطفى فلترة
+            end
+
+            local target = nil
+            if curT then
+                if isVisible(curT) then lock.seen = now end
+                local lostLong = (now - lock.seen) > LOCK_LOSE_SIGHT
+                local holdDone = (now - lock.since) > LOCK_HOLD
+                if best and best ~= curT and (lostLong or (holdDone and best.dist < curT.dist * SWITCH_RATIO)) then
+                    State.AimLock = {char = best.char, since = now, seen = now}
+                    target = best
+                elseif lostLong and not best then
+                    State.AimLock = nil
+                else
+                    target = curT
+                end
+            elseif best then
+                State.AimLock = {char = best.char, since = now, seen = now}
+                target = best
+            end
+
+            if target then
+                local targetCFrame = CFrame.new(activeCamera.CFrame.Position, target.head.Position)
 
                 -- كلما زادت aimSmoothSpeed صار الانتقال أسرع، بدون "قفزة" مباشرة.
                 local alpha = 1 - math.exp(-aimSmoothSpeed * math.max(dt, 0))
-                Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
+                if State.AimMode == "Instant" then alpha = 1 end -- مفاجئ: ينقفل على الراس فوراً بدون تدرج
+                activeCamera.CFrame = activeCamera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
             end
         end
+    end)
+
+    -- ====================== 🎯 ايم بوت على اللاعب المحدد (زر تاب 2) ======================
+    -- يتبع اللاعب اللي محدده بقائمة تاب 2 بس (بدون فحص فريق أو مسافة). لو مات يوقف ويكمل لما يرجع.
+    -- نمط التصويب (سلس / مفاجئ) نفس نمط الايم بوت العادي.
+    RunService:BindToRenderStep("SkyAimBotSelected", Enum.RenderPriority.Camera.Value + 2, function(dt)
+        if not State.AimSelectedActive then return end
+
+        -- استخدم الكاميرا الحالية كل فريم؛ بعض المابات تستبدل CurrentCamera بعد الموت أو إعادة الظهور.
+        local activeCamera = Workspace.CurrentCamera or Camera
+        if not activeCamera then return end
+
+        local sp = State.selectedPlayer
+        if not sp or sp.Parent ~= Players then return end
+
+        -- أعد قراءة الشخصية وأجزائها باستمرار حتى يرجع التتبع تلقائياً بعد Respawn.
+        local char = sp.Character
+        if not char or not char:IsDescendantOf(Workspace) then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local head = char:FindFirstChild("Head")
+        if not (hum and head and hum.Health > 0) then return end
+        if State.AimQuickDead(char, hum) or State.AimDeepDead(char) then return end
+
+        local targetCFrame = CFrame.new(activeCamera.CFrame.Position, head.Position)
+        local alpha = 1 - math.exp(-aimSmoothSpeed * math.max(dt, 0))
+        if State.AimMode == "Instant" then alpha = 1 end
+        activeCamera.CFrame = activeCamera.CFrame:Lerp(targetCFrame, math.clamp(alpha, 0, 1))
     end)
 
     -- ====================== 👁️ نظام الـ ESP للأصدقاء والأعداء ======================
@@ -2578,6 +2765,546 @@ end)
                 btn.Parent = panel
                 table.insert(bodyItems, btn)
             end
+        end
+    end
+
+    -- ====================== 🎯 قائمة اختيار أهداف الايم بوت ======================
+    -- تظهر لما تضغط زر ايم بوت: تختار تصوّب على (الأصدقاء / اللاعبين / البوتات) أو لا. نفس قائمة ESP بالضبط.
+    do
+        local AIM_ACCENT = Color3.fromRGB(170, 0, 255)
+        local ROW_ON = Color3.fromRGB(120, 0, 180)
+        local ROW_OFF = Color3.fromRGB(45, 45, 45)
+        local ROWS = {
+            {key = "Friend", label = "🔵 الأصدقاء"},
+            {key = "Enemy",  label = "🔴 اللاعبين"},
+            {key = "Bot",    label = "🟢 البوتات"},
+        }
+
+        -- 💾 حفظ اختياراتك مع بقية الإعدادات
+        UI.ConfigRegistry["AimFilters"] = {
+            default = {Friend = true, Enemy = true, Bot = true},
+            get = function()
+                return {Friend = State.AimFilters.Friend, Enemy = State.AimFilters.Enemy, Bot = State.AimFilters.Bot}
+            end,
+            apply = function(value)
+                if type(value) ~= "table" then return end
+                for key in pairs(State.AimFilters) do
+                    if type(value[key]) == "boolean" then
+                        State.AimFilters[key] = value[key]
+                    end
+                end
+            end
+        }
+
+        -- 💾 حفظ نمط التصويب (سلس / مفاجئ)
+        UI.ConfigRegistry["AimMode"] = {
+            default = "Smooth",
+            get = function() return State.AimMode end,
+            apply = function(value)
+                if value == "Smooth" or value == "Instant" then State.AimMode = value end
+            end
+        }
+
+        -- ⚙️ قائمة نمط التصويب: شرح + زرين (سلس / مفاجئ)
+        State.CloseAimModePanel = function()
+            local closing = State.aimModePanel
+            if not closing then return end
+            State.aimModePanel = nil
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        State.OpenAimModePanel = function()
+            -- ضغطة ثانية على زر "نمط" = تقفل القائمة
+            if State.aimModePanel then State.CloseAimModePanel() return end
+
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyAimModePanel"
+            panel.Size = UDim2.new(0, 220, 0, 126)
+            panel.Position = UDim2.new(0.5, -265, 0.42, 142) -- تحت قائمة الايم بوت. تقدر تسحبها.
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.BackgroundTransparency = 0
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            State.aimModePanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color = AIM_ACCENT
+            stroke.Thickness = 2
+            stroke.Transparency = 0
+            AddMovingBorderGlow(stroke, 1.5, AIM_ACCENT)
+
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local titleFrame = Instance.new("Frame")
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+            titleFrame.Parent = panel
+
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -40, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "⚙️ نمط التصويب"
+            title.TextColor3 = AIM_ACCENT
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = titleFrame
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.TextSize = 14
+            Instance.new("UICorner", closeBtn)
+            closeBtn.Parent = titleFrame
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, AIM_ACCENT)
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                State.CloseAimModePanel() -- يقفل هذي القائمة بس، الايم بوت يبقى شغال
+            end)
+
+            -- 📖 الشرح: ايش هذي القائمة وايش الفرق بين النمطين
+            local desc = Instance.new("TextLabel")
+            desc.Size = UDim2.new(1, -20, 0, 46)
+            desc.Position = UDim2.new(0, 10, 0, 34)
+            desc.BackgroundTransparency = 1
+            desc.Text = "اختر طريقة تصويب الايم بوت:\n🌊 سلس: الكاميرا تلف للهدف بهدوء\n⚡ مفاجئ: تنقفل على الراس فوراً"
+            desc.TextColor3 = Color3.fromRGB(200, 200, 200)
+            desc.Font = Enum.Font.Arcade
+            desc.TextSize = 11
+            desc.TextWrapped = true
+            desc.TextXAlignment = Enum.TextXAlignment.Center
+            desc.TextYAlignment = Enum.TextYAlignment.Top
+            desc.Parent = panel
+
+            local MODES = {
+                {key = "Smooth",  label = "🌊 سلس"},
+                {key = "Instant", label = "⚡ مفاجئ"},
+            }
+            local modeButtons = {}
+            local function refreshModes()
+                for _, item in ipairs(modeButtons) do
+                    local on = State.AimMode == item.key
+                    item.btn.Text = item.label .. (on and " ✔" or "")
+                    item.btn.BackgroundColor3 = on and ROW_ON or ROW_OFF
+                end
+            end
+
+            for i, mode in ipairs(MODES) do
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(0.42, 0, 0, 30)
+                btn.Position = UDim2.new(i == 1 and 0.05 or 0.53, 0, 0, 86)
+                btn.TextColor3 = Color3.new(1, 1, 1)
+                btn.Font = Enum.Font.Arcade
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                Instance.new("UICorner", btn)
+                local btnGlow = Instance.new("UIStroke", btn)
+                btnGlow.Thickness = 1.5
+                btnGlow.Transparency = 0.3
+                AddMovingBorderGlow(btnGlow, 1.5, AIM_ACCENT)
+
+                btn.MouseButton1Click:Connect(function()
+                    playClick()
+                    State.AimMode = mode.key
+                    refreshModes()
+                    if SaveConfig then SaveConfig() end
+                end)
+                btn.Parent = panel
+                table.insert(modeButtons, {btn = btn, key = mode.key, label = mode.label})
+            end
+            refreshModes()
+        end
+
+        State.CloseAimPanel = function()
+            if State.CloseAimModePanel then State.CloseAimModePanel() end
+            local closing = State.aimPanel
+            if not closing then return end
+            State.aimPanel = nil
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        State.OpenAimPanel = function()
+            if State.aimPanel then State.aimPanel:Destroy() State.aimPanel = nil end
+
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyAimPanel"
+            panel.Size = UDim2.new(0, 220, 0, 150)
+            -- على يسار القائمة الرئيسية (قائمة ESP على اليمين) عشان ما يتداخلون. تقدر تسحبها.
+            panel.Position = UDim2.new(0.5, -265, 0.42, 0)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.BackgroundTransparency = 0
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            State.aimPanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color = AIM_ACCENT
+            stroke.Thickness = 2
+            stroke.Transparency = 0
+            AddMovingBorderGlow(stroke, 1.5, AIM_ACCENT)
+
+            -- 🌫️ ظهور تدريجي مثل بقية القوائم
+            State.FadeInPanel(panel, 0.35)
+
+            MakeDraggable(panel)
+
+            local titleFrame = Instance.new("Frame")
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+            titleFrame.Parent = panel
+
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -124, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "🎯 ايم بوت"
+            title.TextColor3 = AIM_ACCENT
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = titleFrame
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.TextSize = 14
+            Instance.new("UICorner", closeBtn)
+            closeBtn.Parent = titleFrame
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, AIM_ACCENT)
+
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                -- 🔒 إغلاق X = نفس إطفاء زر ايم بوت بالضبط (مثل قائمة ESP)
+                local setter = UI.ToggleSetters["ايم بوت"]
+                if setter then
+                    setter(false, true)
+                else
+                    State.AimBotActive = false
+                    State.CloseAimPanel()
+                end
+            end)
+
+            -- 🔽 زر تصغير/توسيع القائمة بدون إيقاف الايم بوت
+            local bodyItems = {}
+            local collapsed = false
+
+            local minimizeBtn = Instance.new("TextButton")
+            minimizeBtn.Name = "MinimizeAim"
+            minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+            minimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+            minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            minimizeBtn.Text = "−"
+            minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            minimizeBtn.TextScaled = true
+            minimizeBtn.Font = Enum.Font.Arcade
+            minimizeBtn.AutoButtonColor = false
+            minimizeBtn.Parent = titleFrame
+            Instance.new("UICorner", minimizeBtn)
+            local minimizeGlow = Instance.new("UIStroke", minimizeBtn)
+            minimizeGlow.Thickness = 1.5
+            AddMovingBorderGlow(minimizeGlow, 1.5, AIM_ACCENT)
+
+            -- ⚙️ زر "نمط": يفتح قائمة فيها شرح وزرين (سلس / مفاجئ). ضغطة ثانية تقفلها.
+            local modeBtn = Instance.new("TextButton")
+            modeBtn.Name = "AimModeBtn"
+            modeBtn.Size = UDim2.new(0, 46, 0, 26)
+            modeBtn.Position = UDim2.new(1, -112, 0, 3)
+            modeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            modeBtn.Text = "نمط"
+            modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            modeBtn.TextScaled = true
+            modeBtn.Font = Enum.Font.Arcade
+            modeBtn.AutoButtonColor = false
+            modeBtn.Parent = titleFrame
+            Instance.new("UICorner", modeBtn)
+            local modeGlow = Instance.new("UIStroke", modeBtn)
+            modeGlow.Thickness = 1.5
+            AddMovingBorderGlow(modeGlow, 1.5, AIM_ACCENT)
+            modeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                State.OpenAimModePanel()
+            end)
+
+            local function setAimMinimized(minimized)
+                collapsed = minimized
+                minimizeBtn.Text = minimized and "+" or "−"
+                for _, item in ipairs(bodyItems) do
+                    if item and item.Parent then
+                        if not minimized then item.Visible = true end
+                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundTransparency = minimized and 1 or 0,
+                            TextTransparency = minimized and 1 or 0
+                        }):Play()
+                        for _, child in ipairs(item:GetChildren()) do
+                            if child:IsA("UIStroke") then
+                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                    Transparency = minimized and 1 or 0.3
+                                }):Play()
+                            end
+                        end
+                        if minimized then
+                            task.delay(0.13, function()
+                                if collapsed and item.Parent then item.Visible = false end
+                            end)
+                        end
+                    end
+                end
+                State.TweenPanelHeight(panel, minimized and 150 or 38, minimized and 38 or 150, 220)
+            end
+
+            minimizeBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                setAimMinimized(not collapsed)
+            end)
+
+            for i, row in ipairs(ROWS) do
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(0.86, 0, 0, 30)
+                btn.Position = UDim2.new(0.07, 0, 0, 38 + (i - 1) * 36)
+                btn.TextColor3 = Color3.new(1, 1, 1)
+                btn.Font = Enum.Font.Arcade
+                btn.TextSize = 14
+                btn.AutoButtonColor = false
+                Instance.new("UICorner", btn)
+                local btnGlow = Instance.new("UIStroke", btn)
+                btnGlow.Thickness = 1.5
+                btnGlow.Transparency = 0.3
+                AddMovingBorderGlow(btnGlow, 1.5, AIM_ACCENT)
+
+                local function refresh()
+                    local on = State.AimFilters[row.key]
+                    btn.Text = row.label .. (on and ": تشغيل" or ": إيقاف")
+                    btn.BackgroundColor3 = on and ROW_ON or ROW_OFF
+                end
+                refresh()
+
+                btn.MouseButton1Click:Connect(function()
+                    playClick()
+                    State.AimFilters[row.key] = not State.AimFilters[row.key]
+                    refresh()
+                    if SaveConfig then SaveConfig() end
+                end)
+                btn.Parent = panel
+                table.insert(bodyItems, btn)
+            end
+        end
+    end
+
+    -- ====================== 🎯 قائمة الايم بوت على المحدد (تاب 2) ======================
+    -- نفس قائمة الايم بوت (عنوان + X + تصغير + زر نمط بالشرح) بس بدل خيارات الأهداف الثلاثة: زر تشغيل / إيقاف.
+    do
+        local SEL_ACCENT = Color3.fromRGB(170, 0, 255)
+        local ROW_ON = Color3.fromRGB(120, 0, 180)
+        local ROW_OFF = Color3.fromRGB(45, 45, 45)
+        local PANEL_H = 80
+
+        State.CloseAimSelPanel = function()
+            if State.CloseAimModePanel then State.CloseAimModePanel() end
+            local closing = State.aimSelPanel
+            if not closing then return end
+            State.aimSelPanel = nil
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        State.OpenAimSelPanel = function()
+            if State.aimSelPanel then State.aimSelPanel:Destroy() State.aimSelPanel = nil end
+
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyAimSelPanel"
+            panel.Size = UDim2.new(0, 220, 0, PANEL_H)
+            panel.Position = UDim2.new(0.5, -265, 0.42, 0) -- يسار القائمة الرئيسية. تقدر تسحبها.
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.BackgroundTransparency = 0
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            State.aimSelPanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color = SEL_ACCENT
+            stroke.Thickness = 2
+            stroke.Transparency = 0
+            AddMovingBorderGlow(stroke, 1.5, SEL_ACCENT)
+
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local titleFrame = Instance.new("Frame")
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+            titleFrame.Parent = panel
+
+            local title = Instance.new("TextLabel")
+            title.Size = UDim2.new(1, -124, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "🎯 ايم بوت"
+            title.TextColor3 = SEL_ACCENT
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.Parent = titleFrame
+
+            local closeBtn = Instance.new("TextButton")
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.TextSize = 14
+            Instance.new("UICorner", closeBtn)
+            closeBtn.Parent = titleFrame
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, SEL_ACCENT)
+
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                -- 🔒 إغلاق X = نفس إطفاء زر "ايم بوت على المحدد" بتاب 2
+                local setter = UI.ToggleSetters["ايم بوت على المحدد"]
+                if setter then
+                    setter(false)
+                else
+                    State.AimSelectedActive = false
+                    State.CloseAimSelPanel()
+                end
+            end)
+
+            local bodyItems = {}
+            local collapsed = false
+
+            local minimizeBtn = Instance.new("TextButton")
+            minimizeBtn.Name = "MinimizeAimSel"
+            minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+            minimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+            minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            minimizeBtn.Text = "−"
+            minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            minimizeBtn.TextScaled = true
+            minimizeBtn.Font = Enum.Font.Arcade
+            minimizeBtn.AutoButtonColor = false
+            minimizeBtn.Parent = titleFrame
+            Instance.new("UICorner", minimizeBtn)
+            local minimizeGlow = Instance.new("UIStroke", minimizeBtn)
+            minimizeGlow.Thickness = 1.5
+            AddMovingBorderGlow(minimizeGlow, 1.5, SEL_ACCENT)
+
+            -- ⚙️ زر "نمط": نفس قائمة الشرح وزرين (سلس / مفاجئ)
+            local modeBtn = Instance.new("TextButton")
+            modeBtn.Name = "AimSelModeBtn"
+            modeBtn.Size = UDim2.new(0, 46, 0, 26)
+            modeBtn.Position = UDim2.new(1, -112, 0, 3)
+            modeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            modeBtn.Text = "نمط"
+            modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            modeBtn.TextScaled = true
+            modeBtn.Font = Enum.Font.Arcade
+            modeBtn.AutoButtonColor = false
+            modeBtn.Parent = titleFrame
+            Instance.new("UICorner", modeBtn)
+            local modeGlow = Instance.new("UIStroke", modeBtn)
+            modeGlow.Thickness = 1.5
+            AddMovingBorderGlow(modeGlow, 1.5, SEL_ACCENT)
+            modeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                State.OpenAimModePanel()
+            end)
+
+            local function setSelMinimized(minimized)
+                collapsed = minimized
+                minimizeBtn.Text = minimized and "+" or "−"
+                for _, item in ipairs(bodyItems) do
+                    if item and item.Parent then
+                        if not minimized then item.Visible = true end
+                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundTransparency = minimized and 1 or 0,
+                            TextTransparency = minimized and 1 or 0
+                        }):Play()
+                        for _, child in ipairs(item:GetChildren()) do
+                            if child:IsA("UIStroke") then
+                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                    Transparency = minimized and 1 or 0.3
+                                }):Play()
+                            end
+                        end
+                        if minimized then
+                            task.delay(0.13, function()
+                                if collapsed and item.Parent then item.Visible = false end
+                            end)
+                        end
+                    end
+                end
+                State.TweenPanelHeight(panel, minimized and PANEL_H or 38, minimized and 38 or PANEL_H, 220)
+            end
+
+            minimizeBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                setSelMinimized(not collapsed)
+            end)
+
+            -- 🔘 تشغيل / إيقاف الايم بوت على المحدد (بدل خيارات الأهداف الثلاثة)
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(0.86, 0, 0, 30)
+            btn.Position = UDim2.new(0.07, 0, 0, 38)
+            btn.TextColor3 = Color3.new(1, 1, 1)
+            btn.Font = Enum.Font.Arcade
+            btn.TextSize = 14
+            btn.AutoButtonColor = false
+            Instance.new("UICorner", btn)
+            local btnGlow = Instance.new("UIStroke", btn)
+            btnGlow.Thickness = 1.5
+            btnGlow.Transparency = 0.3
+            AddMovingBorderGlow(btnGlow, 1.5, SEL_ACCENT)
+
+            local function refresh()
+                local on = State.AimSelectedActive
+                btn.Text = "🎯 الايم بوت" .. (on and ": تشغيل" or ": إيقاف")
+                btn.BackgroundColor3 = on and ROW_ON or ROW_OFF
+            end
+            refresh()
+
+            btn.MouseButton1Click:Connect(function()
+                playClick()
+                if not State.AimSelectedActive and not State.selectedPlayer then
+                    Notify("🎯 ايم بوت", "حدد لاعب من القائمة أول", Color3.fromRGB(255, 0, 150))
+                    return
+                end
+                State.AimSelectedActive = not State.AimSelectedActive
+                refresh()
+            end)
+            btn.Parent = panel
+            table.insert(bodyItems, btn)
         end
     end
 
@@ -4106,6 +4833,41 @@ end)
         OK("🗑️ تم حذف الحفظ وإعادة كل الإعدادات للأصل")
     end
 
+    -- 🏷️ ملصقات الأزرار: تنعرض قبل اسم الزر فقط (مفتاح الزر نفسه ما يتغير، فالحفظ والقوائم والـ ToggleSetters تبقى شغالة).
+    -- الأزرار اللي ما لها ملصق هنا تبقى بدون ملصق، والأزرار اللي فيها ملصق جاهز باسمها (مثل 🛡️ محد يقدر يمسك) ما نلمسها.
+    UI.ItemIcons = {
+        ["F   L   Y"] = "🕊️",
+        ["N   O   C   L   I   P"] = "👻",
+        ["ايم بوت"] = "🎯",
+        ["E   S   P"] = "👁️",
+        ["السرعه"] = "⚡",
+        ["قوة القفز"] = "🦘",
+        ["إرجاع السرعة والنط الطبيعي"] = "🔄",
+        ["القفز اللانهائي"] = "♾️",
+        ["مانع الطيران"] = "⛔",
+        ["النقل باللمس"] = "👆",
+        ["منصة ثابتة"] = "🧱",
+        ["مشاهدة اللاعب"] = "📺",
+        ["جلوس فوق رأسه"] = "🪑",
+        ["يــمــص"] = "💥",
+        ["ايم بوت على المحدد"] = "🎯👤",
+        ["تطيير اللاعب"] = "🚀",
+        ["تنوير المكان"] = "💡",
+        ["الجاذبية"] = "🌍",
+        ["المناظرة"] = "🔭",
+        ["المنظور"] = "🔍",
+        ["إخفاء الواجهات"] = "🙈",
+        ["إلغاء ضرر السقوط"] = "🪂",
+        ["انتقال وملاحقة"] = "🧲",
+        ["تخفيف الجودة"] = "📉",
+        ["حفض موقعك"] = "📍",
+        ["أجواء الماب"] = "🌤️",
+        ["تشغيل Auto E"] = "⌨️",
+        ["اطفاء الاشياء"] = "🧩",
+        ["مانع الزحلقة والمؤقتات"] = "⏱️",
+        ["اوتو كلكر"] = "🖱️",
+    }
+
     local function NewItem(txt, type, call, parent, opts)
         local f = Instance.new("Frame", parent)
         f.Size = UDim2.new(1, -10, 0, 65)
@@ -4128,7 +4890,7 @@ end)
         local l = Instance.new("TextLabel", f)
         l.Size = UDim2.new(0.6, 0, 1, 0)
         l.Position = UDim2.new(0, 10, 0, 0)
-        l.Text = _TranslateText(txt)
+        l.Text = (UI.ItemIcons[txt] and (UI.ItemIcons[txt] .. " ") or "") .. _TranslateText(txt)
         l.TextColor3 = Color3.new(1,1,1)
         l.BackgroundTransparency = 1
         l.TextXAlignment = "Left"
@@ -5499,7 +6261,16 @@ end)
     end)
     NewItem("N   O   C   L   I   P", "Button", function(s) State.Noclip = s; if s then Notify("👻 نوكليب", "مفعل", Color3.fromRGB(255, 220, 0)) else Notify("🧱 نوكليب", "معطل", Color3.fromRGB(255, 220, 0)) end end, UI.Page1)
 
-    NewItem("ايم بوت", "Button", function(s) State.AimBotActive = s; if s then Notify("🎯 ايم بوت", "مفعل", Color3.fromRGB(255, 0, 150)) else Notify("🔓 ايم بوت", "معطل", Color3.fromRGB(255, 0, 150)) end end, UI.Page1)
+    NewItem("ايم بوت", "Button", function(s)
+        State.AimBotActive = s
+        if s then
+            Notify("🎯 ايم بوت", "مفعل", Color3.fromRGB(255, 0, 150))
+            State.OpenAimPanel() -- تظهر قائمة اختيار الأهداف
+        else
+            State.CloseAimPanel()
+            Notify("🔓 ايم بوت", "معطل", Color3.fromRGB(255, 0, 150))
+        end
+    end, UI.Page1)
     NewItem("E   S   P", "Button", function(s)
         State.ESPActive = s
         if s then
@@ -6232,6 +7003,27 @@ local function UpdatePlayerList()
             OK("يــمــص: إيقاف")
         end
     end, ControlsArea)
+    -- 🎯 ايم بوت على اللاعب المحدد: يطلع قائمة فيها تشغيل / إيقاف وزر نمط (سلس / مفاجئ) بالشرح
+    NewItem("ايم بوت على المحدد", "Button", function(s)
+        if s then
+            if not State.selectedPlayer then
+                Notify("🎯 ايم بوت", "حدد لاعب من القائمة أول", Color3.fromRGB(255, 0, 150))
+                task.defer(function()
+                    local setter = UI.ToggleSetters["ايم بوت على المحدد"]
+                    if setter then setter(false) end
+                end)
+                return
+            end
+            State.AimSelectedActive = true
+            Notify("🎯 ايم بوت", "مفعل على: " .. State.selectedPlayer.Name, Color3.fromRGB(255, 0, 150))
+            State.OpenAimSelPanel() -- تظهر قائمة التشغيل / الإيقاف
+        else
+            State.AimSelectedActive = false
+            State.CloseAimSelPanel()
+            Notify("🔓 ايم بوت", "معطل", Color3.fromRGB(255, 0, 150))
+        end
+    end, ControlsArea)
+    UI.ConfigRegistry["ايم بوت على المحدد"] = nil -- ما ينحفظ (يحتاج لاعب محدد كل مرة)
     NewItem("تطيير اللاعب", "Button", function(s)
         if s then
             saveMyPos()
