@@ -12592,6 +12592,20 @@ end)
                 end
 
         end
+        -- ⬇️ تمرير سجل الدردشة إلى أحدث رسالة بعد أن يكتمل تحديث تخطيط الصفوف.
+        local function scrollChatToLatestMessage()
+            task.defer(function()
+                task.wait()
+                task.wait()
+                if not chatLog or not chatLog.Parent then return end
+                local contentHeight = chatList.AbsoluteContentSize.Y
+                local visibleHeight = chatLog.AbsoluteSize.Y
+                local targetY = math.max(0, contentHeight - visibleHeight + 70)
+                local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
+                chatLog.CanvasPosition = Vector2.new(0, math.min(targetY, maxY))
+            end)
+        end
+
         task.spawn(function()
             while true do
                 local success, response = pcall(function()
@@ -12696,6 +12710,10 @@ end)
                                     end
                                     if isChatMessageVisible(m) then
                                         addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyTo)
+                                        -- عند وصول رسالة من شخص آخر، انزل مباشرةً إلى آخر رسالة.
+                                        if m.sender ~= game.Players.LocalPlayer.Name then
+                                            scrollChatToLatestMessage()
+                                        end
                                     end
                                 end
                                 existing[key] = true
