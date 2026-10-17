@@ -80,6 +80,14 @@ end
 -- نقطة المنتصف هي المرجع: Sk تنزل للنص، تتحرك يسار، ثم سكربت تنزل من فوق مكانها النهائي.
 local _TweenS = game:GetService("TweenService")
 
+-- 🎞️ لو "إيقاف الأنميشن" مفعّل من الإعدادات، كل حركة تصير فورية بدون تدرج
+function SkyTw(obj, info, goal)
+    if _G.SkyNoAnim then
+        info = TweenInfo.new(0)
+    end
+    return _TweenS:Create(obj, info, goal)
+end
+
 task.wait(1)
 
 local _IntroGui = Instance.new("ScreenGui")
@@ -115,7 +123,7 @@ _IntroBackdropCorner.CornerRadius = UDim.new(0, 12)
 _IntroBackdropCorner.Parent = _IntroBackdrop
 
 -- ظهور الخلفية بشكل خفيف.
-_TweenS:Create(
+SkyTw(
     _IntroBackdrop,
     TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     {BackgroundTransparency = 0.38}
@@ -185,7 +193,7 @@ _IntroScript.Position = UDim2.new(0.5, SCRIPT_FINAL_X, 0, -80)
 -- نخلي الخلفية تاخذ وقتها أول، وبعدها تبدأ Sk بهدوء.
 task.wait(0.25)
 
-local _SkDrop = _TweenS:Create(
+local _SkDrop = SkyTw(
     _IntroSk,
     TweenInfo.new(1.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
     {Position = UDim2.new(0.5, SCRIPT_FINAL_X, 0.5, 0)}
@@ -198,7 +206,7 @@ task.wait(0.7)
 
 -- 2) Sk وحدها تتحرك لليسار.
 -- سكربت لا تتحرك مع الخلفية ولا مع Sk.
-local _SkMove = _TweenS:Create(
+local _SkMove = SkyTw(
     _IntroSk,
     TweenInfo.new(0.9, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut),
     {Position = UDim2.new(0.5, SK_FINAL_X, 0.5, 0)}
@@ -210,7 +218,7 @@ _SkMove:Play()
 -- ثم تبدأ سكربت بالنزول من الخط المخفي إلى مكانها باليمين.
 task.wait(0.3)
 
-local _ScriptDrop = _TweenS:Create(
+local _ScriptDrop = SkyTw(
     _IntroScript,
     TweenInfo.new(1.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
     {Position = UDim2.new(0.5, SCRIPT_FINAL_X, 0.5, 0)}
@@ -223,13 +231,13 @@ task.wait(1.15)
 task.wait(1)
 
 -- اختفاء خفيف للكلمتين فقط، والخلفية تبقى ثابتة.
-_TweenS:Create(
+SkyTw(
     _IntroSk,
     TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     {TextTransparency = 1}
 ):Play()
 
-_TweenS:Create(
+SkyTw(
     _IntroScript,
     TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     {TextTransparency = 1}
@@ -253,16 +261,19 @@ local SoundService = game:GetService("SoundService")
 
 local clickSound = Instance.new("Sound")
 clickSound.SoundId = "rbxassetid://6895079853"
+clickSound.Name = "SkyClickSound"
 clickSound.Volume = 1
 clickSound.Parent = SoundService
 
 local okSound = Instance.new("Sound")
 okSound.SoundId = "rbxassetid://6026984224"
+okSound.Name = "SkyOkSound"
 okSound.Volume = 1
 okSound.Parent = SoundService
 
 local warnSound = Instance.new("Sound")
 warnSound.SoundId = "rbxassetid://4590662766"
+warnSound.Name = "SkyWarnSound"
 warnSound.Volume = 1
 warnSound.Parent = SoundService
 
@@ -300,14 +311,14 @@ local function _SetMainMenuSound(open)
         if not _MainMenuSound.IsPlaying then
             _MainMenuSound:Play()
         end
-        _MainMenuSoundTween = _TweenS:Create(
+        _MainMenuSoundTween = SkyTw(
             _MainMenuSound,
             TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
-            {Volume = 1}
+            {Volume = 1 * (_G.SkyMenuVolumeMul or 1)}
         )
         _MainMenuSoundTween:Play()
     else
-        _MainMenuSoundTween = _TweenS:Create(
+        _MainMenuSoundTween = SkyTw(
             _MainMenuSound,
             TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.In),
             {Volume = 0}
@@ -505,7 +516,7 @@ local function trimNotificationQueue(category)
                 local inner = old:FindFirstChild("NotificationInner")
                 if inner then
                     _fadeNotificationContents(inner, 0.30)
-                    _TweenS:Create(inner, TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    SkyTw(inner, TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                         Position = UDim2.new(0, 330, 0, 0)
                     }):Play()
                 end
@@ -536,30 +547,30 @@ _fadeNotificationContents = function(I, duration)
 
     for _, obj in ipairs(I:GetDescendants()) do
         if obj:IsA("UIStroke") then
-            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            SkyTw(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                 Transparency = 1
             }):Play()
 
         elseif obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox") then
-            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            SkyTw(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                 TextTransparency = 1,
                 BackgroundTransparency = 1
             }):Play()
 
         elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
-            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            SkyTw(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                 ImageTransparency = 1,
                 BackgroundTransparency = 1
             }):Play()
 
         elseif obj:IsA("Frame") or obj:IsA("ScrollingFrame") or obj:IsA("ViewportFrame") then
-            _TweenS:Create(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            SkyTw(obj, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                 BackgroundTransparency = 1
             }):Play()
         end
     end
 
-    _TweenS:Create(I, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+    SkyTw(I, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
         BackgroundTransparency = 1
     }):Play()
 end
@@ -574,7 +585,7 @@ local function _dismissNotificationAfterDelay(F, I, Stroke, TL, ML, AvatarImg, c
 
     -- نخفي كل عناصر الإشعار في نفس الوقت ثم نحرك الحاوية للخارج.
     _fadeNotificationContents(I, 0.55)
-    _TweenS:Create(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+    SkyTw(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
         Position = UDim2.new(0, 330, 0, 0)
     }):Play()
 
@@ -600,6 +611,7 @@ local function PlaySelectedExitAlert()
 end
 
 function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
+    if _G.SkyNotifyOff then return end
     T = _TranslateText(T)
     M = _TranslateText(M)
     local category = notificationCategory(T, avatarUserId)
@@ -618,10 +630,10 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
             if ML then ML.Text = M end
             -- ⚡ ومضة خفيفة على الحافة تعطي إحساس إن الإشعار تحدث فعلاً
             if Stroke then
-                _TweenS:Create(Stroke, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Thickness = 2.4}):Play()
+                SkyTw(Stroke, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Thickness = 2.4}):Play()
                 task.delay(0.1, function()
                     if Stroke and Stroke.Parent then
-                        _TweenS:Create(Stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Thickness = 1.5}):Play()
+                        SkyTw(Stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Thickness = 1.5}):Play()
                     end
                 end)
             end
@@ -671,7 +683,7 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     })
     task.spawn(function()
         while GlowGradient.Parent do
-            GlowGradient.Rotation = (GlowGradient.Rotation + 1.5) % 360
+            if not _G.SkyGlowOff then GlowGradient.Rotation = (GlowGradient.Rotation + 1.5) % 360 end
             task.wait(0.03)
         end
     end)
@@ -744,7 +756,7 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
         -- نفس حركة الإغلاق التلقائي: يختفي المحتوى تدريجيًا
         -- وبنفس الوقت يتحرك الإشعار للخارج، بدون اختفاء مفاجئ.
         _fadeNotificationContents(I, 0.55)
-        _TweenS:Create(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        SkyTw(I, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Position = UDim2.new(0, 330, 0, 0)
         }):Play()
 
@@ -770,16 +782,16 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     task.spawn(function()
         pcall(function()
             -- دخول هادئ وبطيء من اليمين لليسار، مع ظهور تدريجي خفيف مثل شاشة التحميل.
-            _TweenS:Create(I, TweenInfo.new(0.58, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(I, TweenInfo.new(0.58, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Position = UDim2.new(0, 0, 0, 0)
             }):Play()
-            _TweenS:Create(I, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(I, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 BackgroundTransparency = 0.08
             }):Play()
-            _TweenS:Create(TL, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-            _TweenS:Create(ML, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+            SkyTw(TL, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+            SkyTw(ML, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
             if AvatarImg then
-                _TweenS:Create(AvatarImg, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
+                SkyTw(AvatarImg, TweenInfo.new(0.68, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {ImageTransparency = 0}):Play()
             end
 
             if shake then
@@ -790,13 +802,13 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
                 for _, offset in ipairs(shakeOffsets) do
                     if not F.Parent then return end
                     local duration = (math.abs(offset) >= 8) and 0.055 or 0.045
-                    local tween = _TweenS:Create(I, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                    local tween = SkyTw(I, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
                         Position = UDim2.new(0, offset, 0, 0)
                     })
                     tween:Play()
                     tween.Completed:Wait()
                 end
-                _TweenS:Create(I, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(I, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Position = UDim2.new(0, 0, 0, 0)
                 }):Play()
             end
@@ -806,24 +818,28 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
     end)
 end
 
-function OK(m, liveKey) 
+function OK(m, liveKey)
+    if _G.SkyNotifyOff then return end
     playOK()
     Notify("✅ تم", m, Color3.fromRGB(170, 0, 255), nil, nil, nil, liveKey) 
 end
 
-function WARN(m) 
+function WARN(m)
+    if _G.SkyNotifyOff then return end
     playWarn()
     Notify("⚠️ تنبيه", m, Color3.fromRGB(255, 100, 0), true) 
 end
 
 -- إشعار أخضر خاص برجوع اللاعب من الموت (ريسبون)
 function RESPAWN_NOTIFY(m)
+    if _G.SkyNotifyOff then return end
     playOK()
     Notify("🔄 ريسبون", m, Color3.fromRGB(0, 200, 90))
 end
 
 -- إشعار أحمر شيطاني خاص باختيار لاعب أو التطيير
 function EVIL_NOTIFY(m, doubleEmoji)
+    if _G.SkyNotifyOff then return end
     playOK()
     Notify(doubleEmoji and "😈😈" or "😈", m, Color3.fromRGB(255, 0, 0))
 end
@@ -850,6 +866,7 @@ _infoTipSound.Parent = game:GetService("SoundService")
 _ownSounds[_infoTipSound] = true
 
 function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFadeDuration)
+    if _G.SkyNotifyOff then return end
     displayDuration = tonumber(displayDuration) or 4
     msg = _TranslateText(msg)
     _infoTipSound:Stop()
@@ -881,7 +898,7 @@ function FlyTipNotify(msg, showDismissBtn, onDismiss, displayDuration, customFad
     })
     task.spawn(function()
         while frame and frame.Parent do
-            grad.Rotation = (grad.Rotation + 3) % 360
+            if not _G.SkyGlowOff then grad.Rotation = (grad.Rotation + 3) % 360 end
             task.wait(0.03)
         end
     end)
@@ -983,7 +1000,7 @@ local function RunMyOriginalScript()
         grad.Parent = stroke
         task.spawn(function()
             while stroke and stroke.Parent do
-                grad.Rotation = (grad.Rotation + speed) % 360
+                if not _G.SkyGlowOff then grad.Rotation = (grad.Rotation + speed) % 360 end
                 task.wait(0.03)
             end
         end)
@@ -1007,7 +1024,7 @@ local function RunMyOriginalScript()
         obj.Position = UDim2.new(origPos.X.Scale + 0.1, origPos.X.Offset + 20, origPos.Y.Scale, origPos.Y.Offset)
         task.delay(delay, function()
             if obj and obj.Parent then
-                TweenService:Create(obj, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(obj, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundTransparency = 0,
                     Position = origPos
                 }):Play()
@@ -1020,10 +1037,10 @@ local function RunMyOriginalScript()
         local origSize = btn.Size
         local shrunk = UDim2.new(origSize.X.Scale * 0.9, origSize.X.Offset * 0.9, origSize.Y.Scale * 0.9, origSize.Y.Offset * 0.9)
         local function _press()
-            TweenService:Create(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = shrunk }):Play()
+            SkyTw(btn, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = shrunk }):Play()
         end
         local function _release()
-            TweenService:Create(btn, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = origSize }):Play()
+            SkyTw(btn, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = origSize }):Play()
         end
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -1049,12 +1066,12 @@ local function RunMyOriginalScript()
             stroke.Thickness = 3
             task.spawn(function()
                 while stroke and stroke.Parent and stroke.Color == activeColor do
-                    TweenService:Create(stroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    SkyTw(stroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                         Transparency = 0.55
                     }):Play()
                     task.wait(0.8)
                     if not (stroke and stroke.Parent) then break end
-                    TweenService:Create(stroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    SkyTw(stroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                         Transparency = 0
                     }):Play()
                     task.wait(0.8)
@@ -1352,7 +1369,7 @@ local function RunMyOriginalScript()
             for _, d in ipairs(panel:GetDescendants()) do prep(d) end
             panel.Visible = true
             for _, job in ipairs(jobs) do
-                pcall(function() TweenService:Create(job[1], info, job[2]):Play() end)
+                pcall(function() SkyTw(job[1], info, job[2]):Play() end)
             end
         end)
     end
@@ -1376,7 +1393,7 @@ local function RunMyOriginalScript()
                 goal = {Transparency = 1}
             end
             if goal then
-                pcall(function() TweenService:Create(obj, info, goal):Play() end)
+                pcall(function() SkyTw(obj, info, goal):Play() end)
             end
         end
         fade(panel)
@@ -1385,7 +1402,7 @@ local function RunMyOriginalScript()
     State.TweenPanelHeight = function(panel, fromH, toH, width)
         if not panel or not panel.Parent then return end
         local pos = panel.Position
-        TweenService:Create(panel, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        SkyTw(panel, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Size = UDim2.new(0, width, 0, toH),
             Position = UDim2.new(pos.X.Scale, pos.X.Offset, pos.Y.Scale, pos.Y.Offset + (toH - fromH) / 2)
         }):Play()
@@ -1519,11 +1536,11 @@ local function RunMyOriginalScript()
         FlyLoadingBar.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
         FlyLoadingBar.BorderSizePixel = 0
         FlyLoadingBar.ZIndex = 20
-        TweenService:Create(FlyLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        SkyTw(FlyLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Size = UDim2.new(1, 0, 0, 3)
         }):Play()
         task.delay(0.6, function()
-            TweenService:Create(FlyLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            SkyTw(FlyLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                 BackgroundTransparency = 1
             }):Play()
             task.delay(0.3, function() if FlyLoadingBar then FlyLoadingBar:Destroy() end end)
@@ -1586,11 +1603,11 @@ local function RunMyOriginalScript()
                         goal.TextTransparency = minimized and 1 or 0
                     end
                     if next(goal) then
-                        TweenService:Create(item, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+                        SkyTw(item, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
                     end
                     for _, child in ipairs(item:GetChildren()) do
                         if child:IsA("UIStroke") then
-                            TweenService:Create(child, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            SkyTw(child, TweenInfo.new(minimized and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                 Transparency = minimized and 1 or 0.3
                             }):Play()
                         end
@@ -1656,8 +1673,8 @@ local function RunMyOriginalScript()
         AddMovingBorderGlow(toggleBtnFlyGlow, 1.5)
         task.delay(0.05, function()
             if State.toggleBtnFly then
-                TweenService:Create(State.toggleBtnFly, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                TweenService:Create(toggleBtnFlyGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                SkyTw(State.toggleBtnFly, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                SkyTw(toggleBtnFlyGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
             end
         end)
 
@@ -1689,7 +1706,7 @@ local function RunMyOriginalScript()
         end)
         task.delay(0.05, function()
             if State.speedLabel then
-                TweenService:Create(State.speedLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                SkyTw(State.speedLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
             end
         end)
 
@@ -1713,8 +1730,8 @@ local function RunMyOriginalScript()
         AddMovingBorderGlow(plusBtnGlow, 1.5)
         task.delay(0.05, function()
             if plusBtn then
-                TweenService:Create(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                TweenService:Create(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                SkyTw(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                SkyTw(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
             end
         end)
         local function applyFlySpeed(delta)
@@ -1774,8 +1791,8 @@ local function RunMyOriginalScript()
         AddMovingBorderGlow(minusBtnGlow, 1.5)
         task.delay(0.05, function()
             if minusBtn then
-                TweenService:Create(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                TweenService:Create(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                SkyTw(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                SkyTw(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
             end
         end)
         bindFlySpeedHold(minusBtn, -30)
@@ -1810,12 +1827,12 @@ local function RunMyOriginalScript()
         TPLoadingBar.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
         TPLoadingBar.BorderSizePixel = 0
         TPLoadingBar.ZIndex = 20
-        TweenService:Create(TPLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        SkyTw(TPLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Size = UDim2.new(1, 0, 0, 3)
         }):Play()
         task.delay(0.6, function()
             if TPLoadingBar then
-                TweenService:Create(TPLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                SkyTw(TPLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                     BackgroundTransparency = 1
                 }):Play()
                 task.delay(0.3, function() if TPLoadingBar then TPLoadingBar:Destroy() end end)
@@ -1853,7 +1870,7 @@ local function RunMyOriginalScript()
         title.TextXAlignment = Enum.TextXAlignment.Left
         title.Parent = titleFrame
         task.delay(0.05, function()
-            if title then TweenService:Create(title, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
+            if title then SkyTw(title, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play() end
         end)
 
         -- زر + بجانب X: هو الوحيد الذي يضيف خانة حفظ جديدة.
@@ -1921,7 +1938,7 @@ local function RunMyOriginalScript()
         local function ResizeTPPanel()
             if not State.tpPanel then return end
             local newHeight = GetTPPanelHeight()
-            TweenService:Create(State.tpPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(State.tpPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Size = UDim2.new(0, 200, 0, newHeight)
             }):Play()
         end
@@ -1948,8 +1965,8 @@ local function RunMyOriginalScript()
             AddMovingBorderGlow(saveBtnGlow, 1.5)
             task.delay(0.15 + index * 0.05, function()
                 if saveBtn then
-                    TweenService:Create(saveBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(saveBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    SkyTw(saveBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    SkyTw(saveBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
 
@@ -1970,8 +1987,8 @@ local function RunMyOriginalScript()
             AddMovingBorderGlow(goBtnGlow, 1.5)
             task.delay(0.2 + index * 0.05, function()
                 if goBtn then
-                    TweenService:Create(goBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(goBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    SkyTw(goBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    SkyTw(goBtnGlow, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
 
@@ -2708,13 +2725,13 @@ end)
                 for _, item in ipairs(bodyItems) do
                     if item and item.Parent then
                         if not minimized then item.Visible = true end
-                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             BackgroundTransparency = minimized and 1 or 0,
                             TextTransparency = minimized and 1 or 0
                         }):Play()
                         for _, child in ipairs(item:GetChildren()) do
                             if child:IsA("UIStroke") then
-                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                SkyTw(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                     Transparency = minimized and 1 or 0.3
                                 }):Play()
                             end
@@ -3055,13 +3072,13 @@ end)
                 for _, item in ipairs(bodyItems) do
                     if item and item.Parent then
                         if not minimized then item.Visible = true end
-                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             BackgroundTransparency = minimized and 1 or 0,
                             TextTransparency = minimized and 1 or 0
                         }):Play()
                         for _, child in ipairs(item:GetChildren()) do
                             if child:IsA("UIStroke") then
-                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                SkyTw(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                     Transparency = minimized and 1 or 0.3
                                 }):Play()
                             end
@@ -3246,13 +3263,13 @@ end)
                 for _, item in ipairs(bodyItems) do
                     if item and item.Parent then
                         if not minimized then item.Visible = true end
-                        TweenService:Create(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(item, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             BackgroundTransparency = minimized and 1 or 0,
                             TextTransparency = minimized and 1 or 0
                         }):Play()
                         for _, child in ipairs(item:GetChildren()) do
                             if child:IsA("UIStroke") then
-                                TweenService:Create(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                                SkyTw(child, TweenInfo.new(minimized and 0.12 or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                     Transparency = minimized and 1 or 0.3
                                 }):Play()
                             end
@@ -3621,11 +3638,11 @@ end)
     UI.LoadingBar.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
     UI.LoadingBar.BorderSizePixel = 0
     UI.LoadingBar.ZIndex = 10
-    TweenService:Create(UI.LoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    SkyTw(UI.LoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
         Size = UDim2.new(1, 0, 0, 3)
     }):Play()
     task.delay(0.6, function()
-        TweenService:Create(UI.LoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        SkyTw(UI.LoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             BackgroundTransparency = 1
         }):Play()
         task.delay(0.3, function() if UI.LoadingBar then UI.LoadingBar:Destroy() end end)
@@ -3666,11 +3683,11 @@ end)
     Instance.new("UICorner", UI.StatusDot).CornerRadius = UDim.new(1, 0)
     task.spawn(function()
         while UI.StatusDot and UI.StatusDot.Parent do
-            TweenService:Create(UI.StatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+            SkyTw(UI.StatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                 BackgroundTransparency = 0.7
             }):Play()
             task.wait(0.9)
-            TweenService:Create(UI.StatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+            SkyTw(UI.StatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                 BackgroundTransparency = 0
             }):Play()
             task.wait(0.9)
@@ -3787,9 +3804,9 @@ end)
     Instance.new("UICorner", UI.FPSDot).CornerRadius = UDim.new(1, 0)
     task.spawn(function()
         while UI.FPSDot and UI.FPSDot.Parent do
-            TweenService:Create(UI.FPSDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.6}):Play()
+            SkyTw(UI.FPSDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0.6}):Play()
             task.wait(0.9)
-            TweenService:Create(UI.FPSDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0}):Play()
+            SkyTw(UI.FPSDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {BackgroundTransparency = 0}):Play()
             task.wait(0.9)
         end
     end)
@@ -4167,7 +4184,7 @@ end)
 
         task.spawn(function()
             while shape.Parent do
-                if BackgroundOverlay.Visible and not State.IsSuperMini then
+                if BackgroundOverlay.Visible and not State.IsSuperMini and not _G.SkyNoAnim then
                     local exitEdge = oppositeEdge(entryEdge)
                     local exitPosition = offscreenPosition(exitEdge)
 
@@ -4185,12 +4202,12 @@ end)
                     else
                         appear.BackgroundTransparency = 0.2
                     end
-                    local appearTween = TweenService:Create(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), appear)
+                    local appearTween = SkyTw(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), appear)
                     appearTween:Play()
                     appearTween.Completed:Wait()
                     if not shape.Parent then break end
 
-                    local moveTween = TweenService:Create(shape, TweenInfo.new(math_random(32, 46) / 10, Enum.EasingStyle.Linear), {
+                    local moveTween = SkyTw(shape, TweenInfo.new(math_random(32, 46) / 10, Enum.EasingStyle.Linear), {
                         Position = exitPosition,
                         Rotation = shape.Rotation + math_random(90, 270)
                     })
@@ -4201,7 +4218,7 @@ end)
                     -- يبدأ التلاشي بعد وصوله خارج الشاشة بالكامل.
                     local fade = { Size = UDim2.new(0, 0, 0, 0) }
                     if isTriangle then fade.TextTransparency = 1 else fade.BackgroundTransparency = 1 end
-                    local fadeTween = TweenService:Create(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fade)
+                    local fadeTween = SkyTw(shape, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fade)
                     fadeTween:Play()
                     fadeTween.Completed:Wait()
 
@@ -4233,7 +4250,7 @@ end)
                 else
                     fadeGoals.BackgroundTransparency = 1
                 end
-                TweenService:Create(child, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fadeGoals):Play()
+                SkyTw(child, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), fadeGoals):Play()
             end
         end
         -- لا ندمر الأشكال هنا؛ نخفيها فقط حتى تعود عند فتح القائمة.
@@ -4623,7 +4640,7 @@ local function MoveUnderline(pos)
 
     UI._activeUnderlineButton = button
     local targetY = button.AbsolutePosition.Y - UI.SideBar.AbsolutePosition.Y + 2
-    TweenService:Create(
+    SkyTw(
         UI.Underline,
         TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
         {Position = UDim2.new(0, 0, 0, targetY)}
@@ -4923,13 +4940,13 @@ end)
 
             -- تأثير عند التركيز على مربع الإدخال
             b.Focused:Connect(function()
-                _TweenS:Create(inputStroke, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(inputStroke, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Transparency = 0, -- يصبح أوضح
                     Thickness = 3 -- يصبح أسمك قليلاً
                 }):Play()
             end)
             b.FocusLost:Connect(function()
-                _TweenS:Create(inputStroke, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(inputStroke, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Transparency = 0.7, -- يعود لشفافيته الأصلية
                     Thickness = 2 -- يعود لسمكه الأصلي
                 }):Play()
@@ -4953,12 +4970,12 @@ end)
             end
             -- إضافة تأثيرات hover على مربع الإدخال
             b.MouseEnter:Connect(function()
-                _TweenS:Create(b, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(b, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(35, 35, 35) -- لون أغمق قليلاً عند المرور فوقه
                 }):Play()
             end)
             b.MouseLeave:Connect(function()
-                _TweenS:Create(b, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(b, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- يعود للونه الأصلي
                 }):Play()
             end)
@@ -4989,12 +5006,12 @@ end)
                     AddTabGlow(sbStroke, 1.5, parent)
 
                     sb.MouseEnter:Connect(function()
-                        _TweenS:Create(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             BackgroundColor3 = Color3.fromRGB(35, 35, 35)
                         }):Play()
                     end)
                     sb.MouseLeave:Connect(function()
-                        _TweenS:Create(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(sb, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             BackgroundColor3 = Color3.fromRGB(25, 25, 25)
                         }):Play()
                     end)
@@ -5057,19 +5074,19 @@ end)
             _pressFeedback(btn)
             -- إضافة تأثيرات hover على الزر
             btn.MouseEnter:Connect(function()
-                _TweenS:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(35, 35, 35) -- لون أغمق قليلاً عند المرور فوقه
                 }):Play()
-                _TweenS:Create(btnStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btnStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Transparency = 0, -- يصبح أوضح
                     Thickness = 3 -- يصبح أسمك قليلاً
                 }):Play()
             end)
             btn.MouseLeave:Connect(function()
-                _TweenS:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- يعود للونه الأصلي
                 }):Play()
-                _TweenS:Create(btnStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btnStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     Transparency = 0.7, -- يعود لشفافيته الأصلية
                     Thickness = 2 -- يعود لسمكه الأصلي
                 }):Play()
@@ -5096,22 +5113,22 @@ end)
             _pressFeedback(btn)
             -- إضافة تأثيرات hover على الزر
             btn.MouseEnter:Connect(function()
-                _TweenS:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(35, 35, 35) -- لون أغمق قليلاً عند المرور فوقه
                 }):Play()
                 if not act then -- فقط إذا لم يكن الزر نشطًا بالفعل
-                    _TweenS:Create(stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         Transparency = 0, -- يصبح أوضح
                         Thickness = 3 -- يصبح أسمك قليلاً
                     }):Play()
                 end
             end)
             btn.MouseLeave:Connect(function()
-                _TweenS:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                SkyTw(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                     BackgroundColor3 = Color3.fromRGB(25, 25, 25) -- يعود للونه الأصلي
                 }):Play()
                 if not act then -- فقط إذا لم يكن الزر نشطًا بالفعل
-                    _TweenS:Create(stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(stroke, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         Transparency = 0.7, -- يعود لشفافيته الأصلية
                         Thickness = 2 -- يعود لسمكه الأصلي
                     }):Play()
@@ -5672,9 +5689,9 @@ end)
             refresh()
 
             local function hover(inside)
-                _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(inside and 35 or 25, inside and 35 or 25, inside and 35 or 25)}):Play()
+                SkyTw(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(inside and 35 or 25, inside and 35 or 25, inside and 35 or 25)}):Play()
                 if not State.platformOn then
-                    _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                    SkyTw(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
                 end
             end
             btn.MouseEnter:Connect(function() hover(true) end)
@@ -5877,9 +5894,9 @@ end)
 
                 local function hover(inside)
                     local g = inside and 35 or 25
-                    _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
+                    SkyTw(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
                     if not State[key] then
-                        _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                        SkyTw(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
                     end
                 end
                 btn.MouseEnter:Connect(function() hover(true) end)
@@ -6025,9 +6042,9 @@ end)
 
             local function hover(inside)
                 local g = inside and 35 or 25
-                _TweenS:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
+                SkyTw(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(g, g, g)}):Play()
                 if not State.autoClickOn then
-                    _TweenS:Create(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
+                    SkyTw(st, TweenInfo.new(0.15), {Transparency = inside and 0 or 0.7, Thickness = inside and 3 or 2}):Play()
                 end
             end
             btn.MouseEnter:Connect(function() hover(true) end)
@@ -6085,14 +6102,14 @@ end)
 
             Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
 
-            local tweenIn = TweenService:Create(circle, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            local tweenIn = SkyTw(circle, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Size = UDim2.new(0, 70, 0, 70),
                 BackgroundTransparency = 0.5
             })
             tweenIn:Play()
 
             tweenIn.Completed:Connect(function()
-                local tweenOut = TweenService:Create(circle, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                local tweenOut = SkyTw(circle, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                     Size = UDim2.new(0, 90, 0, 90),
                     BackgroundTransparency = 1
                 })
@@ -6795,8 +6812,8 @@ local function UpdatePlayerList()
                 fakeX.BackgroundColor3 = xBgC
             else
                 local ci = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(fakeSlot, ci, {BackgroundColor3 = bgC}):Play()
-                TweenService:Create(fakeX, ci, {BackgroundColor3 = xBgC}):Play()
+                SkyTw(fakeSlot, ci, {BackgroundColor3 = bgC}):Play()
+                SkyTw(fakeX, ci, {BackgroundColor3 = xBgC}):Play()
             end
         end
 
@@ -6816,8 +6833,8 @@ local function UpdatePlayerList()
             fakeX.Visible = true
             local fi = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
             fakeXStroke.Transparency = 1
-            TweenService:Create(fakeX, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-            TweenService:Create(fakeXStroke, fi, {Transparency = 0}):Play()
+            SkyTw(fakeX, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+            SkyTw(fakeXStroke, fi, {Transparency = 0}):Play()
         end
 
         -- الإغلاق: كل شي (الخانة + X) يتلاشى شوي شوي ويروح
@@ -6827,11 +6844,11 @@ local function UpdatePlayerList()
             local myToken = fakeToken
             fakeEquipped = false
             local fo = TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            TweenService:Create(fakeSlot, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
-            TweenService:Create(fakeStroke, fo, {Transparency = 1}):Play()
-            TweenService:Create(fakeLbl, fo, {TextTransparency = 1}):Play()
-            TweenService:Create(fakeX, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
-            TweenService:Create(fakeXStroke, fo, {Transparency = 1}):Play()
+            SkyTw(fakeSlot, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+            SkyTw(fakeStroke, fo, {Transparency = 1}):Play()
+            SkyTw(fakeLbl, fo, {TextTransparency = 1}):Play()
+            SkyTw(fakeX, fo, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+            SkyTw(fakeXStroke, fo, {Transparency = 1}):Play()
             task.delay(0.75, function()
                 if myToken ~= fakeToken then return end
                 fakeSlot.Visible = false
@@ -6847,9 +6864,9 @@ local function UpdatePlayerList()
             fakeRefresh(true)
             fakeSlot.Visible = true
             local fi = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            TweenService:Create(fakeSlot, fi, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
-            TweenService:Create(fakeStroke, fi, {Transparency = 0}):Play()
-            TweenService:Create(fakeLbl, fi, {TextTransparency = 0}):Play()
+            SkyTw(fakeSlot, fi, {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
+            SkyTw(fakeStroke, fi, {Transparency = 0}):Play()
+            SkyTw(fakeLbl, fi, {TextTransparency = 0}):Play()
         end
 
         fakeSlot.MouseButton1Click:Connect(function()
@@ -6909,7 +6926,7 @@ local function UpdatePlayerList()
                 SelBtn.TextColor3 = txtC
             else
                 local ci = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(SelBtn, ci, {BackgroundColor3 = bgC, TextColor3 = txtC}):Play()
+                SkyTw(SelBtn, ci, {BackgroundColor3 = bgC, TextColor3 = txtC}):Play()
             end
         end
         Refresh(true)
@@ -6954,8 +6971,8 @@ local function UpdatePlayerList()
                 selStroke.Transparency = 1
                 SelBtn.Visible = true
                 local fi = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(SelBtn, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                TweenService:Create(selStroke, fi, {Transparency = 0}):Play()
+                SkyTw(SelBtn, fi, {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                SkyTw(selStroke, fi, {Transparency = 0}):Play()
             elseif not show then
                 SelBtn.Visible = false
             end
@@ -7222,11 +7239,11 @@ local function UpdatePlayerList()
             GravLoadingBar.BackgroundColor3 = ASSIST_BLUE
             GravLoadingBar.BorderSizePixel = 0
             GravLoadingBar.ZIndex = 20
-            TweenService:Create(GravLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(GravLoadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Size = UDim2.new(1, 0, 0, 3)
             }):Play()
             task.delay(0.6, function()
-                TweenService:Create(GravLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                SkyTw(GravLoadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                     BackgroundTransparency = 1
                 }):Play()
                 task.delay(0.3, function() if GravLoadingBar then GravLoadingBar:Destroy() end end)
@@ -7313,11 +7330,11 @@ local function UpdatePlayerList()
                     goal.TextTransparency = hidden and 1 or 0
                 end
                 if next(goal) then
-                    TweenService:Create(item, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+                    SkyTw(item, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
                 end
                     for _, child in ipairs(item:GetChildren()) do
                         if child:IsA("UIStroke") then
-                            TweenService:Create(child, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            SkyTw(child, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                 Transparency = hidden and 1 or (item.Name == "ResetGravity" and 0.1 or 0.3)
                             }):Play()
                         end
@@ -7358,7 +7375,7 @@ local function UpdatePlayerList()
             end)
             task.delay(0.05, function()
                 if State.gravityValueLabel then
-                    TweenService:Create(State.gravityValueLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    SkyTw(State.gravityValueLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
                 end
             end)
 
@@ -7402,8 +7419,8 @@ local function UpdatePlayerList()
             AddMovingBorderGlow(minusBtnGlow, 1.5, ASSIST_BLUE)
             task.delay(0.05, function()
                 if minusBtn then
-                    TweenService:Create(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    SkyTw(minusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    SkyTw(minusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
             local function bindGravityHold(button, delta)
@@ -7457,8 +7474,8 @@ local function UpdatePlayerList()
             AddMovingBorderGlow(plusBtnGlow, 1.5, ASSIST_BLUE)
             task.delay(0.05, function()
                 if plusBtn then
-                    TweenService:Create(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                    TweenService:Create(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                    SkyTw(plusBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                    SkyTw(plusBtnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                 end
             end)
             bindGravityHold(plusBtn, GRAVITY_STEP)
@@ -7490,11 +7507,11 @@ local function UpdatePlayerList()
             AddMovingBorderGlow(resetGlow, 1.5, ASSIST_BLUE)
             task.delay(0.05, function()
                 if resetBtn then
-                    TweenService:Create(resetBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(resetBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         BackgroundTransparency = 0.05,
                         TextTransparency = 0
                     }):Play()
-                    TweenService:Create(resetGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(resetGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         Transparency = 0.1
                     }):Play()
                 end
@@ -7618,7 +7635,7 @@ local function showSpeedAnimation(speedValue)
             Position = UDim2.new(0.5, -120, 0.38, -30)
         }
         
-        currentTween = TweenService:Create(speedIndicator, tweenInfo, goal)
+        currentTween = SkyTw(speedIndicator, tweenInfo, goal)
         currentTween:Play()
     end)
 end
@@ -7866,11 +7883,11 @@ end)
             loadingBar.BackgroundColor3 = ASSIST_BLUE
             loadingBar.BorderSizePixel = 0
             loadingBar.ZIndex = 20
-            TweenService:Create(loadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(loadingBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Size = UDim2.new(1, 0, 0, 3)
             }):Play()
             task.delay(0.6, function()
-                TweenService:Create(loadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                SkyTw(loadingBar, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                     BackgroundTransparency = 1
                 }):Play()
                 task.delay(0.3, function() if loadingBar then loadingBar:Destroy() end end)
@@ -7948,11 +7965,11 @@ end)
                     goal.TextTransparency = hidden and 1 or 0
                 end
                 if next(goal) then
-                    TweenService:Create(item, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
+                    SkyTw(item, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal):Play()
                 end
                 for _, child in ipairs(item:GetChildren()) do
                     if child:IsA("UIStroke") then
-                        TweenService:Create(child, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        SkyTw(child, TweenInfo.new(hidden and 0.01 or 0.10, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                             Transparency = hidden and 1 or (item.Name == "ResetFreeCamSpeed" and 0.1 or 0.3)
                         }):Play()
                     end
@@ -7989,7 +8006,7 @@ end)
             table.insert(bodyItems, label)
             task.delay(0.05, function()
                 if label and label.Parent then
-                    TweenService:Create(label, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    SkyTw(label, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
                 end
             end)
 
@@ -8028,8 +8045,8 @@ end)
                 AddMovingBorderGlow(btnGlow, 1.5, ASSIST_BLUE)
                 task.delay(0.05, function()
                     if btn and btn.Parent then
-                        TweenService:Create(btn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
-                        TweenService:Create(btnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
+                        SkyTw(btn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0, TextTransparency = 0}):Play()
+                        SkyTw(btnGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 0.3}):Play()
                     end
                 end)
 
@@ -8096,11 +8113,11 @@ end)
             AddMovingBorderGlow(resetGlow, 1.5, ASSIST_BLUE)
             task.delay(0.05, function()
                 if resetBtn and resetBtn.Parent then
-                    TweenService:Create(resetBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(resetBtn, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         BackgroundTransparency = 0.05,
                         TextTransparency = 0
                     }):Play()
-                    TweenService:Create(resetGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(resetGlow, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         Transparency = 0.1
                     }):Play()
                 end
@@ -8177,9 +8194,9 @@ end)
                     local info = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
                     for _, d in ipairs(rg:GetDescendants()) do
                         if d:IsA("GuiObject") then
-                            pcall(function() TweenService:Create(d, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play() end)
+                            pcall(function() SkyTw(d, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play() end)
                         elseif d:IsA("UIStroke") then
-                            pcall(function() TweenService:Create(d, info, {Transparency = 1}):Play() end)
+                            pcall(function() SkyTw(d, info, {Transparency = 1}):Play() end)
                         end
                     end
                     task.wait(0.5)
@@ -8234,7 +8251,7 @@ end)
                                     if not gui.Parent then return end
                                     local info = TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                                     for _, job in ipairs(jobs) do
-                                        pcall(function() TweenService:Create(job[1], info, job[2]):Play() end)
+                                        pcall(function() SkyTw(job[1], info, job[2]):Play() end)
                                     end
                                 end)
                             end
@@ -8328,8 +8345,8 @@ end)
             task.delay(2, function()
                 if restoreGui ~= fadeGui or not btn.Parent then return end
                 local info = TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(btn, info, {BackgroundTransparency = 0.9, TextTransparency = 0.85}):Play()
-                TweenService:Create(btnStroke, info, {Transparency = 0.9}):Play()
+                SkyTw(btn, info, {BackgroundTransparency = 0.9, TextTransparency = 0.85}):Play()
+                SkyTw(btnStroke, info, {Transparency = 0.9}):Play()
             end)
 
             btn.MouseButton1Click:Connect(function()
@@ -8501,15 +8518,15 @@ end)
             local noBtn = makeBtn("لا تنقلني", 0)
 
             -- دخول: من تحت الى النص
-            _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
-            _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+            SkyTw(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            SkyTw(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
 
             local closing = false
             local function closePrompt(afterClose)
                 if closing then return end
                 closing = true
-                _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
-                local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                SkyTw(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                local t = SkyTw(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
                 t:Play()
                 t.Completed:Wait()
                 promptGui:Destroy()
@@ -8627,31 +8644,411 @@ end)
             SKY_ColorCorrection.Enabled = true
         end
 
+        local function C3(t) return Color3.fromRGB(t[1], t[2], t[3]) end
+
+        -- 🔦 نور خفيف حولك فقط (يمشي معك)، وما يأثر على أنوار الماب نفسها
+        local SKY_NearLight = Instance.new("PointLight")
+        SKY_NearLight.Name = "SKY_NearLight"
+        SKY_NearLight.Brightness = 0.6
+        SKY_NearLight.Range = 14
+        SKY_NearLight.Color = Color3.fromRGB(200, 210, 255)
+        SKY_NearLight.Shadows = false
+        local SKY_LightOn = false
+        local SKY_FlickerOn = false
+
+        local function SkySetNearLight(on)
+            SKY_LightOn = on
+            if on then
+                local ch = game.Players.LocalPlayer.Character
+                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                if hrp then SKY_NearLight.Parent = hrp end
+            else
+                SKY_NearLight.Parent = nil
+            end
+        end
+
+        game.Players.LocalPlayer.CharacterAdded:Connect(function(ch)
+            task.spawn(function()
+                local hrp = ch:WaitForChild("HumanoidRootPart", 5)
+                if hrp and SKY_LightOn then SKY_NearLight.Parent = hrp end
+            end)
+        end)
+
+        -- رعشة خفيفة للنور لما يكون جو الرعب شغال
+        task.spawn(function()
+            while true do
+                if SKY_LightOn and SKY_FlickerOn and SKY_NearLight.Parent then
+                    SKY_NearLight.Brightness = 0.15 + math.random() * 0.7
+                    task.wait(0.05 + math.random() * 0.25)
+                else
+                    SKY_NearLight.Brightness = 0.6
+                    task.wait(0.3)
+                end
+            end
+        end)
+
+        -- الأجواء الأساسية (الفضاء / الغروب / الليل البنفسجي)
         local SKY_Presets = {
             {name = "🌌 الفضاء", apply = ApplySpace},
             {name = "🌇 الغروب", apply = ApplySunset},
             {name = "🔮 الليل البنفسجي", apply = ApplyPurpleNight},
         }
 
-        NewItem("أجواء الماب", "ButtonOnce", function()
-            SKY_Index = SKY_Index + 1
-            if SKY_Index > #SKY_Presets then
-                SKY_Index = 0
-            end
+        -- أجواء إضافية: كل جو له وقت وإضاءة وضباب ونجوم وتلوين
+        local SKY_Extra = {
+            {name = "🌑 الظلام", time = 0, amb = {5, 5, 8}, out = {8, 8, 12}, bright = 0.3, fog = {0, 0, 0}, fs = 0, fe = 250, stars = 0, tint = {200, 200, 220}, sat = -0.4, con = 0.2},
+            {name = "🌑 ظلام ليلي", time = 0, amb = {14, 14, 22}, out = {18, 18, 28}, bright = 0.35, fog = {5, 5, 10}, fs = 8, fe = 110, stars = 2000, tint = {200, 210, 255}, sat = -0.35, con = 0.15, ccb = -0.2, light = true},
+            {name = "👻 رعب الليل", time = 0, amb = {8, 6, 10}, out = {12, 8, 14}, bright = 0.25, fog = {0, 0, 0}, fs = 4, fe = 80, stars = 1000, tint = {255, 150, 150}, sat = -0.5, con = 0.3, ccb = -0.3, light = true, flicker = true},
+            {name = "👻 الرعب", time = 0, amb = {40, 10, 10}, out = {35, 8, 8}, bright = 0.5, fog = {60, 0, 0}, fs = 20, fe = 400, stars = 0, tint = {255, 120, 120}, sat = -0.3, con = 0.3},
+            {name = "🩸 دم القمر", time = 0, amb = {60, 15, 15}, out = {70, 20, 20}, bright = 1, fog = {90, 10, 10}, fs = 50, fe = 1200, stars = 500, tint = {255, 140, 140}, sat = 0.1, con = 0.2},
+            {name = "🔥 الجحيم", time = 18, amb = {120, 30, 0}, out = {150, 40, 0}, bright = 1.5, fog = {200, 60, 0}, fs = 50, fe = 900, stars = 0, tint = {255, 160, 100}, sat = 0.25, con = 0.3},
+            {name = "🟢 الماتريكس", time = 1, amb = {0, 40, 0}, out = {0, 50, 10}, bright = 0.5, fog = {0, 20, 0}, fs = 0, fe = 500, stars = 0, tint = {150, 255, 170}, sat = -0.3, con = 0.4},
+            {name = "🌿 الروقان", time = 10, amb = {120, 150, 120}, out = {140, 170, 140}, bright = 2, fog = {180, 220, 190}, fs = 200, fe = 4000, stars = 0, tint = {220, 255, 230}, sat = 0.1, con = 0},
+            {name = "🌸 الربيع", time = 9, amb = {170, 130, 150}, out = {190, 150, 170}, bright = 2, fog = {240, 200, 220}, fs = 300, fe = 3500, stars = 0, tint = {255, 230, 245}, sat = 0.15, con = 0},
+            {name = "🌊 البحر", time = 13, amb = {60, 110, 150}, out = {80, 130, 170}, bright = 2, fog = {120, 190, 220}, fs = 200, fe = 3000, stars = 0, tint = {200, 230, 255}, sat = 0.05, con = 0},
+            {name = "🌅 الفجر", time = 6, amb = {150, 110, 120}, out = {170, 130, 130}, bright = 1.8, fog = {230, 170, 160}, fs = 150, fe = 3000, stars = 0, tint = {255, 220, 210}, sat = 0.1, con = 0.05},
+            {name = "❄️ الثلج", time = 12, amb = {150, 170, 190}, out = {170, 190, 210}, bright = 2.5, fog = {220, 235, 250}, fs = 80, fe = 1500, stars = 0, tint = {230, 245, 255}, sat = -0.2, con = 0.1},
+            {name = "🏜️ الصحراء", time = 14, amb = {170, 120, 70}, out = {200, 150, 90}, bright = 2.5, fog = {230, 190, 130}, fs = 300, fe = 4000, stars = 0, tint = {255, 230, 190}, sat = 0.2, con = 0.1},
+            {name = "🌧️ المطر", time = 15, amb = {70, 75, 85}, out = {80, 85, 95}, bright = 1.2, fog = {110, 120, 130}, fs = 60, fe = 900, stars = 0, tint = {200, 210, 220}, sat = -0.25, con = 0.1},
+            {name = "🌃 المدينة الليلية", time = 22, amb = {20, 25, 50}, out = {30, 35, 70}, bright = 0.8, fog = {20, 20, 50}, fs = 100, fe = 1200, stars = 800, tint = {220, 230, 255}, sat = 0.2, con = 0.15},
+            {name = "🌙 الليل الهادي", time = 0.5, amb = {25, 30, 55}, out = {30, 35, 65}, bright = 0.9, fog = {30, 35, 60}, fs = 150, fe = 2500, stars = 1200, tint = {210, 220, 255}, sat = 0, con = 0.05},
+        }
 
-            if SKY_Index == 0 then
+        local function ApplyData(d)
+            return function()
+                Lighting.ClockTime = d.time
+                Lighting.Ambient = C3(d.amb)
+                Lighting.OutdoorAmbient = C3(d.out)
+                Lighting.Brightness = d.bright
+                Lighting.FogColor = C3(d.fog)
+                Lighting.FogStart = d.fs
+                Lighting.FogEnd = d.fe
+                SKY_SkyObj.StarCount = d.stars
+                SKY_ColorCorrection.TintColor = C3(d.tint)
+                SKY_ColorCorrection.Saturation = d.sat
+                SKY_ColorCorrection.Contrast = d.con
+                SKY_ColorCorrection.Brightness = d.ccb or 0
+                SKY_FlickerOn = d.flicker == true
+                SkySetNearLight(d.light == true)
+                SKY_ColorCorrection.Enabled = true
+            end
+        end
+
+        for _, d in ipairs(SKY_Extra) do
+            table.insert(SKY_Presets, {name = d.name, apply = ApplyData(d)})
+        end
+
+        -- ===== لوحة الأجواء (نفس شكل لوحة ESP) =====
+        local ATMO_ACCENT = Color3.fromRGB(170, 0, 255)
+        local atmoPanel = nil
+        local atmoButtons = {}
+        local atmoActive = 0 -- 0 = عادي
+
+        local function refreshAtmo()
+            for i, b in ipairs(atmoButtons) do
+                local on = (i - 1) == atmoActive
+                b.BackgroundColor3 = on and Color3.fromRGB(120, 0, 180) or Color3.fromRGB(45, 45, 45)
+            end
+        end
+
+        local function applyAtmo(index)
+            atmoActive = index
+            SKY_ColorCorrection.Brightness = 0
+            SkySetNearLight(false)
+            if index == 0 then
                 ApplyNormal()
-                Notify("🌤️ أجواء", "رجع الجو الطبيعي", Color3.fromRGB(170, 0, 255))
+                Notify("🌤️ أجواء", "رجع الجو الطبيعي", ATMO_ACCENT)
             else
-                local preset = SKY_Presets[SKY_Index]
-                preset.apply()
-                Notify("🎨 أجواء", preset.name, Color3.fromRGB(170, 0, 255))
+                SKY_Presets[index].apply()
+                Notify("🎨 أجواء", SKY_Presets[index].name, ATMO_ACCENT)
+            end
+            refreshAtmo()
+        end
+
+        local function closeAtmoPanel()
+            if not atmoPanel then return end
+            local closing = atmoPanel
+            atmoPanel = nil
+            atmoButtons = {}
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        local function openAtmoPanel()
+            if atmoPanel then atmoPanel:Destroy() end
+
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyAtmospherePanel"
+            panel.Size = UDim2.new(0, 220, 0, 260)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local stroke = Instance.new("UIStroke", panel)
+            stroke.Color = ATMO_ACCENT
+            stroke.Thickness = 2
+            AddMovingBorderGlow(stroke, 1.5, ATMO_ACCENT)
+
+            atmoPanel = panel
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size = UDim2.new(1, -40, 0, 32)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "🌌 أجواء الماب"
+            title.TextColor3 = ATMO_ACCENT
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.ZIndex = 5
+
+            local closeBtn = Instance.new("TextButton", panel)
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.AutoButtonColor = false
+            closeBtn.ZIndex = 5
+            Instance.new("UICorner", closeBtn)
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                local setter = UI.ToggleSetters["أجواء الماب"]
+                if setter then setter(false, true) else closeAtmoPanel() end
+            end)
+
+            local scroll = Instance.new("ScrollingFrame", panel)
+            scroll.Size = UDim2.new(1, -12, 1, -40)
+            scroll.Position = UDim2.new(0, 6, 0, 36)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 4
+            scroll.ScrollBarImageColor3 = ATMO_ACCENT
+            scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            scroll.ZIndex = 5
+
+            local lay = Instance.new("UIListLayout", scroll)
+            lay.Padding = UDim.new(0, 5)
+            lay.SortOrder = Enum.SortOrder.LayoutOrder
+            lay.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+            local entries = {"🌤️ عادي"}
+            for _, p in ipairs(SKY_Presets) do table.insert(entries, p.name) end
+
+            atmoButtons = {}
+            for i, name in ipairs(entries) do
+                local b = Instance.new("TextButton", scroll)
+                b.Size = UDim2.new(1, -8, 0, 30)
+                b.LayoutOrder = i
+                b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+                b.Text = name
+                b.TextColor3 = Color3.new(1, 1, 1)
+                b.Font = Enum.Font.Arcade
+                b.TextScaled = true
+                b.AutoButtonColor = false
+                b.ZIndex = 6
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+                local tc = Instance.new("UITextSizeConstraint", b)
+                tc.MaxTextSize = 13
+                tc.MinTextSize = 8
+                b.MouseButton1Click:Connect(function()
+                    playClick()
+                    applyAtmo(i - 1)
+                end)
+                atmoButtons[i] = b
+            end
+            refreshAtmo()
+        end
+
+        NewItem("أجواء الماب", "Button", function(s)
+            if s then
+                openAtmoPanel()
+            else
+                closeAtmoPanel()
             end
         end, UI.Page3)
     end
 
 -- 🔊 شريط صوت اللعبة (منفصل عن الموسيقى)
-NewSlider(_TranslateText("صوت اللعبة"), 0, 100, function(v) SetGameVolume(v / 100) end, UI.Page4, 100)
+-- 🎚️ سلايدر صوت اللعبة بشكل المعادل (أعمدة خضراء وسماوية)
+do
+    local EQ_COUNT = 40
+    local EQ_LIT = Color3.fromRGB(110, 255, 80)
+    local EQ_PEAK = Color3.fromRGB(110, 255, 255)
+    local EQ_OFF = Color3.fromRGB(55, 55, 55)
+    local UIS = game:GetService("UserInputService")
+
+    -- ارتفاع كل عمود (شكل ثابت مثل الصورة، فيه قمتين)
+    local heights = {}
+    for i = 1, EQ_COUNT do
+        local x = (i - 0.5) / EQ_COUNT
+        local h = 0.38
+            + 0.28 * math.exp(-((x - 0.17) / 0.08) ^ 2)
+            + 0.30 * math.exp(-((x - 0.80) / 0.08) ^ 2)
+            + 0.05 * math.sin(i * 1.7)
+        heights[i] = math.clamp(h, 0.2, 1)
+    end
+
+    local function NewEqSlider(txt, min, max, call, parent, startVal)
+        startVal = startVal or min
+
+        local f = Instance.new("Frame", parent)
+        f.Size = UDim2.new(1, -10, 0, 130)
+        f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        Instance.new("UICorner", f)
+        f.ZIndex = 6
+
+        local l = Instance.new("TextLabel", f)
+        l.Size = UDim2.new(1, 0, 0, 30)
+        l.Position = UDim2.new(0, 10, 0, 5)
+        l.BackgroundTransparency = 1
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.TextColor3 = Color3.new(1, 1, 1)
+        l.TextSize = 18
+        l.Font = Enum.Font.Arcade
+        l.Text = txt .. ": " .. startVal
+        l.ZIndex = 7
+
+        local area = Instance.new("Frame", f)
+        area.Size = UDim2.new(1, -20, 0, 84)
+        area.Position = UDim2.new(0, 10, 0, 40)
+        area.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+        area.BorderSizePixel = 0
+        area.Active = true
+        area.ClipsDescendants = true
+        area.ZIndex = 7
+        Instance.new("UICorner", area).CornerRadius = UDim.new(0, 6)
+
+        local bars = {}
+        for i = 1, EQ_COUNT do
+            local b = Instance.new("Frame", area)
+            b.AnchorPoint = Vector2.new(0, 1)
+            b.Position = UDim2.new((i - 1) / EQ_COUNT + 0.1 / EQ_COUNT, 0, 1, -4)
+            b.Size = UDim2.new(0.8 / EQ_COUNT, 0, heights[i] * 0.9, 0)
+            b.BorderSizePixel = 0
+            b.BackgroundColor3 = EQ_OFF
+            b.ZIndex = 8
+            bars[i] = b
+        end
+
+        local currentVal = startVal
+
+        local function render(val)
+            local p = (val - min) / (max - min)
+            for i, b in ipairs(bars) do
+                local lit = (i / EQ_COUNT) <= p + 0.001
+                if lit then
+                    b.BackgroundColor3 = heights[i] > 0.7 and EQ_PEAK or EQ_LIT
+                else
+                    b.BackgroundColor3 = EQ_OFF
+                end
+            end
+        end
+
+        local function applySlider(val)
+            val = math.clamp(math.floor(val), min, max)
+            currentVal = val
+            l.Text = txt .. ": " .. val
+            render(val)
+            call(val)
+        end
+
+        render(startVal)
+
+        -- 🎵 تحريك الأعمدة مع الأغنية الشغالة (حسب قوة الصوت PlaybackLoudness)
+        -- LOUD_REF: كلما قل الرقم صار التحرك أقوى
+        local LOUD_REF = 300
+        local levels = {}
+        for i = 1, EQ_COUNT do levels[i] = 0.1 end
+
+        local function currentLoudness()
+            for _, s in ipairs(MusicTracks) do
+                if s.IsPlaying then
+                    return s.PlaybackLoudness
+                end
+            end
+            return 0
+        end
+
+        game:GetService("RunService").Heartbeat:Connect(function(dt)
+            local energy = math.clamp(currentLoudness() / LOUD_REF, 0, 1)
+            local t = os.clock()
+            local k = 1 - math.exp(-12 * math.max(dt, 0))
+            for i = 1, EQ_COUNT do
+                local wobble = 0.5 + 0.5 * math.sin(t * (3 + i * 0.37) + i)
+                local target = 0.1 + energy * heights[i] * (0.4 + 0.6 * wobble)
+                target = math.clamp(target, 0.08, 0.95)
+                levels[i] = levels[i] + (target - levels[i]) * k
+                bars[i].Size = UDim2.new(0.8 / EQ_COUNT, 0, levels[i], 0)
+            end
+        end)
+
+        -- سحب بالماوس أو باللمس على الأعمدة
+        local dragging = false
+        local function setFromX(x)
+            local p = math.clamp((x - area.AbsolutePosition.X) / area.AbsoluteSize.X, 0, 1)
+            applySlider(min + p * (max - min))
+            SaveConfig()
+        end
+
+        area.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                setFromX(i.Position.X)
+            end
+        end)
+
+        UIS.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end)
+
+        UIS.InputChanged:Connect(function(i)
+            if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+                setFromX(i.Position.X)
+            end
+        end)
+
+        -- 💾 تسجيل السلايدر في نظام حفظ الإعدادات
+        UI.ConfigRegistry[txt] = {
+            get = function() return currentVal end,
+            default = startVal,
+            apply = function(value) applySlider(tonumber(value) or startVal) end
+        }
+        return f
+    end
+
+    -- 🎵 صوت الموسيقى: يضبط كل أغاني الموسيقى (MusicTracks) مع الحفاظ على مستواها الأصلي
+    local musicVolume = 1
+    local _musicBaseVolume = {}
+    local function SetMusicVolume(v)
+        musicVolume = math.clamp(v, 0, 1)
+        for _, s in ipairs(MusicTracks) do
+            if _musicBaseVolume[s] == nil then
+                _musicBaseVolume[s] = s.Volume
+            end
+            s.Volume = _musicBaseVolume[s] * musicVolume
+        end
+    end
+
+    -- السلايدر الأول: صوت اللعبة
+    NewSlider(_TranslateText("صوت اللعبة"), 0, 100, function(v) SetGameVolume(v / 100) end, UI.Page4, 100)
+    -- 🎵 سلايدر صوت الموسيقى: ما يطلع في تاب الموسيقى، بس تقدر تحطه في أي قائمة ثانية (مثل القائمة البنفسجية)
+    -- الاستخدام من أي سكربت/قائمة ثانية:  _G.SkyMusicVolumeSlider(parentFrame)
+    _G.SkyMusicVolumeSlider = function(parent)
+        return NewEqSlider(_TranslateText("صوت الموسيقى"), 0, 100, function(v) SetMusicVolume(v / 100) end, parent, 100)
+    end
+end
 
 -- كود زر الموسيقى المطابق تماماً لبقية الأزرار
 local f = Instance.new("Frame", UI.Page4)
@@ -9108,6 +9505,242 @@ btn8m.MouseButton1Click:Connect(function()
     end
 end)
     
+
+-- 🎵 لوحة الموسيقى المنبثقة (Sk Music)
+do
+    local openMusic = Instance.new("TextButton")
+    openMusic.Name = "OpenSkMusicPanel"
+    openMusic.Parent = UI.Page4
+    openMusic.Size = UDim2.new(1, -10, 0, 44)
+    openMusic.LayoutOrder = -100 -- يبقى أعلى عناصر تاب الموسيقى
+    openMusic.BackgroundColor3 = Color3.fromRGB(24, 18, 30)
+    openMusic.Text = "♫  قائمة"
+    openMusic.TextColor3 = Color3.fromRGB(230, 200, 255)
+    openMusic.Font = Enum.Font.GothamBold
+    openMusic.TextSize = 18
+    openMusic.ZIndex = 8
+    Instance.new("UICorner", openMusic).CornerRadius = UDim.new(0, 10)
+    local os = Instance.new("UIStroke", openMusic)
+    os.Color = Color3.fromRGB(145, 45, 210)
+    os.Thickness = 2
+    AddTabGlow(os, 1.5, openMusic)
+
+    local panel = Instance.new("Frame")
+    panel.Name = "SkMusicFloatingPanel"
+    panel.Parent = ScreenGui
+    panel.Size = UDim2.new(0, 280, 0, 344)
+    panel.Position = UDim2.new(0.5, -140, 0.5, -172)
+    panel.BackgroundColor3 = Color3.fromRGB(13, 13, 16)
+    panel.Visible = false
+    panel.ZIndex = 80
+    panel.Active = true
+    -- قابل للسحب باللمس أو الماوس مثل بقية لوحات Sk
+    pcall(function() MakeDraggable(panel) end)
+    Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+    local ps = Instance.new("UIStroke", panel)
+    ps.Color = Color3.fromRGB(145, 45, 210)
+    ps.Thickness = 2
+    -- توهج متحرك بنفسجي وأسود حول لوحة الموسيقى
+    local panelGlow = AddMovingBorderGlow(ps, 1.5, Color3.fromRGB(145, 45, 210))
+    if panelGlow then
+        pcall(function()
+            SetGlowColor(panelGlow, Color3.fromRGB(145, 45, 210))
+        end)
+    end
+
+    local header = Instance.new("TextLabel", panel)
+    header.BackgroundTransparency = 1
+    header.Position = UDim2.new(0, 12, 0, 5)
+    header.Size = UDim2.new(1, -65, 0, 30)
+    header.Text = "♫  SK MUSIC"
+    header.TextColor3 = Color3.fromRGB(220, 175, 255)
+    header.Font = Enum.Font.GothamBold
+    header.TextSize = 16
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    header.ZIndex = 81
+
+    local close = Instance.new("TextButton", panel)
+    close.Size = UDim2.new(0, 30, 0, 28)
+    close.Position = UDim2.new(1, -36, 0, 5)
+    close.Text = "×"
+    close.TextSize = 22
+    close.TextColor3 = Color3.new(1,1,1)
+    close.BackgroundColor3 = Color3.fromRGB(45, 25, 55)
+    close.ZIndex = 82
+    Instance.new("UICorner", close).CornerRadius = UDim.new(0, 7)
+
+    local songName = Instance.new("TextLabel", panel)
+    songName.BackgroundTransparency = 1
+    songName.Position = UDim2.new(0, 12, 0, 40)
+    songName.Size = UDim2.new(1, -24, 0, 25)
+    songName.Text = "الأغنية 1"
+    songName.TextColor3 = Color3.fromRGB(245, 245, 245)
+    songName.Font = Enum.Font.Gotham
+    songName.TextSize = 15
+    songName.ZIndex = 81
+
+    local prev = Instance.new("TextButton", panel)
+    local playPause = Instance.new("TextButton", panel)
+    local nextBtn = Instance.new("TextButton", panel)
+    for _, b in ipairs({prev, playPause, nextBtn}) do
+        b.BackgroundColor3 = Color3.fromRGB(20, 16, 24)
+        b.TextColor3 = Color3.fromRGB(235, 205, 255)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 20
+        b.ZIndex = 82
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 9)
+        local buttonStroke = Instance.new("UIStroke", b)
+        buttonStroke.Thickness = 1.5
+        buttonStroke.Color = Color3.fromRGB(145, 45, 210)
+        buttonStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local buttonGlow = AddMovingBorderGlow(buttonStroke, 1.5, Color3.fromRGB(145, 45, 210))
+        if buttonGlow then
+            pcall(function()
+                SetGlowColor(buttonGlow, Color3.fromRGB(145, 45, 210))
+            end)
+        end
+    end
+    prev.Position = UDim2.new(0.18, -23, 0, 69); prev.Size = UDim2.new(0, 42, 0, 34); prev.Text = "⏮"
+    playPause.Position = UDim2.new(0.5, -25, 0, 67); playPause.Size = UDim2.new(0, 50, 0, 38); playPause.Text = "▶"
+    nextBtn.Position = UDim2.new(0.82, -19, 0, 69); nextBtn.Size = UDim2.new(0, 42, 0, 34); nextBtn.Text = "⏭"
+
+    local timeText = Instance.new("TextLabel", panel)
+    timeText.BackgroundTransparency = 1
+    timeText.Position = UDim2.new(0, 12, 0, 116)
+    timeText.Size = UDim2.new(1, -24, 0, 18)
+    timeText.Text = "00:00  /  00:00"
+    timeText.TextColor3 = Color3.fromRGB(175, 160, 185)
+    timeText.Font = Enum.Font.Gotham
+    timeText.TextSize = 11
+    timeText.ZIndex = 81
+
+    local bar = Instance.new("TextButton", panel)
+    bar.Position = UDim2.new(0, 12, 0, 137)
+    bar.Size = UDim2.new(1, -24, 0, 12)
+    bar.BackgroundColor3 = Color3.fromRGB(48, 42, 52)
+    bar.Text = ""
+    bar.AutoButtonColor = false
+    bar.ZIndex = 82
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+    local fill = Instance.new("Frame", bar)
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(170, 0, 255) -- نفس البنفسجي اللي على الـglow
+    -- نفس الـglow المتحرك: بنفسجي وأسود يدورون على الشريط
+    local fillGlow = Instance.new("UIGradient", fill)
+    fillGlow.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 8, 10)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(170, 0, 255)),
+    })
+    task.spawn(function()
+        while fillGlow.Parent do
+            if not _G.SkyGlowOff then fillGlow.Rotation = (fillGlow.Rotation + 2) % 360 end
+            task.wait(0.03)
+        end
+    end)
+    fill.BorderSizePixel = 0
+    fill.ZIndex = 83
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+    local hint = Instance.new("TextLabel", panel)
+    hint.BackgroundTransparency = 1
+    hint.Position = UDim2.new(0, 8, 0, 320)
+    hint.Size = UDim2.new(1, -16, 0, 18)
+    hint.Text = "اختيار الأغنية من أزرار الموسيقى في التاب"
+    hint.TextColor3 = Color3.fromRGB(125, 115, 135)
+    hint.Font = Enum.Font.Gotham
+    hint.TextSize = 10
+    hint.ZIndex = 81
+
+    -- 🎚️ سلايدر صوت الموسيقى داخل نفس اللوحة البنفسجية
+    local okEq, musicEq = pcall(function()
+        return _G.SkyMusicVolumeSlider(panel)
+    end)
+    if okEq and musicEq then
+        musicEq.AnchorPoint = Vector2.new(0, 0)
+        musicEq.Position = UDim2.new(0, 5, 0, 186)
+        musicEq.Size = UDim2.new(1, -10, 0, 130)
+        musicEq.Visible = true
+        for _, d in ipairs(musicEq:GetDescendants()) do
+            if d:IsA("GuiObject") then d.ZIndex = d.ZIndex + 90 end
+        end
+        musicEq.ZIndex = 90
+    else
+        warn("[Sk] سلايدر الموسيقى ما اشتغل: " .. tostring(musicEq))
+    end
+
+    local current = 1
+    local function chooseTrack(index, playNow)
+        current = math.clamp(index, 1, #MusicTracks)
+        for i, track in ipairs(MusicTracks) do
+            if i ~= current then track:Stop() end
+        end
+        songName.Text = "الأغنية " .. tostring(current)
+        if playNow then MusicTracks[current]:Play() end
+        playPause.Text = MusicTracks[current].IsPlaying and "⏸" or "▶"
+    end
+    openMusic.MouseButton1Click:Connect(function()
+        playClick()
+        panel.Visible = not panel.Visible
+    end)
+    close.MouseButton1Click:Connect(function() playClick(); panel.Visible = false end)
+    prev.MouseButton1Click:Connect(function()
+        playClick()
+        chooseTrack(current - 1 < 1 and #MusicTracks or current - 1, true)
+    end)
+    nextBtn.MouseButton1Click:Connect(function()
+        playClick()
+        chooseTrack(current + 1 > #MusicTracks and 1 or current + 1, true)
+    end)
+    playPause.MouseButton1Click:Connect(function()
+        playClick()
+        local track = MusicTracks[current]
+        if track.IsPlaying then track:Pause() else track:Play() end
+        playPause.Text = track.IsPlaying and "⏸" or "▶"
+    end)
+    local barUIS = game:GetService("UserInputService")
+    local barDragging = false
+    local function seekFromX(x)
+        local track = MusicTracks[current]
+        if not track or not track.IsLoaded or track.TimeLength <= 0 then return end
+        local ratio = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+        track.TimePosition = ratio * track.TimeLength
+        fill.Size = UDim2.new(ratio, 0, 1, 0)
+    end
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            barDragging = true
+            seekFromX(input.Position.X)
+        end
+    end)
+    barUIS.InputChanged:Connect(function(input)
+        if barDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            seekFromX(input.Position.X)
+        end
+    end)
+    barUIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            barDragging = false
+        end
+    end)
+    task.spawn(function()
+        while panel.Parent do
+            task.wait(0.2)
+            local track = MusicTracks[current]
+            if track then
+                local length = track.TimeLength or 0
+                local pos = track.TimePosition or 0
+                if not barDragging then
+                    fill.Size = UDim2.new(length > 0 and math.clamp(pos / length, 0, 1) or 0, 0, 1, 0)
+                end
+                local function fmt(n) n = math.floor(n); return string.format("%02d:%02d", math.floor(n/60), n%60) end
+                timeText.Text = fmt(pos) .. "  /  " .. fmt(length)
+                playPause.Text = track.IsPlaying and "⏸" or "▶"
+            end
+        end
+    end)
+end
+
     -- ═══════════════════════════════════════════════════════════════════
     -- ⚙️ تاب الإعدادات: تغيير لون حواف أي تاب من التابات الستة
     -- ═══════════════════════════════════════════════════════════════════
@@ -9141,7 +9774,7 @@ end)
         local btn = UI.tabButtons[idx]
         -- لا نلمس BackgroundColor3 هنا؛ يتغير الخط والتوهج فقط.
         UI.Underline.BackgroundColor3 = color
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.3), {Color = color}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.3), {Color = color}):Play()
         SetGlowColor(UI.MainGlowGradient, color)
         SetGlowColor(UI.CloseBtnGlowGrad, color)
         SetGlowColor(UI.ActionBtnGlowGrad, color)
@@ -9231,7 +9864,7 @@ end)
         for _, entry in ipairs(UI.SettingsPickerButtons) do
             local isSel = (entry.idx == UI.SettingsSelectedTab)
             local col = UI.TabColors[entry.idx]
-            TweenService:Create(entry.frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(entry.frame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 BackgroundColor3 = isSel and BlendColor3(Color3.fromRGB(25,25,25), col, 0.35) or Color3.fromRGB(25,25,25)
             }):Play()
             entry.stroke.Thickness = isSel and 2.5 or 1.2
@@ -9373,6 +10006,122 @@ end)
         OK("🔄 رجعت كل الألوان لوضعها الافتراضي")
     end)
 
+    -- ═══════════ 🔊 إعدادات الأصوات ═══════════
+    do
+        local function SkyLine()
+            local line = Instance.new("Frame", UI.Page7)
+            line.Size = UDim2.new(1, -10, 0, 2)
+            line.BorderSizePixel = 0
+            line.BackgroundColor3 = Color3.fromRGB(145, 45, 210)
+            line.ZIndex = 6
+            return line
+        end
+
+        local function SkyTitle(text)
+            local t = Instance.new("TextLabel", UI.Page7)
+            t.Size = UDim2.new(1, -10, 0, 30)
+            t.BackgroundTransparency = 1
+            t.Text = text
+            t.TextColor3 = Color3.new(1, 1, 1)
+            t.Font = Enum.Font.Arcade
+            t.TextScaled = true
+            t.TextXAlignment = Enum.TextXAlignment.Left
+            t.ZIndex = 6
+            local c = Instance.new("UITextSizeConstraint", t)
+            c.MaxTextSize = 15
+            c.MinTextSize = 10
+            return t
+        end
+
+        local SkySoundSvc = game:GetService("SoundService")
+        local skyBaseVol = {}
+        local function SkySetSoundGroup(names, mul)
+            for _, name in ipairs(names) do
+                local s = SkySoundSvc:FindFirstChild(name)
+                if s then
+                    if skyBaseVol[s] == nil then skyBaseVol[s] = s.Volume end
+                    s.Volume = skyBaseVol[s] * mul
+                end
+            end
+        end
+
+        SkyLine()
+        SkyTitle("🔊 إعدادات الأصوات")
+
+        NewSlider(_TranslateText("صوت الموت"), 0, 100, function(v)
+            SkySetSoundGroup({"SkyDeathSound", "SkyDeathSound2", "SkySelectedPlayerDeathSound"}, v / 100)
+        end, UI.Page7, 100)
+
+        NewSlider(_TranslateText("صوت القائمة"), 0, 100, function(v)
+            _G.SkyMenuVolumeMul = v / 100
+            local s = SkySoundSvc:FindFirstChild("SkyMainMenuOpenSound")
+            if s and s.IsPlaying then s.Volume = v / 100 end
+        end, UI.Page7, 100)
+
+        NewSlider(_TranslateText("صوت الأزرار"), 0, 100, function(v)
+            SkySetSoundGroup({"SkyClickSound", "SkyOkSound", "SkyWarnSound"}, v / 100)
+        end, UI.Page7, 100)
+
+        SkyLine()
+        SkyTitle("⚡ الأداء وتخفيف الجهاز")
+
+        NewItem("إيقاف الأنميشن", "Button", function(s)
+            _G.SkyNoAnim = (s == true)
+        end, UI.Page7)
+
+        NewItem("إيقاف الـ Glow", "Button", function(s)
+            _G.SkyGlowOff = (s == true)
+        end, UI.Page7)
+
+        NewItem("تخفيف الـ FPS", "Button", function(s)
+            if s then
+                if _G.SkyEnablePerformanceMode then _G.SkyEnablePerformanceMode() end
+            else
+                if _G.SkyRestorePerformanceMode then _G.SkyRestorePerformanceMode() end
+            end
+        end, UI.Page7)
+    end
+
+    -- ═══════════ 🌐 عام ═══════════
+    do
+        local line = Instance.new("Frame", UI.Page7)
+        line.Size = UDim2.new(1, -10, 0, 2)
+        line.BorderSizePixel = 0
+        line.BackgroundColor3 = Color3.fromRGB(145, 45, 210)
+        line.ZIndex = 6
+
+        local t = Instance.new("TextLabel", UI.Page7)
+        t.Size = UDim2.new(1, -10, 0, 30)
+        t.BackgroundTransparency = 1
+        t.Text = "🌐 عام"
+        t.TextColor3 = Color3.new(1, 1, 1)
+        t.Font = Enum.Font.Arcade
+        t.TextScaled = true
+        t.TextXAlignment = Enum.TextXAlignment.Left
+        t.ZIndex = 6
+        local tc = Instance.new("UITextSizeConstraint", t)
+        tc.MaxTextSize = 15
+        tc.MinTextSize = 10
+
+        NewItem("إيقاف الإشعارات", "Button", function(s)
+            _G.SkyNotifyOff = (s == true)
+            -- إخفاء/إظهار الإشعارات الموجودة على الشاشة الآن
+            local cg = game:GetService("CoreGui")
+            -- ملاحظة: ما نطفي SkyNotify كامل، لأن لوحات ESP والايم بوت والطيران تنحط فيه.
+            -- نخفي بس حاويات الإشعارات نفسها.
+            local ng = cg:FindFirstChild("SkyNotify")
+            if ng then
+                ng.Enabled = true
+                for _, containerName in ipairs({"SkyPresenceNotifications", "SkyGeneralNotifications", "SkyChatNotifications"}) do
+                    local c = ng:FindFirstChild(containerName)
+                    if c then c.Visible = not _G.SkyNotifyOff end
+                end
+            end
+            local tipGui = cg:FindFirstChild("FlyTipNotifyGui")
+            if tipGui then tipGui.Enabled = not _G.SkyNotifyOff end
+        end, UI.Page7)
+    end
+
     -- دالة تظهر عناصر الصفحة واحد واحد
     local function AnimatePage(page)
         local items = {}
@@ -9394,13 +10143,13 @@ end)
         for i, item in ipairs(items) do
             task.delay((i - 1) * 0.12, function()
                 if item and item.Parent then
-                    TweenService:Create(item, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    SkyTw(item, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                         BackgroundTransparency = 0,
                         Position = UDim2.new(0, 0, 0, 0)
                     }):Play()
                     for _, child in ipairs(item:GetChildren()) do
                         if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-                            TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            SkyTw(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                                 TextTransparency = 0
                             }):Play()
                         end
@@ -9431,7 +10180,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page8.Visible = false
         AnimatePage(UI.Page1)
         MoveUnderline(0)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[1]}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[1]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[1])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[1])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[1])
@@ -9451,7 +10200,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         MoveUnderline(0.2)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[2]}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[2]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[2])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[2])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[2])
@@ -9471,10 +10220,10 @@ UI.btn1.MouseButton1Click:Connect(function()
             for i, item in ipairs(items) do
                 task.delay((i - 1) * 0.12, function()
                     if item and item.Parent then
-                        TweenService:Create(item, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+                        SkyTw(item, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
                         for _, child in ipairs(item:GetChildren()) do
                             if child:IsA("TextLabel") or child:IsA("TextButton") then
-                                TweenService:Create(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                                SkyTw(child, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
                             end
                         end
                     end
@@ -9495,7 +10244,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page8.Visible = false
         AnimatePage(UI.Page3)
         MoveUnderline(0.4)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[3]}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[3]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[3])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[3])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[3])
@@ -9513,7 +10262,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page8.Visible = false
         AnimatePage(UI.Page4)
         MoveUnderline(0.6)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[4]}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[4]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[4])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[4])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[4])
@@ -9570,12 +10319,12 @@ UI.btn1.MouseButton1Click:Connect(function()
         -- نبض النقطة الخضراء مثل نقطة القائمة الأساسية
         task.spawn(function()
             while ChatStatusDot and ChatStatusDot.Parent do
-                TweenService:Create(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                SkyTw(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                     BackgroundTransparency = 0.7
                 }):Play()
                 task.wait(0.9)
                 if not ChatStatusDot or not ChatStatusDot.Parent then break end
-                TweenService:Create(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                SkyTw(ChatStatusDot, TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
                     BackgroundTransparency = 0
                 }):Play()
                 task.wait(0.9)
@@ -9654,7 +10403,7 @@ UI.btn1.MouseButton1Click:Connect(function()
     UI.Page8.Visible = false
     AnimatePage(UI.Page6)
     MoveUnderline(0.8)
-    TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[6]}):Play()
+    SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[6]}):Play()
     SetGlowColor(UI.MainGlowGradient, UI.TabColors[6])
     SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[6])
     SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[6])
@@ -9672,7 +10421,7 @@ end)
         UI.Page8.Visible = false
         AnimatePage(UI.Page7)
         MoveUnderline(1.2)
-        TweenService:Create(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[7]}):Play()
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[7]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[7])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[7])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[7])
@@ -9778,7 +10527,7 @@ end)
             })
             task.spawn(function()
                 while grad and grad.Parent do
-                    grad.Rotation = (grad.Rotation + 1.5) % 360
+                    if not _G.SkyGlowOff then grad.Rotation = (grad.Rotation + 1.5) % 360 end
                     task.wait(0.03)
                 end
             end)
@@ -10166,12 +10915,12 @@ end)
                     developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
                     developerAnnouncement.BackgroundTransparency = 1
                     developerAnnouncementText.TextTransparency = 1
-                    TweenService:Create(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
-                    TweenService:Create(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    SkyTw(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
+                    SkyTw(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
                     task.delay(5, function()
                         if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
-                        TweenService:Create(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
-                        local fade = TweenService:Create(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
+                        SkyTw(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+                        local fade = SkyTw(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
                         fade:Play()
                         fade.Completed:Connect(function()
                             if serial == developerAnnouncementSerial and developerAnnouncement then
@@ -10284,12 +11033,12 @@ end)
                     developerAnnouncement.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
                     developerAnnouncement.BackgroundTransparency = 1
                     developerAnnouncementText.TextTransparency = 1
-                    TweenService:Create(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
-                    TweenService:Create(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+                    SkyTw(developerAnnouncement, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.05}):Play()
+                    SkyTw(developerAnnouncementText, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
                     task.delay(5, function()
                         if serial ~= developerAnnouncementSerial or not developerAnnouncement then return end
-                        TweenService:Create(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
-                        local fade = TweenService:Create(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
+                        SkyTw(developerAnnouncement, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+                        local fade = SkyTw(developerAnnouncementText, TweenInfo.new(0.35), {TextTransparency = 1})
                         fade:Play()
                         fade.Completed:Connect(function()
                             if serial == developerAnnouncementSerial and developerAnnouncement then
@@ -10551,13 +11300,13 @@ end)
                     chatNotifyPopupBasePos.Y.Offset - 8
                 )
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopupScale,
                     TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
                     {Scale = 1}
                 ):Play()
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopup,
                     TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {
@@ -10566,7 +11315,7 @@ end)
                     }
                 ):Play()
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopupStroke,
                     TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                     {Transparency = 0.05}
@@ -10578,13 +11327,13 @@ end)
             else
                 chatNotifyPopupOpen = false
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopupScale,
                     TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
                     {Scale = 0.88}
                 ):Play()
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopup,
                     TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
                     {
@@ -10598,7 +11347,7 @@ end)
                     }
                 ):Play()
 
-                TweenService:Create(
+                SkyTw(
                     chatNotifyPopupStroke,
                     TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
                     {Transparency = 1}
@@ -10814,11 +11563,11 @@ end)
                 friendsChatLog.Visible = false
                 generalChatLog.Visible = true
             end
-            TweenService:Create(chatModeSlider, TweenInfo.new(0.42, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            SkyTw(chatModeSlider, TweenInfo.new(0.42, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Position = UDim2.new(isFriends and 0.5 or 0, isFriends and 2 or 4, 0, 4),
                 BackgroundColor3 = isFriends and Color3.fromRGB(0, 85, 155) or Color3.fromRGB(85, 0, 130)
             }):Play()
-            TweenService:Create(chatModeSliderStroke, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(chatModeSliderStroke, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Color = isFriends and Color3.fromRGB(0, 140, 255) or Color3.fromRGB(170, 0, 255)
             }):Play()
             generalChatBtn.TextColor3 = isFriends and Color3.fromRGB(145,145,155) or Color3.fromRGB(205,180,225)
@@ -10913,7 +11662,7 @@ end)
         local chatToBottomPressSize = UDim2.new(0, 34, 0, 27)
 
         local function chatToBottomPress()
-            TweenService:Create(
+            SkyTw(
                 chatToBottomBtn,
                 TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                 {Size = chatToBottomPressSize}
@@ -10921,7 +11670,7 @@ end)
         end
 
         local function chatToBottomRelease()
-            TweenService:Create(
+            SkyTw(
                 chatToBottomBtn,
                 TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
                 {Size = chatToBottomNormalSize}
@@ -10981,7 +11730,7 @@ end)
             local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
             targetY = math.min(targetY, maxY)
 
-            local tween = TweenService:Create(
+            local tween = SkyTw(
                 chatLog,
                 TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
                 {CanvasPosition = Vector2.new(0, targetY)}
@@ -11026,7 +11775,7 @@ end)
                         else
                             targetColor = isMine and COLOR_MINE or COLOR_OTHER
                         end
-                        TweenService:Create(bStroke, TweenInfo.new(0.2), {Color = targetColor}):Play()
+                        SkyTw(bStroke, TweenInfo.new(0.2), {Color = targetColor}):Play()
                     end
                 end
             end
@@ -11100,7 +11849,7 @@ end)
 
         task.spawn(function()
             while inputBoxGlowFrame and inputBoxGlowFrame.Parent do
-                inputBoxGlowGradient.Rotation = (inputBoxGlowGradient.Rotation + 2) % 360
+                if not _G.SkyGlowOff then inputBoxGlowGradient.Rotation = (inputBoxGlowGradient.Rotation + 2) % 360 end
                 task.wait(0.03)
             end
         end)
@@ -11338,25 +12087,25 @@ end)
 
         local function closeSelectMenu(revertColor)
             if revertColor and _selected then
-                TweenService:Create(_selected.stroke, TweenInfo.new(0.18), {Color = COLOR_MINE}):Play()
+                SkyTw(_selected.stroke, TweenInfo.new(0.18), {Color = COLOR_MINE}):Play()
             end
-            TweenService:Create(selectOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
-            TweenService:Create(selMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
+            SkyTw(selectOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+            SkyTw(selMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
             task.delay(0.15, function() selectOverlay.Visible = false end)
             _selected = nil
         end
 
         local function openSelectMenu(bubble, stroke, label, row, id)
             if _selected and _selected.stroke ~= stroke then
-                TweenService:Create(_selected.stroke, TweenInfo.new(0.15), {Color = COLOR_MINE}):Play()
+                SkyTw(_selected.stroke, TweenInfo.new(0.15), {Color = COLOR_MINE}):Play()
             end
             _selected = {stroke = stroke, bubble = bubble, label = label, row = row, id = id}
-            TweenService:Create(stroke, TweenInfo.new(0.15), {Color = RED_SELECTED}):Play()
+            SkyTw(stroke, TweenInfo.new(0.15), {Color = RED_SELECTED}):Play()
 
             selectOverlay.Visible = true
             selMenuScale.Scale = 0.7
-            TweenService:Create(selectOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
-            TweenService:Create(selMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+            SkyTw(selectOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
+            SkyTw(selMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
         end
 
         backdropBtn.MouseButton1Click:Connect(function() closeSelectMenu(true) end)
@@ -11366,9 +12115,9 @@ end)
             closeSelectMenu(false)
             if not sel or not sel.id then return end
             local fastFade = TweenInfo.new(0.18)
-            TweenService:Create(sel.bubble, fastFade, {BackgroundTransparency = 1}):Play()
-            TweenService:Create(sel.stroke, fastFade, {Transparency = 1}):Play()
-            TweenService:Create(sel.label, fastFade, {TextTransparency = 1}):Play()
+            SkyTw(sel.bubble, fastFade, {BackgroundTransparency = 1}):Play()
+            SkyTw(sel.stroke, fastFade, {Transparency = 1}):Play()
+            SkyTw(sel.label, fastFade, {TextTransparency = 1}):Play()
             deleteMsgFromServer(sel.id)
             task.delay(0.18, function()
                 if sel.row and sel.row.Parent then sel.row:Destroy() end
@@ -11438,8 +12187,8 @@ end)
         local _copySelected = nil -- {label=}
 
         local function closeCopyMenu()
-            TweenService:Create(copyOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
-            TweenService:Create(copyMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
+            SkyTw(copyOverlay, TweenInfo.new(0.15), {BackgroundTransparency = 1}):Play()
+            SkyTw(copyMenuScale, TweenInfo.new(0.15), {Scale = 0.7}):Play()
             task.delay(0.15, function() copyOverlay.Visible = false end)
             _copySelected = nil
         end
@@ -11448,8 +12197,8 @@ end)
             _copySelected = {label = label}
             copyOverlay.Visible = true
             copyMenuScale.Scale = 0.7
-            TweenService:Create(copyOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
-            TweenService:Create(copyMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
+            SkyTw(copyOverlay, TweenInfo.new(0.18), {BackgroundTransparency = 0.55}):Play()
+            SkyTw(copyMenuScale, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
         end
 
         copyBackdropBtn.MouseButton1Click:Connect(closeCopyMenu)
@@ -11647,15 +12396,15 @@ end)
             okStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
             pcall(function() AddMovingBorderGlow(okStroke, 1.5, purple) end)
 
-            _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
-            _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+            SkyTw(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            SkyTw(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
 
             local closing = false
             local function closeList()
                 if closing then return end
                 closing = true
-                _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
-                local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                SkyTw(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                local t = SkyTw(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
                 t:Play()
                 t.Completed:Wait()
                 gui:Destroy()
@@ -12066,27 +12815,27 @@ end)
             task.defer(function()
                 local slideInfo = TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
                 local fadeInfo = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                TweenService:Create(bubble, slideInfo, {Position = targetPos}):Play()
-                TweenService:Create(bubble, fadeInfo, {BackgroundTransparency = 0.25}):Play()
-                TweenService:Create(stroke, fadeInfo, {Transparency = 0}):Play()
-                TweenService:Create(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
-                TweenService:Create(label, fadeInfo, {TextTransparency = 0}):Play()
+                SkyTw(bubble, slideInfo, {Position = targetPos}):Play()
+                SkyTw(bubble, fadeInfo, {BackgroundTransparency = 0.25}):Play()
+                SkyTw(stroke, fadeInfo, {Transparency = 0}):Play()
+                SkyTw(nameLabel, fadeInfo, {TextTransparency = 0.35}):Play()
+                SkyTw(label, fadeInfo, {TextTransparency = 0}):Play()
                 if replyQuote then
-                    TweenService:Create(replyQuote.frame, fadeInfo, {BackgroundTransparency = 0.25}):Play()
-                    TweenService:Create(replyQuote.stroke, fadeInfo, {Transparency = 0}):Play()
-                    TweenService:Create(replyQuote.accent, fadeInfo, {BackgroundTransparency = 0}):Play()
-                    TweenService:Create(replyQuote.avatar, fadeInfo, {ImageTransparency = 0, BackgroundTransparency = 0}):Play()
-                    TweenService:Create(replyQuote.name, fadeInfo, {TextTransparency = 0.1}):Play()
-                    TweenService:Create(replyQuote.text, fadeInfo, {TextTransparency = 0.05}):Play()
+                    SkyTw(replyQuote.frame, fadeInfo, {BackgroundTransparency = 0.25}):Play()
+                    SkyTw(replyQuote.stroke, fadeInfo, {Transparency = 0}):Play()
+                    SkyTw(replyQuote.accent, fadeInfo, {BackgroundTransparency = 0}):Play()
+                    SkyTw(replyQuote.avatar, fadeInfo, {ImageTransparency = 0, BackgroundTransparency = 0}):Play()
+                    SkyTw(replyQuote.name, fadeInfo, {TextTransparency = 0.1}):Play()
+                    SkyTw(replyQuote.text, fadeInfo, {TextTransparency = 0.05}):Play()
                 end
                 local readStatus = bubble:FindFirstChild("ReadStatus")
                 if readStatus then
-                    TweenService:Create(readStatus, fadeInfo, {TextTransparency = 0}):Play()
+                    SkyTw(readStatus, fadeInfo, {TextTransparency = 0}):Play()
                 end
                 if avatarImg then
                     local avStroke = avatarImg:FindFirstChildOfClass("UIStroke")
-                    TweenService:Create(avatarImg, fadeInfo, {ImageTransparency = 0}):Play()
-                    if avStroke then TweenService:Create(avStroke, fadeInfo, {Transparency = 0}):Play() end
+                    SkyTw(avatarImg, fadeInfo, {ImageTransparency = 0}):Play()
+                    if avStroke then SkyTw(avStroke, fadeInfo, {Transparency = 0}):Play() end
                 end
             end)
 
@@ -12186,7 +12935,7 @@ end)
             })
             task.spawn(function()
                 while bubbleGradient and bubbleGradient.Parent do
-                    bubbleGradient.Rotation = (bubbleGradient.Rotation + 1.5) % 360
+                    if not _G.SkyGlowOff then bubbleGradient.Rotation = (bubbleGradient.Rotation + 1.5) % 360 end
                     task.wait(0.03)
                 end
             end)
@@ -12298,30 +13047,30 @@ end)
                 if os.clock() >= visibleUntil and not isClosing then
                     isClosing = true
                     local outInfo = TweenInfo.new(0.32, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-                    _TweenS:Create(bubble, outInfo, {
+                    SkyTw(bubble, outInfo, {
                         Size = UDim2.new(0, 0, 0, 0),
                         BackgroundTransparency = 1
                     }):Play()
-                    _TweenS:Create(bubbleStroke, outInfo, {Transparency = 1}):Play()
-                    _TweenS:Create(label, outInfo, {TextTransparency = 1}):Play()
-                    _TweenS:Create(tail, outInfo, {BackgroundTransparency = 1}):Play()
+                    SkyTw(bubbleStroke, outInfo, {Transparency = 1}):Play()
+                    SkyTw(label, outInfo, {TextTransparency = 1}):Play()
+                    SkyTw(tail, outInfo, {BackgroundTransparency = 1}):Play()
                     task.delay(0.35, removeRecord)
                 end
             end)
 
             -- أنيميشن ظهور: تكبر الفقاعة من نقطة صغيرة.
             local inInfo = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-            _TweenS:Create(bubble, inInfo, {
+            SkyTw(bubble, inInfo, {
                 Size = bubbleFullSize,
                 BackgroundTransparency = 0.08
             }):Play()
-            _TweenS:Create(bubbleStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(bubbleStroke, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 Transparency = 0.12
             }):Play()
-            _TweenS:Create(label, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(label, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 TextTransparency = 0
             }):Play()
-            _TweenS:Create(tail, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(tail, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 BackgroundTransparency = 0
             }):Play()
         end
@@ -12381,7 +13130,7 @@ end)
         task.spawn(function()
             while ChatFloatGlow and ChatFloatGlow.Parent do
                 if floatGlowGradient then
-                    floatGlowGradient.Rotation = (floatGlowGradient.Rotation + 2) % 360
+                    if not _G.SkyGlowOff then floatGlowGradient.Rotation = (floatGlowGradient.Rotation + 2) % 360 end
                 end
                 task.wait(0.03)
             end
@@ -12802,7 +13551,7 @@ end)
             privateAlertFrame.Visible = true
 
             -- دخول بانميشن ناعم من الأسفل مع تكبير تدريجي.
-            TweenService:Create(privateAlertFrame, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            SkyTw(privateAlertFrame, TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
                 Position = privateAlertFrameBasePosition,
                 BackgroundTransparency = 0.03
             }):Play()
@@ -12812,7 +13561,7 @@ end)
                 local shakeOffsets = {-7, 7, -5, 5, -3, 3, 0}
                 for _, offset in ipairs(shakeOffsets) do
                     if serial ~= privateAlertSerial then return end
-                    local shake = TweenService:Create(privateAlertText, TweenInfo.new(0.055, Enum.EasingStyle.Linear), {
+                    local shake = SkyTw(privateAlertText, TweenInfo.new(0.055, Enum.EasingStyle.Linear), {
                         Position = UDim2.new(privateAlertTextBasePosition.X.Scale, privateAlertTextBasePosition.X.Offset + offset, privateAlertTextBasePosition.Y.Scale, privateAlertTextBasePosition.Y.Offset)
                     })
                     shake:Play()
@@ -12822,7 +13571,7 @@ end)
 
             task.delay(6, function()
                 if serial == privateAlertSerial and privateAlertFrame then
-                    local out = TweenService:Create(privateAlertFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    local out = SkyTw(privateAlertFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
                         Position = UDim2.new(0.5, 0, 0.42, 18),
                         BackgroundTransparency = 1
                     })
@@ -12961,15 +13710,15 @@ end)
                 pcall(function() AddMovingBorderGlow(okStroke, 1.5, purple) end)
 
                 -- دخول: من تحت الى النص
-                _TweenS:Create(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
-                _TweenS:Create(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+                SkyTw(dim, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+                SkyTw(panel, TweenInfo.new(0.55, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
 
                 local closing = false
                 local function closePrompt()
                     if closing then return end
                     closing = true
-                    _TweenS:Create(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
-                    local t = _TweenS:Create(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
+                    SkyTw(dim, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+                    local t = SkyTw(panel, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {Position = UDim2.new(0.5, 0, 1.4, 0)})
                     t:Play()
                     t.Completed:Wait()
                     promptGui:Destroy()
@@ -13673,15 +14422,15 @@ end)
     UI.ActionBtn.BackgroundTransparency = 1; UI.ActionBtn.TextTransparency = 1; UI.CloseBtn.BackgroundTransparency = 1; UI.CloseBtn.TextTransparency = 1
     UI.SideBar.Visible = false; UI.TabBar.Visible = false; UI.Pages.Visible = false
 
-    TweenService:Create(UI.MainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    SkyTw(UI.MainFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Size = fullSize,
         Position = fullPos,
         BackgroundTransparency = 0
     }):Play()
-    TweenService:Create(UI.MainStroke, TweenInfo.new(0.7), {Transparency = 0}):Play()
-    TweenService:Create(UI.Title, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
-    TweenService:Create(UI.ActionBtn, TweenInfo.new(0.5), {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
-    TweenService:Create(UI.CloseBtn, TweenInfo.new(0.5), {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
+    SkyTw(UI.MainStroke, TweenInfo.new(0.7), {Transparency = 0}):Play()
+    SkyTw(UI.Title, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+    SkyTw(UI.ActionBtn, TweenInfo.new(0.5), {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
+    SkyTw(UI.CloseBtn, TweenInfo.new(0.5), {BackgroundTransparency = 0.1, TextTransparency = 0}):Play()
     task.wait(0.5)
 
     UI.SideBar.Visible = true; UI.TabBar.Visible = true; UI.Pages.Visible = true; UpdateVisualEffects(true)
@@ -13695,7 +14444,7 @@ end)
         end
         for i, tab in ipairs(tabs) do
             task.wait(0.08)
-            TweenService:Create(tab, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            SkyTw(tab, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
                 BackgroundTransparency = 0,
                 TextTransparency = 0
             }):Play()
@@ -13785,6 +14534,9 @@ local function SkyRestorePerformanceMode()
     SkyRecoverySeconds = 0
 end
 
+_G.SkyEnablePerformanceMode = SkyEnablePerformanceMode
+_G.SkyRestorePerformanceMode = SkyRestorePerformanceMode
+
 local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMode)
     -- نفس شاشة التحميل الأساسية عند تشغيل Sky: شاشة سوداء كاملة + نفس الخط/الشريط.
     -- لا توجد أي قائمة أو صندوق فوقها أثناء التحميل.
@@ -13855,15 +14607,15 @@ local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMo
     bar.Parent = back
     Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
 
-    _TweenS:Create(bg, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    SkyTw(bg, TweenInfo.new(0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
     task.wait(0.35)
-    _TweenS:Create(title, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    SkyTw(title, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
     task.wait(0.25)
-    _TweenS:Create(status, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-    _TweenS:Create(credits, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
-    _TweenS:Create(back, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    SkyTw(status, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    SkyTw(credits, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
+    SkyTw(back, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
     task.wait(0.2)
-    _TweenS:Create(bar, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+    SkyTw(bar, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
     task.wait(0.35)
 
     local steps
@@ -13897,7 +14649,7 @@ local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMo
 
     for _, stepData in ipairs(steps) do
         status.Text = stepData[3]
-        _TweenS:Create(bar, TweenInfo.new(stepData[2], Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        SkyTw(bar, TweenInfo.new(stepData[2], Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
             Size = UDim2.new(stepData[1], 0, 1, 0)
         }):Play()
         task.wait(stepData[2] + stepData[4])
@@ -13907,12 +14659,12 @@ local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMo
         onDone()
     end
 
-    _TweenS:Create(bg, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
-    _TweenS:Create(title, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
-    _TweenS:Create(status, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
-    _TweenS:Create(credits, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
-    _TweenS:Create(back, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
-    _TweenS:Create(bar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+    SkyTw(bg, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
+    SkyTw(title, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    SkyTw(status, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    SkyTw(credits, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+    SkyTw(back, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
+    SkyTw(bar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
     task.wait(0.5)
     if loadingGui then loadingGui:Destroy() end
 end
@@ -13964,7 +14716,7 @@ local function SkyShowPerformancePrompt(autoMode, recoveryMode)
     })
     task.spawn(function()
         while edge and edge.Parent do
-            edgeGlow.Rotation = (edgeGlow.Rotation + 2) % 360
+            if not _G.SkyGlowOff then edgeGlow.Rotation = (edgeGlow.Rotation + 2) % 360 end
             task.wait(0.035)
         end
     end)
@@ -14044,8 +14796,8 @@ local function SkyShowPerformancePrompt(autoMode, recoveryMode)
     automatic.Visible = not recoveryMode
 
     local function close()
-        _TweenS:Create(black, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
-        _TweenS:Create(box, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+        SkyTw(black, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
+        SkyTw(box, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
             Position = UDim2.new(0.5, 0, 1.2, 0)
         }):Play()
         task.delay(0.32, function() if gui then gui:Destroy() end end)
@@ -14107,15 +14859,15 @@ local function SkyShowPerformancePrompt(autoMode, recoveryMode)
         end)
     end)
 
-    _TweenS:Create(black, TweenInfo.new(0.5), {
+    SkyTw(black, TweenInfo.new(0.5), {
         BackgroundTransparency = autoMode and 0 or 0.42
     }):Play()
-    _TweenS:Create(box, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    SkyTw(box, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
         Position = UDim2.new(0.5, 0, 0.52, 0)
     }):Play()
     task.delay(0.25, function()
-        _TweenS:Create(title, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
-        _TweenS:Create(text, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
+        SkyTw(title, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+        SkyTw(text, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
     end)
 end
 
@@ -14200,7 +14952,7 @@ respawnGradient.Color = ColorSequence.new({
 })
 task.spawn(function()
 	while respawnButton and respawnButton.Parent do
-		respawnGradient.Rotation = (respawnGradient.Rotation + 3) % 360
+		if not _G.SkyGlowOff then respawnGradient.Rotation = (respawnGradient.Rotation + 3) % 360 end
 		task.wait(0.03)
 	end
 end)
@@ -14595,12 +15347,12 @@ local function SkyShowRatingPanel()
 		end)
 
 		-- القائمة تطلع لتحت بسلاسة.
-		local exitTween = _TweenS:Create(
+		local exitTween = SkyTw(
 			ratingBox,
 			TweenInfo.new(0.65, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
 			{Position = UDim2.new(0.5, 0, 1, 120)}
 		)
-		local dimTween = _TweenS:Create(
+		local dimTween = SkyTw(
 			ratingDim,
 			TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{BackgroundTransparency = 1}
@@ -14626,7 +15378,7 @@ local function SkyShowRatingPanel()
 		thanks.ZIndex = 5
 		thanks.Parent = ratingGui
 
-		local thanksIn = _TweenS:Create(
+		local thanksIn = SkyTw(
 			thanks,
 			TweenInfo.new(0.55, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 			{
@@ -14637,7 +15389,7 @@ local function SkyShowRatingPanel()
 		thanksIn:Play()
 		task.wait(1.25)
 
-		_TweenS:Create(
+		SkyTw(
 			thanks,
 			TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{
@@ -14658,21 +15410,21 @@ local function SkyShowRatingPanel()
 	end)
 
 	-- دخول القائمة من تحت إلى فوق.
-	_TweenS:Create(
+	SkyTw(
 		ratingBox,
 		TweenInfo.new(0.85, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 		{Position = UDim2.new(0.5, 0, 0.5, 0)}
 	):Play()
 
-	_TweenS:Create(
+	SkyTw(
 		ratingDim,
 		TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{BackgroundTransparency = 0.55}
 	):Play()
 
 	task.delay(0.18, function()
-		_TweenS:Create(ratingTitle, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
-		_TweenS:Create(ratingPrompt, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
+		SkyTw(ratingTitle, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+		SkyTw(ratingPrompt, TweenInfo.new(0.4), {TextTransparency = 0}):Play()
 	end)
 
 	task.delay(0.45, function()
@@ -14810,7 +15562,7 @@ local function SkyShowRatingsList()
 	})
 	task.spawn(function()
 		while glow and glow.Parent do
-			glow.Rotation = (glow.Rotation + 2) % 360
+			if not _G.SkyGlowOff then glow.Rotation = (glow.Rotation + 2) % 360 end
 			task.wait(0.03)
 		end
 	end)
@@ -15064,16 +15816,16 @@ local function showSpinner(dur)
 	if spinnerShown then return end
 	spinnerShown = true
 	local info = TweenInfo.new(dur or 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	_TweenS:Create(spinner, info, {BackgroundTransparency = 0.08, Position = SPIN_SHOWN_POS}):Play()
-	_TweenS:Create(spinStroke, info, {Transparency = 0}):Play()
+	SkyTw(spinner, info, {BackgroundTransparency = 0.08, Position = SPIN_SHOWN_POS}):Play()
+	SkyTw(spinStroke, info, {Transparency = 0}):Play()
 end
 
 local function hideSpinner()
 	if not spinnerShown then return end
 	spinnerShown = false
 	local info = TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	_TweenS:Create(spinner, info, {BackgroundTransparency = 1, Position = SPIN_HIDDEN_POS}):Play()
-	_TweenS:Create(spinStroke, info, {Transparency = 1}):Play()
+	SkyTw(spinner, info, {BackgroundTransparency = 1, Position = SPIN_HIDDEN_POS}):Play()
+	SkyTw(spinStroke, info, {Transparency = 1}):Play()
 end
 
 local function doRefresh()
@@ -15168,7 +15920,7 @@ end)
 	closeBtn.MouseButton1Click:Connect(function()
 		if closing then return end
 		closing = true
-		local outTween = _TweenS:Create(box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+		local outTween = SkyTw(box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
 			Position = UDim2.new(0.5, 0, 1, 40)
 		})
 		outTween:Play()
@@ -15177,11 +15929,11 @@ end)
 		_SkyRatingsListShown = false
 	end)
 
-	_TweenS:Create(box, TweenInfo.new(0.7, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+	SkyTw(box, TweenInfo.new(0.7, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
 		Position = UDim2.new(0.5, 0, 1, -18)
 	}):Play()
-	_TweenS:Create(title, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
-	_TweenS:Create(sub, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
+	SkyTw(title, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
+	SkyTw(sub, TweenInfo.new(0.5), {TextTransparency = 0}):Play()
 
 	-- تظل مفتوحة للمطور، وتقدر تسحب بالقائمة إذا صار عددهم كثير.
 end
