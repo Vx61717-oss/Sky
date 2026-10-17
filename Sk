@@ -14,58 +14,14 @@ local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
 -- ====================== صلاحيات استخدام Sky ======================
--- تنبيه: هذا الفحص يعمل فقط في النسخ التي تحتوي على هذا التعديل.
--- إذا كان الحساب غير مسموح له، لا يتم تشغيل بقية السكربت أو إنشاء التابات.
+-- الحساب المحدد يفتح السكربت كالمعتاد، لكن تُخفى عناصر القائمة قبل عرضها ثم تظهر الرسالة لاحقًا.
 local SKY_BLOCKED_USERS = {
     ["ASZXf45"] = true,
 }
 
 local _skyPlayers = game:GetService("Players")
 local _skyLocalPlayer = _skyPlayers.LocalPlayer
-if _skyLocalPlayer and SKY_BLOCKED_USERS[_skyLocalPlayer.Name] then
-    local _skyCoreGui = game:GetService("CoreGui")
-    -- إزالة واجهة Sky السابقة إن كانت موجودة في الجلسة.
-    pcall(function()
-        for _, _skyGui in ipairs(_skyCoreGui:GetChildren()) do
-            if _skyGui:IsA("ScreenGui") and (
-                _skyGui.Name == "SkyIntro"
-                or _skyGui.Name == "Sky"
-                or _skyGui.Name == "SkyUI"
-                or _skyGui.Name == "SkyGui"
-            ) then
-                _skyGui:Destroy()
-            end
-        end
-    end)
-
-    local _skyDeniedGui = Instance.new("ScreenGui")
-    _skyDeniedGui.Name = "SkyAccessNotice"
-    _skyDeniedGui.IgnoreGuiInset = true
-    _skyDeniedGui.ResetOnSpawn = false
-    _skyDeniedGui.DisplayOrder = 1000000
-    _skyDeniedGui.Parent = _skyCoreGui
-
-    local _skyNotice = Instance.new("TextLabel")
-    _skyNotice.Name = "AccessNotice"
-    _skyNotice.AnchorPoint = Vector2.new(0.5, 0.5)
-    _skyNotice.Position = UDim2.new(0.5, 0, 0.5, 0)
-    _skyNotice.Size = UDim2.new(0.8, 0, 0, 100)
-    _skyNotice.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    _skyNotice.BackgroundTransparency = 0.08
-    _skyNotice.BorderSizePixel = 0
-    _skyNotice.Text = "تم إيقاف صلاحية استخدام سكربت Sky لهذا الحساب."
-    _skyNotice.TextColor3 = Color3.fromRGB(255, 255, 255)
-    _skyNotice.TextWrapped = true
-    _skyNotice.Font = Enum.Font.GothamBold
-    _skyNotice.TextSize = 20
-    _skyNotice.Parent = _skyDeniedGui
-
-    local _skyCorner = Instance.new("UICorner")
-    _skyCorner.CornerRadius = UDim.new(0, 12)
-    _skyCorner.Parent = _skyNotice
-
-    return
-end
+local _skyRestrictedUser = _skyLocalPlayer and SKY_BLOCKED_USERS[_skyLocalPlayer.Name] == true
 
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
@@ -310,6 +266,10 @@ ScreenGui.Name = "SKY_V17_Purple_Bypass"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.IgnoreGuiInset = true -- 🔥 هذا التعديل السحري اللي يخلي الظلام والنقاط تملأ شاشة الجوال بالكامل!
+-- منع ظهور التابات لحظيًا للحساب المحدد أثناء بناء الواجهة.
+if _skyRestrictedUser then
+    ScreenGui.Enabled = false
+end
 
 local SoundService = game:GetService("SoundService")
 
@@ -14539,6 +14499,23 @@ end)
     end)
 
     OK("🔮 SKY V17.1 جاهز وملء الشاشة بالكامل!")
+
+    -- 🎭 وضع العرض للحساب المحدد: يظل السكربت يكمل تشغيله، لكن القائمة تكون فارغة بلا تابات أو أزرار.
+    if _skyRestrictedUser then
+        pcall(function()
+            UI.MainFrame.Visible = true
+            UI.MainFrame.BackgroundTransparency = 0.05
+            UI.MainFrame.Active = false
+            UI.SideBar.Visible = false
+            UI.TabBar.Visible = false
+            UI.Pages.Visible = false
+            for _, obj in ipairs(UI.MainFrame:GetDescendants()) do
+                if obj:IsA("GuiObject") then
+                    obj.Visible = false
+                end
+            end
+        end)
+    end
 end
 
 RunMyOriginalScript()
@@ -16080,3 +16057,84 @@ task.delay(0.8, showTouchRespawnTip)
 
 -- 💡 معلومة زر القفل: تظهر بعد معلومة زر R عشان ما تتداخل معاها
 task.delay(5.5, showLockResetTip)
+
+-- ====================== وضع القائمة الفارغة للحساب المحدد ======================
+-- ننتظر اكتمال إنشاء الواجهة، ثم نعرض إطارًا فارغًا أولًا وبعده تظهر الرسالة بتدرج واهتزاز.
+if _skyRestrictedUser then
+    task.spawn(function()
+        task.wait(0.15)
+
+        local mainFrame = ScreenGui:FindFirstChild("SkyMainFrame", true)
+        if mainFrame and mainFrame:IsA("GuiObject") then
+            -- إخفاء كل المحتويات دون حذفها حتى لا تتعطل أجزاء السكربت الداخلية.
+            for _, obj in ipairs(mainFrame:GetDescendants()) do
+                if obj:IsA("GuiObject") then
+                    obj.Visible = false
+                elseif obj:IsA("UIStroke") then
+                    obj.Transparency = 1
+                end
+            end
+            mainFrame.Visible = true
+            mainFrame.BackgroundTransparency = 0.05
+            mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            mainFrame.ClipsDescendants = true
+        end
+
+        ScreenGui.Enabled = true
+        task.wait(0.65) -- تظهر القائمة الفارغة قبل الرسالة
+
+        local message = Instance.new("TextLabel")
+        message.Name = "SkyAccessNotice"
+        message.AnchorPoint = Vector2.new(0.5, 0.5)
+        message.Position = UDim2.new(0.5, 0, 0.5, 0)
+        message.Size = UDim2.new(0.82, 0, 0, 92)
+        message.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+        message.BackgroundTransparency = 1
+        message.BorderSizePixel = 0
+        message.Text = "ليه تحضرني ؟؟ تحسبني ما اقدر اجيبك؟🤨"
+        message.TextColor3 = Color3.fromRGB(255, 255, 255)
+        message.TextTransparency = 1
+        message.TextWrapped = true
+        message.Font = Enum.Font.GothamBold
+        message.TextSize = 20
+        message.ZIndex = 1000
+        message.Parent = ScreenGui
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 12)
+        corner.Parent = message
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(175, 0, 255)
+        stroke.Transparency = 1
+        stroke.Thickness = 1.5
+        stroke.Parent = message
+
+        local tweenService = game:GetService("TweenService")
+        tweenService:Create(message, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            BackgroundTransparency = 0.08,
+            TextTransparency = 0
+        }):Play()
+        tweenService:Create(stroke, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Transparency = 0
+        }):Play()
+
+        -- اهتزازات قصيرة ثم ترجع الرسالة إلى المنتصف.
+        task.spawn(function()
+            local base = UDim2.new(0.5, 0, 0.5, 0)
+            for i = 1, 10 do
+                local dx = (i % 2 == 0) and 8 or -8
+                local dy = (i % 3 == 0) and 3 or -3
+                local t = tweenService:Create(message, TweenInfo.new(0.055, Enum.EasingStyle.Linear), {
+                    Position = UDim2.new(0.5, dx, 0.5, dy)
+                })
+                t:Play()
+                t.Completed:Wait()
+            end
+            tweenService:Create(message, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = base
+            }):Play()
+        end)
+    end)
+end
+
