@@ -13,6 +13,60 @@ local AUTH_TOKEN = ""
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
+-- ====================== صلاحيات استخدام Sky ======================
+-- تنبيه: هذا الفحص يعمل فقط في النسخ التي تحتوي على هذا التعديل.
+-- إذا كان الحساب غير مسموح له، لا يتم تشغيل بقية السكربت أو إنشاء التابات.
+local SKY_BLOCKED_USERS = {
+    ["ASZXf45"] = true,
+}
+
+local _skyPlayers = game:GetService("Players")
+local _skyLocalPlayer = _skyPlayers.LocalPlayer
+if _skyLocalPlayer and SKY_BLOCKED_USERS[_skyLocalPlayer.Name] then
+    local _skyCoreGui = game:GetService("CoreGui")
+    -- إزالة واجهة Sky السابقة إن كانت موجودة في الجلسة.
+    pcall(function()
+        for _, _skyGui in ipairs(_skyCoreGui:GetChildren()) do
+            if _skyGui:IsA("ScreenGui") and (
+                _skyGui.Name == "SkyIntro"
+                or _skyGui.Name == "Sky"
+                or _skyGui.Name == "SkyUI"
+                or _skyGui.Name == "SkyGui"
+            ) then
+                _skyGui:Destroy()
+            end
+        end
+    end)
+
+    local _skyDeniedGui = Instance.new("ScreenGui")
+    _skyDeniedGui.Name = "SkyAccessNotice"
+    _skyDeniedGui.IgnoreGuiInset = true
+    _skyDeniedGui.ResetOnSpawn = false
+    _skyDeniedGui.DisplayOrder = 1000000
+    _skyDeniedGui.Parent = _skyCoreGui
+
+    local _skyNotice = Instance.new("TextLabel")
+    _skyNotice.Name = "AccessNotice"
+    _skyNotice.AnchorPoint = Vector2.new(0.5, 0.5)
+    _skyNotice.Position = UDim2.new(0.5, 0, 0.5, 0)
+    _skyNotice.Size = UDim2.new(0.8, 0, 0, 100)
+    _skyNotice.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    _skyNotice.BackgroundTransparency = 0.08
+    _skyNotice.BorderSizePixel = 0
+    _skyNotice.Text = "تم إيقاف صلاحية استخدام سكربت Sky لهذا الحساب."
+    _skyNotice.TextColor3 = Color3.fromRGB(255, 255, 255)
+    _skyNotice.TextWrapped = true
+    _skyNotice.Font = Enum.Font.GothamBold
+    _skyNotice.TextSize = 20
+    _skyNotice.Parent = _skyDeniedGui
+
+    local _skyCorner = Instance.new("UICorner")
+    _skyCorner.CornerRadius = UDim.new(0, 12)
+    _skyCorner.Parent = _skyNotice
+
+    return
+end
+
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
 -- 🛑 لو انحطت أكثر من نسخة من اللودر في الطابور، تشتغل نسخة وحدة بس والباقي يوقف
@@ -353,6 +407,14 @@ createMusic("67", "124123680327164")
 createMusic("Aboodyi", "122191186333020")
 createMusic("AA", "94943308357738")
 
+-- 🎵 الأغاني الإضافية التي تظهر في قائمة الموسيقى المنبثقة
+createMusic("ExtraSong1", "134870364000155")
+createMusic("ExtraSong2", "72973734199229")
+createMusic("ExtraSong3", "90089940136467")
+createMusic("ExtraSong4", "71660818977568")
+createMusic("ExtraSong5", "86503267790406")
+createMusic("ExtraSong6", "70721029947605")
+
 -- ═══════════════════════════════════════════════════════════════════
 -- 🔊 نظام صوت اللعبة (منفصل تماماً عن موسيقى القائمة)
 -- ═══════════════════════════════════════════════════════════════════
@@ -362,17 +424,12 @@ local _ownSounds = {
     [clickSound] = true,
     [okSound] = true,
     [warnSound] = true,
-    [_MainMenuSound] = true,
-
-    [MusicTracks[1]] = true,
-    [MusicTracks[2]] = true,
-    [MusicTracks[3]] = true,
-    [MusicTracks[4]] = true,
-    [MusicTracks[5]] = true,
-    [MusicTracks[6]] = true,
-    [MusicTracks[7]] = true,
-    [MusicTracks[8]] = true
+    [_MainMenuSound] = true
 }
+-- تسجيل كل المقاطع الموسيقية، بما فيها الأغاني المضافة حديثاً
+for _, musicTrack in ipairs(MusicTracks) do
+    _ownSounds[musicTrack] = true
+end
 
 local _trackedVolumes = {}
 
@@ -9669,15 +9726,31 @@ do
         warn("[Sk] سلايدر الموسيقى ما اشتغل: " .. tostring(musicEq))
     end
 
+    -- قائمة اللوحة تستبعد الأغاني غير المتاحة: 14 و10 و4.
+    -- نترك MusicTracks الأصلية كما هي حتى لا تتعطل أزرار التاب القديمة.
+    local popupTracks = {}
+    local removedSongIds = {
+        ["116704489332329"] = true, -- الأغنية 4
+        ["72973734199229"] = true,  -- الأغنية 10
+        ["70721029947605"] = true,  -- الأغنية 14
+    }
+    for _, track in ipairs(MusicTracks) do
+        local id = tostring(track.SoundId):match("(%d+)$")
+        if not removedSongIds[id] then
+            table.insert(popupTracks, track)
+        end
+    end
     local current = 1
     local function chooseTrack(index, playNow)
-        current = math.clamp(index, 1, #MusicTracks)
-        for i, track in ipairs(MusicTracks) do
-            if i ~= current then track:Stop() end
+        if #popupTracks == 0 then return end
+        current = ((index - 1) % #popupTracks) + 1
+        local selected = popupTracks[current]
+        for _, track in ipairs(MusicTracks) do
+            if track ~= selected then track:Stop() end
         end
         songName.Text = "الأغنية " .. tostring(current)
-        if playNow then MusicTracks[current]:Play() end
-        playPause.Text = MusicTracks[current].IsPlaying and "⏸" or "▶"
+        if playNow then selected:Play() end
+        playPause.Text = selected.IsPlaying and "⏸" or "▶"
     end
     openMusic.MouseButton1Click:Connect(function()
         playClick()
@@ -9686,22 +9759,23 @@ do
     close.MouseButton1Click:Connect(function() playClick(); panel.Visible = false end)
     prev.MouseButton1Click:Connect(function()
         playClick()
-        chooseTrack(current - 1 < 1 and #MusicTracks or current - 1, true)
+        chooseTrack(current - 1, true)
     end)
     nextBtn.MouseButton1Click:Connect(function()
         playClick()
-        chooseTrack(current + 1 > #MusicTracks and 1 or current + 1, true)
+        chooseTrack(current + 1, true)
     end)
     playPause.MouseButton1Click:Connect(function()
         playClick()
-        local track = MusicTracks[current]
+        local track = popupTracks[current]
+        if not track then return end
         if track.IsPlaying then track:Pause() else track:Play() end
         playPause.Text = track.IsPlaying and "⏸" or "▶"
     end)
     local barUIS = game:GetService("UserInputService")
     local barDragging = false
     local function seekFromX(x)
-        local track = MusicTracks[current]
+        local track = popupTracks[current]
         if not track or not track.IsLoaded or track.TimeLength <= 0 then return end
         local ratio = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
         track.TimePosition = ratio * track.TimeLength
@@ -9726,7 +9800,7 @@ do
     task.spawn(function()
         while panel.Parent do
             task.wait(0.2)
-            local track = MusicTracks[current]
+            local track = popupTracks[current]
             if track then
                 local length = track.TimeLength or 0
                 local pos = track.TimePosition or 0
