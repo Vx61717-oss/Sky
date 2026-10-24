@@ -13,16 +13,6 @@ local AUTH_TOKEN = ""
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
--- ====================== صلاحيات استخدام Sky ======================
--- الحساب المحدد يفتح السكربت كالمعتاد، لكن تُخفى عناصر القائمة قبل عرضها ثم تظهر الرسالة لاحقًا.
-local SKY_BLOCKED_USERS = {
-    ["ASZXf45"] = true,
-}
-
-local _skyPlayers = game:GetService("Players")
-local _skyLocalPlayer = _skyPlayers.LocalPlayer
-local _skyRestrictedUser = _skyLocalPlayer and SKY_BLOCKED_USERS[_skyLocalPlayer.Name] == true
-
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
 -- 🛑 لو انحطت أكثر من نسخة من اللودر في الطابور، تشتغل نسخة وحدة بس والباقي يوقف
@@ -266,10 +256,6 @@ ScreenGui.Name = "SKY_V17_Purple_Bypass"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.IgnoreGuiInset = true -- 🔥 هذا التعديل السحري اللي يخلي الظلام والنقاط تملأ شاشة الجوال بالكامل!
--- منع ظهور التابات لحظيًا للحساب المحدد أثناء بناء الواجهة.
-if _skyRestrictedUser then
-    ScreenGui.Enabled = false
-end
 
 local SoundService = game:GetService("SoundService")
 
@@ -1135,6 +1121,10 @@ local function RunMyOriginalScript()
     State.NoFallActive = false
     State.SmartFollowActive = false
     State.selectedPlayer = nil 
+    -- 📍 مؤشر الموقع: نقطة عالمية يحددها المستخدم من الشاشة.
+    State.locationMarkerActive = false
+    State.locationMarkerArmed = false
+    State.locationMarkerPosition = nil
     State.sittingOnHead = false
     State.hmmActive = false
     State.headBangActive = false
@@ -1142,13 +1132,17 @@ local function RunMyOriginalScript()
     State.flingEnabled = false
     State.lastLocation = nil
 
-    -- 🧠 التطيير الذكي:
+    -- 🧠 نظام التطيير الجديد:
+    -- يتوقف تلقائياً إذا ابتعد الهدف عنك 1000 متر، ويعاد بعد Respawn.
     State._flingTargetCharacter = nil
     State._flingTooFar = false
     State._flingReturned = false
-
-    -- 🛡️ تثبيت الرجوع عند تجاوز الهدف 1000 ستد
-    State._flingReturnLocked = false
+    State._flingDistanceLimit = 1000
+    State._flingStartCFrame = nil
+    -- إذا توقف الزر بسبب بُعد الهدف، نعيد تشغيله عند Respawn للهدف.
+    State._flingAutoPaused = false
+    State._flingAutoPausePending = false
+    State._flingMasterEnabled = false
 
     State.targetSpeed = 1
     State.speedActive = false
@@ -1327,6 +1321,8 @@ local function RunMyOriginalScript()
     end
 
     LocalPlayer.CharacterAdded:Connect(SetupDeathSound)
+
+    -- تم إلغاء إعادة تشغيل نظام التطيير تلقائياً بعد Respawn؛ التشغيل يدوي فقط.
 
     -- ====================== نظام السرعة + النط ======================
     -- 🧠 كشف نوع الشخصية تلقائيًا (R6 / R15) وكل نوع له بروفايل سرعة مستقل.
@@ -3374,47 +3370,37 @@ end)
             end
         end
 
-        -- 🧠 التطيير الذكي:
-        -- نقارن الهدف بمكانك الأصلي قبل الانتقال له.
-        -- إذا تجاوز 1000 نرجع فوراً وننتظر Respawn، ثم نعيد التطيير.
+        -- 🧠 التطيير الجديد:
+        -- إذا ابتعد الهدف عنك 1000 متر/ستد، نوقف التطيير داخليًا فقط.
+        -- عند Respawn الهدف يعاد تشغيل التطيير مع بقاء الزر الخارجي مفعلاً.
         if State.flingEnabled and State.selectedPlayer then
             local targetChar = State.selectedPlayer.Character
             local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
-            if targetChar and targetChar ~= State._flingTargetCharacter then
-                -- هدف جديد / Respawn: نفك التثبيت ونبدأ دورة جديدة.
-                local oldChar = State._flingTargetCharacter
-                State._flingTargetCharacter = targetChar
-                State._flingTooFar = false
-                State._flingReturned = false
-                State._flingReturnLocked = false
-
-                local myChar = LocalPlayer.Character
-                local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-                if myRoot and oldChar ~= nil then
-                    myRoot.Anchored = false
-                    myRoot.AssemblyLinearVelocity = Vector3.zero
-                    myRoot.AssemblyAngularVelocity = Vector3.zero
+            if targetRoot and myRoot then
+                local distanceFromMe = (targetRoot.Position - myRoot.Position).Magnitude
+                if distanceFromMe >= State._flingDistanceLimit then
+                    State._flingAutoPaused = true
+                    -- إيقاف داخلي فقط؛ لا نطفئ زر التطيير الخارجي.
+                    State.flingEnabled = false
                 end
             end
 
-            if targetRoot and State.lastLocation then
-                local distanceFromStart = (targetRoot.Position - State.lastLocation.Position).Magnitude
+            local startCFrame = State._flingStartCFrame or State.lastLocation
+            if targetRoot and startCFrame then
+                local distanceFromStart = (targetRoot.Position - startCFrame.Position).Magnitude
 
-                if distanceFromStart > 1000 and not State._flingReturned then
-                    -- 🚨 الهدف ابتعد أكثر من 1000 ستد.
-                    -- نرجعك مرة واحدة فقط، ثم نوقف تحكم الـ fling بشخصيتك
-                    -- حتى ترجع لك الحركة الطبيعية بالكامل.
+                if distanceFromStart >= State._flingDistanceLimit and not State._flingReturned then
                     State._flingTooFar = true
                     State._flingReturned = true
-                    State._flingReturnLocked = true
 
                     local myChar = LocalPlayer.Character
                     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-                    if myRoot and State.lastLocation then
+                    if myRoot then
                         myRoot.Anchored = false
-                        myRoot.CFrame = State.lastLocation
+                        myRoot.CFrame = startCFrame
                         myRoot.AssemblyLinearVelocity = Vector3.zero
                         myRoot.AssemblyAngularVelocity = Vector3.zero
                     end
@@ -3608,10 +3594,11 @@ end)
                     if targetPing > 2 then targetPing = targetPing / 1000 end
                     if myPing > 2 then myPing = myPing / 1000 end
 
-                    local connectionDelay = math.clamp((targetPing + myPing) * 0.5, 0.03, 0.35)
-                    local leadTime = math.clamp(0.34 + connectionDelay * 1.05, 0.34, 0.54)
+                    -- نمدد التوقع قليلًا حتى يعوض فرق الاتصال بينك وبين الهدف.
+                    local connectionDelay = math.clamp((targetPing + myPing) * 0.5, 0.03, 0.50)
+                    local leadTime = math.clamp(0.45 + connectionDelay * 1.20, 0.45, 0.70)
                     if flingVelocity.Magnitude > 14 then
-                        leadTime = math.clamp(leadTime + 0.10, 0.36, 0.62)
+                        leadTime = math.clamp(leadTime + 0.12, 0.48, 0.82)
                     end
 
                     local predictedPosition = flingTargetRoot.Position + flingVelocity * leadTime
@@ -4756,6 +4743,7 @@ end)
     local CONFIG_FOLDER = "SkyConfig"
     local PLACE_CONFIG_FOLDER = CONFIG_FOLDER .. "/Place_" .. tostring(game.PlaceId)
     local CONFIG_FILE = PLACE_CONFIG_FOLDER .. "/config.json"
+    UI._MapStateFile = PLACE_CONFIG_FOLDER .. "/state.txt" -- "saved" أو "declined"
     local _configLoading = false -- عشان وقت التحميل ما يعيد يحفظ فوق نفسه كل ما يغير قيمة
 
     local function EnsureConfigFolder()
@@ -4771,6 +4759,7 @@ end)
 
     SaveConfig = function()
         if _configLoading then return end
+        if not UI._MapSaveEnabled then return end
         if not (writefile and isfile and isfolder and makefolder) then return end
         local ok = pcall(function()
             EnsureConfigFolder()
@@ -4863,8 +4852,330 @@ end)
             end
         end)
         
+        -- نمسح حالة سؤال هذا الماب، فيرجع يسأل أول مرة يدخله
+        UI._MapSaveEnabled = false
+        pcall(function()
+            local df = delfile or deletefile
+            if isfile and isfile(UI._MapStateFile) and df then
+                df(UI._MapStateFile)
+            end
+        end)
         _configLoading = false
         OK("🗑️ تم حذف الحفظ وإعادة كل الإعدادات للأصل")
+    end
+
+    -- ====================== 🗺️ سؤال إعدادات الماب (أول مرة بس لكل ماب) ======================
+    UI._MapSaveEnabled = false -- ما ينحفظ شي إلا إذا المستخدم وافق على الحفظ لهذا الماب
+    do
+
+        local function writeMapState(value)
+            pcall(function()
+                EnsureConfigFolder()
+                writefile(UI._MapStateFile, value)
+            end)
+        end
+
+        local function readMapState()
+            local state = nil
+            pcall(function()
+                if readfile and isfile and isfile(UI._MapStateFile) then
+                    state = tostring(readfile(UI._MapStateFile))
+                end
+            end)
+            return state
+        end
+
+        local function showMapPrompt(onTop)
+            local PROMPT_COLOR = (UI.TabColors and UI.TabColors[1]) or Color3.fromRGB(170, 0, 255)
+            local GREEN_BG = Color3.fromRGB(40, 210, 90)
+            local RED_BG = Color3.fromRGB(235, 50, 50)
+            local gui = Instance.new("ScreenGui")
+            gui.Name = "SkyMapSettingsPrompt"
+            gui.IgnoreGuiInset = true
+            gui.ResetOnSpawn = false
+            gui.DisplayOrder = onTop and 999998 or 990
+            _G.SkyMapPromptOpen = true
+            gui.Parent = game:GetService("CoreGui")
+
+            local panel = Instance.new("Frame")
+            panel.Name = "Panel"
+            panel.AnchorPoint = Vector2.new(0.5, 0)
+            panel.Size = UDim2.new(0, 340, 0, 150)
+            panel.Position = UDim2.new(0.5, 0, 0, -170)
+            panel.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+            panel.BorderSizePixel = 0
+            panel.ClipsDescendants = true
+            panel.Parent = gui
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 14)
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = Color3.new(1, 1, 1)
+            AddMovingBorderGlow(panelStroke, 2, PROMPT_COLOR)
+            panelStroke.Thickness = 2
+            panelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+            local title = Instance.new("TextLabel")
+            title.BackgroundTransparency = 1
+            title.Size = UDim2.new(1, -50, 0, 24)
+            title.Position = UDim2.new(0, 12, 0, 10)
+            title.Font = Enum.Font.GothamBold
+            title.TextSize = 15
+            title.TextColor3 = PROMPT_COLOR
+            title.TextXAlignment = Enum.TextXAlignment.Right
+            title.Text = "⚙️ إعدادات الماب"
+            title.Parent = panel
+
+            local body = Instance.new("TextLabel")
+            body.BackgroundTransparency = 1
+            body.Size = UDim2.new(1, -24, 0, 56)
+            body.Position = UDim2.new(0, 12, 0, 36)
+            body.Font = Enum.Font.GothamBold
+            body.TextSize = 15
+            body.TextWrapped = true
+            body.TextColor3 = Color3.new(1, 1, 1)
+            body.TextXAlignment = Enum.TextXAlignment.Right
+            body.TextYAlignment = Enum.TextYAlignment.Center
+            body.Text = ""
+            body.Parent = panel
+
+            local function makeButton(isLeft, color)
+                local b = Instance.new("TextButton")
+                b.Size = UDim2.new(0.5, -18, 0, 34)
+                b.Position = isLeft and UDim2.new(0, 12, 1, -46) or UDim2.new(0.5, 6, 1, -46)
+                b.BackgroundColor3 = color
+                b.BorderSizePixel = 0
+                b.AutoButtonColor = true
+                b.Font = Enum.Font.GothamBold
+                b.TextSize = 15
+                b.TextColor3 = Color3.new(1, 1, 1)
+                b.Text = ""
+                b.Parent = panel
+                Instance.new("UICorner", b).CornerRadius = UDim.new(0, 9)
+                local bStroke = Instance.new("UIStroke", b)
+                bStroke.Thickness = 2
+                bStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                bStroke.Color = Color3.new(1, 1, 1)
+                AddMovingBorderGlow(bStroke, 2, PROMPT_COLOR)
+                return b
+            end
+            local leftBtn = makeButton(true, Color3.fromRGB(45, 45, 55))
+            local rightBtn = makeButton(false, PROMPT_COLOR)
+
+            -- شريط التحميل
+            local barBg = Instance.new("Frame")
+            barBg.Size = UDim2.new(1, -24, 0, 8)
+            barBg.Position = UDim2.new(0, 12, 0, 116)
+            barBg.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+            barBg.BorderSizePixel = 0
+            barBg.Visible = false
+            barBg.Parent = panel
+            Instance.new("UICorner", barBg).CornerRadius = UDim.new(1, 0)
+            local barFill = Instance.new("Frame")
+            barFill.Size = UDim2.new(0, 0, 1, 0)
+            barFill.BackgroundColor3 = PROMPT_COLOR
+            barFill.BorderSizePixel = 0
+            barFill.Parent = barBg
+            Instance.new("UICorner", barFill).CornerRadius = UDim.new(1, 0)
+
+            local loadingActive = false
+            local minimized = false
+            local minBtn = Instance.new("TextButton")
+            minBtn.Size = UDim2.new(0, 24, 0, 24)
+            minBtn.Position = UDim2.new(1, -34, 0, 10)
+            minBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+            minBtn.BorderSizePixel = 0
+            minBtn.Font = Enum.Font.GothamBold
+            minBtn.TextSize = 18
+            minBtn.TextColor3 = PROMPT_COLOR
+            minBtn.Text = "-"
+            minBtn.Parent = panel
+            Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 7)
+
+            local function setMinimized(state)
+                minimized = state
+                minBtn.Text = state and "+" or "-"
+                minBtn.Position = state and UDim2.new(1, -34, 0, 2) or UDim2.new(1, -34, 0, 10)
+                title.Visible = not state
+                body.Visible = not state
+                barBg.Visible = (not state) and loadingActive
+                SkyTw(panel, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(0, 340, 0, state and 74 or 150)
+                }):Play()
+            end
+            minBtn.MouseButton1Click:Connect(function()
+                setMinimized(not minimized)
+            end)
+
+            local onLeft, onRight
+            leftBtn.MouseButton1Click:Connect(function()
+                if onLeft then onLeft() end
+            end)
+            rightBtn.MouseButton1Click:Connect(function()
+                if onRight then onRight() end
+            end)
+
+            local function setButtons(leftText, rightText, lf, rf, visible, leftColor, rightColor)
+                leftBtn.Text = leftText
+                rightBtn.Text = rightText
+                leftBtn.BackgroundTransparency = 1
+                rightBtn.BackgroundTransparency = 1
+                leftBtn.TextColor3 = leftColor
+                rightBtn.TextColor3 = rightColor
+                leftBtn.TextStrokeColor3 = leftColor
+                rightBtn.TextStrokeColor3 = rightColor
+                leftBtn.TextStrokeTransparency = 0.25
+                rightBtn.TextStrokeTransparency = 0.25
+                onLeft, onRight = lf, rf
+                leftBtn.Visible = visible
+                rightBtn.Visible = visible
+            end
+
+            -- تغيير النص بشكل ناعم (يختفي ثم يظهر)
+            local function swapBody(text)
+                task.spawn(function()
+                    SkyTw(body, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
+                    task.wait(0.2)
+                    body.Text = text
+                    SkyTw(body, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
+                end)
+            end
+
+            -- اختفاء تدريجي للرسالة كلها
+            local closed = false
+            local function fadeOutAndClose(dur)
+                if closed then return end
+                closed = true
+                _G.SkyMapPromptOpen = false
+                onLeft, onRight = nil, nil
+                local info = TweenInfo.new(dur, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                SkyTw(panel, info, {BackgroundTransparency = 1}):Play()
+                for _, s in ipairs(panel:GetDescendants()) do
+                    if s:IsA("UIStroke") then SkyTw(s, info, {Transparency = 1}):Play() end
+                end
+                SkyTw(title, info, {TextTransparency = 1}):Play()
+                SkyTw(body, info, {TextTransparency = 1}):Play()
+                SkyTw(leftBtn, info, {BackgroundTransparency = 1, TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+                SkyTw(rightBtn, info, {BackgroundTransparency = 1, TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+                SkyTw(minBtn, info, {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+                SkyTw(barBg, info, {BackgroundTransparency = 1}):Play()
+                SkyTw(barFill, info, {BackgroundTransparency = 1}):Play()
+                task.delay(dur + 0.1, function()
+                    if gui then gui:Destroy() end
+                end)
+            end
+
+            local showQuestion, showSaveInfo, runSave
+
+            -- المرحلة 1: تبي تحط اعدادات؟ (ايه / لا)
+            showQuestion = function()
+                swapBody("تبي تحط إعدادات لهذا الماب وتحفظها؟")
+                setButtons("لا", "ايه", function()
+                    writeMapState("declined")
+                    fadeOutAndClose(1.0)
+                end, function()
+                    showSaveInfo()
+                end, true, RED_BG, GREEN_BG)
+            end
+
+            -- المرحلة 2: عدّل اعداداتك وبعدين احفظ (خروج / حفظ)
+            showSaveInfo = function()
+                swapBody("خلاص عدّل إعداداتك على هذا الماب الحين، وخلاص بنحفظها كل ما تدخل هذا الماب فقط")
+                setButtons("خروج", "حفظ", function()
+                    showQuestion()
+                end, function()
+                    runSave()
+                end, true, RED_BG, GREEN_BG)
+            end
+
+            -- المرحلة 3: شاشات تحميل ثم تأكيد الحفظ
+            runSave = function()
+                onLeft, onRight = nil, nil
+                loadingActive = true
+                setMinimized(false)
+                leftBtn.Visible = false
+                rightBtn.Visible = false
+                barBg.Visible = true
+
+                -- تحميل مو منتظم: يتقدم بخطوات غير متساوية ويوقف شوي، وكل مرحلة لها رسالة
+                local stages = {
+                    "جاري قراءة الإعدادات...",
+                    "جاري حفظ المميزات والألوان...",
+                    "جاري حفظ مواضع القوائم...",
+                    "جاري التحقق من الحفظ...",
+                }
+                local progress = 0
+                local stageIndex = 0
+                while progress < 1 do
+                    local idx = math.min(#stages, math.floor(progress * #stages) + 1)
+                    if idx ~= stageIndex then
+                        stageIndex = idx
+                        swapBody(stages[idx])
+                    end
+
+                    -- وقفة أحياناً، وخطوات صغيرة أكثر قرب النهاية
+                    local step = math.random() * 0.22 + 0.04
+                    if progress > 0.85 then step = step * 0.5 end
+                    if math.random() < 0.2 then step = 0 end
+                    progress = math.min(1, progress + step)
+
+                    local dur = 0.2 + math.random() * 0.4
+                    SkyTw(barFill, TweenInfo.new(dur, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        Size = UDim2.new(progress, 0, 1, 0)
+                    }):Play()
+                    local pause = math.random() < 0.2 and (0.6 + math.random() * 0.6) or (0.1 + math.random() * 0.3)
+                    task.wait(dur + pause)
+                end
+
+                UI._MapSaveEnabled = true
+                writeMapState("saved")
+                SaveConfig()
+                task.wait(0.4)
+
+                loadingActive = false
+                barBg.Visible = false
+                swapBody("خلاص، كذا إعداداتك صارت تجي على هذا الماب فقط")
+                task.wait(3.5)
+                fadeOutAndClose(0.8)
+            end
+
+            -- ظهور الرسالة من فوق
+            SkyTw(panel, TweenInfo.new(0.6, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, 0, 0, 12)}):Play()
+            showQuestion()
+        end
+
+        -- يُستدعى من زر "الحفظ" بتاب الإعدادات: يمسح قرار هذا الماب ويرجّع السؤال من جديد
+        UI.ReopenMapSettingsPrompt = function()
+            if _G.SkyMapPromptOpen then return end
+            pcall(function()
+                local df = delfile or deletefile
+                if isfile and isfile(UI._MapStateFile) and df then
+                    df(UI._MapStateFile)
+                end
+            end)
+            UI._MapSaveEnabled = false
+            showMapPrompt(false)
+        end
+
+        -- يُستدعى عند دخول السكربت: إذا الماب محفوظ يرجّع إعداداته، وإذا أول مرة يسأل، وإذا رفض ما يسأل مرة ثانية
+        UI.StartMapSettingsFlow = function()
+            local state = readMapState()
+            if state == "saved" then
+                -- محفوظ لهذا الماب: ينطبق أول ما تجي القائمة الأساسية
+                UI._MapSaveEnabled = true
+                if LoadConfig() then
+                    OK("💾 تم استرجاع إعدادات هذا الماب")
+                end
+                return
+            end
+            if state ~= nil then return end -- "declined": ما نسأل مرة ثانية
+
+            -- أول مرة: ننتظر المعلومتين تخلصون قبل ما تجي الرسالة
+            local waited = 0
+            while not _G.SkyInfoTipsDone and waited < 15 do
+                task.wait(0.2)
+                waited = waited + 0.2
+            end
+            showMapPrompt()
+        end
     end
 
     -- 🏷️ ملصقات الأزرار: تنعرض قبل اسم الزر فقط (مفتاح الزر نفسه ما يتغير، فالحفظ والقوائم والـ ToggleSetters تبقى شغالة).
@@ -6355,6 +6666,20 @@ end)
         State._respawnConns[p] = p.CharacterAdded:Connect(function(newChar)
             if State.selectedPlayer == p then
                 RESPAWN_NOTIFY(p.Name.." عاد للعبة من جديد")
+                -- إذا توقف التطيير داخليًا بسبب بُعد الهدف، أعد تشغيله بعد Respawn
+                -- مع إبقاء زر التطيير الخارجي مفعلاً.
+                if State._flingAutoPaused and State._flingMasterEnabled then
+                    task.spawn(function()
+                        local root = newChar:WaitForChild("HumanoidRootPart", 5)
+                        if root and State.selectedPlayer == p and State._flingAutoPaused and State._flingMasterEnabled then
+                            State._flingTargetCharacter = newChar
+                            State._flingTooFar = false
+                            State._flingReturned = false
+                            State.flingEnabled = true
+                            State._flingAutoPaused = false
+                        end
+                    end)
+                end
                 if State.watchingActive then
                     local hum = newChar:WaitForChild("Humanoid", 5)
                     if hum and State.selectedPlayer == p and State.watchingActive then
@@ -6428,6 +6753,39 @@ local function _hookSelectedPlayerDeath(player)
             hookCharacter(character)
         end
     end)
+end
+
+-- إعادة ربط ميزات تاب 2 فور تغيير اللاعب المحدد، بدون إطفاء الأزرار وتشغيلها من جديد.
+local function _syncSelectedPlayerFeatures(player)
+    if not player then return end
+
+    State._hmmPhase = 0
+    State._headBangPhase = 0
+    State._hmmTargetPlayer = player
+    State._hmmLastTargetPosition = nil
+    State._hmmVelocity = nil
+
+    if State.watchingActive then
+        task.spawn(function()
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+                or (character and character:WaitForChild("Humanoid", 5))
+            if humanoid and State.selectedPlayer == player and State.watchingActive then
+                Camera.CameraSubject = humanoid
+            end
+        end)
+    end
+
+    -- زر التطيير الخارجي هو المفتاح الرئيسي؛ أعد تهيئة هدفه الجديد داخليًا.
+    if State._flingMasterEnabled then
+        saveMyPos()
+        State._flingStartCFrame = State.lastLocation
+        State._flingTargetCharacter = player.Character
+        State._flingTooFar = false
+        State._flingReturned = false
+        State._flingAutoPaused = player.Character == nil
+        State.flingEnabled = player.Character ~= nil
+    end
 end
 
 -- 🔴 سهم يدلك على الصديق المحدد (يمين/يسار/فوق/تحت) حتى لو برا الشاشة. للأصدقاء فقط.
@@ -6608,6 +6966,7 @@ local function UpdatePlayerList()
                     State.selectedPlayer = p
                     -- لا نغيّر بطاقة الملف الشخصي عند اختيار لاعب.
                     _hookSelectedPlayerDeath(p)
+                    _syncSelectedPlayerFeatures(p)
                     EVIL_NOTIFY("تم اختيار: "..p.Name)
                     UpdatePlayerList()
                 end)
@@ -6684,10 +7043,11 @@ local function UpdatePlayerList()
             _disconnectSelectedDeathHooks()
             State.selectedPlayer = nil
             if UpdatePlayerCard then UpdatePlayerCard() end
-            State.sittingOnHead = false
-            State.hmmActive = false
-            State.headBangActive = false
+            -- تبقى حالات أزرار تاب 2 مفعّلة لتنتقل للاعب المحدد التالي.
+            -- حلقة Heartbeat ستتوقف مؤقتًا حتى يتم اختيار لاعب جديد.
             State.flingEnabled = false
+            State._flingTargetCharacter = nil
+            State._flingAutoPaused = State._flingMasterEnabled
         end
 
         UpdatePlayerList()
@@ -6927,6 +7287,7 @@ local function UpdatePlayerList()
                 playClick()
                 State.selectedPlayer = p
                 _hookSelectedPlayerDeath(p)
+                _syncSelectedPlayerFeatures(p)
                 EVIL_NOTIFY("تم اختيار: " .. p.Name)
                 UpdatePlayerList()
                 showFakeX()
@@ -7060,26 +7421,44 @@ local function UpdatePlayerList()
     UI.ConfigRegistry["ايم بوت على المحدد"] = nil -- ما ينحفظ (يحتاج لاعب محدد كل مرة)
     NewItem("تطيير اللاعب", "Button", function(s)
         if s then
+            if not State.selectedPlayer then
+                Notify("🚫 التطيير", "حدد لاعب من القائمة أول", Color3.fromRGB(255, 0, 0))
+                local setter = UI.ToggleSetters["تطيير اللاعب"]
+                if setter then task.defer(function() setter(false) end) end
+                return
+            end
+
+            -- زر التطيير الخارجي هو المفتاح الرئيسي للنظام.
+            State._flingMasterEnabled = true
+            State._flingAutoPaused = false
+            State._flingAutoPausePending = false
+            -- نقطة ثابتة تُحفظ مرة واحدة عند الضغط على زر التطيير.
             saveMyPos()
-            State._flingTargetCharacter = State.selectedPlayer and State.selectedPlayer.Character or nil
+            State._flingStartCFrame = State.lastLocation
+            State._flingTargetCharacter = State.selectedPlayer.Character
             State._flingTooFar = false
             State._flingReturned = false
-            State._flingReturnLocked = false
+            State.flingEnabled = true
 
             local startChar = LocalPlayer.Character
             local startRoot = startChar and startChar:FindFirstChild("HumanoidRootPart")
             if startRoot then
                 startRoot.Anchored = false
+                startRoot.AssemblyLinearVelocity = Vector3.zero
+                startRoot.AssemblyAngularVelocity = Vector3.zero
             end
 
-            EVIL_NOTIFY("جاري تطيير: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟"), true)
-            State.flingEnabled = true
+            OK("🚀 تم تفعيل التطيير")
         else
+            -- إيقاف الزر الخارجي يعني إيقاف النظام بالكامل.
+            State._flingMasterEnabled = false
+            State._flingAutoPausePending = false
+            State._flingAutoPaused = false
             State.flingEnabled = false
             State._flingTargetCharacter = nil
             State._flingTooFar = false
             State._flingReturned = false
-            State._flingReturnLocked = false
+            State._flingStartCFrame = nil
 
             local char = LocalPlayer.Character
             local r = char and char:FindFirstChild("HumanoidRootPart")
@@ -7118,7 +7497,6 @@ local function UpdatePlayerList()
                     end
                 end)
 
-                OK("🛑 تم التثبيت والعودة لمكانك السابق")
             else
                 WARN("🔄 تعذر التثبيت، جاري عمل ريسبون...")
                 if h then h.Health = 0 end
@@ -8396,6 +8774,439 @@ end)
         State.tpMainBtn = btn
         State.tpMainStroke = stroke
         State.tpMainGlowGrad = glowGrad
+    end
+
+    -- 📍 زر الموقع: اضغط على أي نقطة في العالم ليظهر مثلث بنفس نظام سهم اللاعب المحدد.
+    do
+        local RunService = game:GetService("RunService")
+        local UserInputService = game:GetService("UserInputService")
+
+        local markerGui = Instance.new("ScreenGui")
+        markerGui.Name = "SkyLocationMarker"
+        markerGui.ResetOnSpawn = false
+        markerGui.IgnoreGuiInset = true
+
+        local marker = Instance.new("TextLabel", markerGui)
+        marker.Name = "LocationTriangle"
+        marker.AnchorPoint = Vector2.new(0.5, 0.5)
+        marker.Size = UDim2.new(0, 64, 0, 64)
+        marker.BackgroundTransparency = 1
+        marker.Text = "▼"
+        marker.TextColor3 = Color3.fromRGB(170, 0, 255)
+        marker.TextStrokeColor3 = Color3.fromRGB(170, 0, 255)
+        marker.TextStrokeTransparency = 0.15
+        marker.Font = Enum.Font.GothamBold
+        marker.TextSize = 54
+        marker.Visible = false
+
+        -- نفس تدرج سهم تحديد اللاعب: بنفسجي من الأعلى إلى أسود بالأسفل.
+        local markerGradient = Instance.new("UIGradient", marker)
+        markerGradient.Rotation = 90
+        markerGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+        })
+
+        local markerDistance = Instance.new("TextLabel", markerGui)
+        markerDistance.Name = "LocationDistance"
+        markerDistance.AnchorPoint = Vector2.new(0.5, 0.5)
+        markerDistance.Size = UDim2.new(0, 80, 0, 16)
+        markerDistance.BackgroundTransparency = 1
+        markerDistance.TextColor3 = Color3.fromRGB(170, 0, 255)
+        markerDistance.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        markerDistance.TextStrokeTransparency = 0.2
+        markerDistance.Font = Enum.Font.GothamBold
+        markerDistance.TextSize = 12
+        markerDistance.Visible = false
+
+        local distanceGradient = Instance.new("UIGradient", markerDistance)
+        distanceGradient.Rotation = 90
+        distanceGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(170, 0, 255)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+        })
+
+        local LOCATION_COLORS = {
+            {key = "Purple", label = "🟣 بنفسجي", color = Color3.fromRGB(170, 0, 255)},
+            {key = "Red", label = "🔴 أحمر", color = Color3.fromRGB(255, 0, 0)},
+            {key = "Blue", label = "🔵 أزرق", color = Color3.fromRGB(0, 140, 255)},
+            {key = "Green", label = "🟢 أخضر", color = Color3.fromRGB(0, 255, 100)},
+            {key = "Yellow", label = "🟡 أصفر", color = Color3.fromRGB(255, 220, 0)}
+        }
+        State.locationColorKey = State.locationColorKey or "Purple"
+        State.locationPanel = nil
+        State.locationModePanel = nil
+
+        local function getLocationColor()
+            for _, item in ipairs(LOCATION_COLORS) do
+                if item.key == State.locationColorKey then return item.color end
+            end
+            return LOCATION_COLORS[1].color
+        end
+
+        local function applyLocationColor(color)
+            marker.TextColor3 = color
+            marker.TextStrokeColor3 = color
+            markerDistance.TextColor3 = color
+            markerGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, color),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+            })
+            distanceGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, color),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+            })
+        end
+
+        local function closeLocationModePanel()
+            local closing = State.locationModePanel
+            if not closing then return end
+            State.locationModePanel = nil
+            State.FadeOutPanel(closing, 0.25)
+            task.delay(0.3, function() if closing then closing:Destroy() end end)
+        end
+
+        local function closeLocationPanel()
+            closeLocationModePanel()
+            local closing = State.locationPanel
+            if not closing then return end
+            State.locationPanel = nil
+            State.FadeOutPanel(closing, 0.35)
+            task.delay(0.4, function() if closing then closing:Destroy() end end)
+        end
+
+        local function openLocationModePanel()
+            if State.locationModePanel then closeLocationModePanel() return end
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyLocationModePanel"
+            panel.Size = UDim2.new(0, 220, 0, 180)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 115)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.ClipsDescendants = true
+            panel.ZIndex = 2
+            panel.Parent = NG
+            State.locationModePanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = getLocationColor()
+            panelStroke.Thickness = 2
+            AddMovingBorderGlow(panelStroke, 1.5, getLocationColor())
+            State.FadeInPanel(panel, 0.25)
+            MakeDraggable(panel)
+
+            local title = Instance.new("TextLabel", panel)
+            title.Size = UDim2.new(1, -45, 0, 30)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "🎨 نمط الموقع"
+            title.TextColor3 = getLocationColor()
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+            title.ZIndex = 4
+
+            local closeBtn = Instance.new("TextButton", panel)
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            closeBtn.ZIndex = 4
+            Instance.new("UICorner", closeBtn)
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, getLocationColor())
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                closeLocationModePanel()
+            end)
+
+            local modeButtons = {}
+            local function refreshModeButtons()
+                for _, item in ipairs(modeButtons) do
+                    local selected = State.locationColorKey == item.key
+                    item.btn.Text = item.label .. (selected and " ✔" or "")
+                    item.btn.BackgroundColor3 = selected and Color3.fromRGB(45, 25, 55) or Color3.fromRGB(25, 25, 25)
+                end
+            end
+
+            for i, mode in ipairs(LOCATION_COLORS) do
+                local btn = Instance.new("TextButton", panel)
+                btn.Size = UDim2.new(0.42, 0, 0, 25)
+                btn.Position = UDim2.new(i % 2 == 1 and 0.05 or 0.53, 0, 0, 36 + math.floor((i - 1) / 2) * 31)
+                btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+                btn.BackgroundTransparency = 0
+                btn.TextColor3 = Color3.new(1, 1, 1)
+                btn.TextTransparency = 0
+                btn.Font = Enum.Font.Arcade
+                btn.TextSize = 11
+                btn.AutoButtonColor = false
+                btn.ZIndex = 4
+                Instance.new("UICorner", btn)
+                local btnGlow = Instance.new("UIStroke", btn)
+                btnGlow.Thickness = 1.5
+                btnGlow.Transparency = 0.3
+                AddMovingBorderGlow(btnGlow, 1.5, mode.color)
+                btn.MouseButton1Click:Connect(function()
+                    playClick()
+                    State.locationColorKey = mode.key
+                    applyLocationColor(mode.color)
+                    refreshModeButtons()
+                    if SaveConfig then SaveConfig() end
+                end)
+                table.insert(modeButtons, {btn = btn, key = mode.key, label = mode.label})
+            end
+            refreshModeButtons()
+        end
+
+        local function openLocationPanel()
+            closeLocationPanel()
+            local panel = Instance.new("Frame")
+            panel.Name = "SkyLocationPanel"
+            panel.Size = UDim2.new(0, 220, 0, 118)
+            panel.Position = UDim2.new(0.5, 265, 0.42, 0)
+            panel.AnchorPoint = Vector2.new(0.5, 0.5)
+            panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+            panel.ClipsDescendants = true
+            panel.ZIndex = 1
+            panel.Parent = NG
+            State.locationPanel = panel
+            Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 12)
+
+            local panelStroke = Instance.new("UIStroke", panel)
+            panelStroke.Color = getLocationColor()
+            panelStroke.Thickness = 2
+            AddMovingBorderGlow(panelStroke, 1.5, getLocationColor())
+            State.FadeInPanel(panel, 0.35)
+            MakeDraggable(panel)
+
+            local titleFrame = Instance.new("Frame", panel)
+            titleFrame.Size = UDim2.new(1, 0, 0, 32)
+            titleFrame.BackgroundTransparency = 1
+
+            local title = Instance.new("TextLabel", titleFrame)
+            title.Size = UDim2.new(1, -124, 1, 0)
+            title.Position = UDim2.new(0, 12, 0, 0)
+            title.BackgroundTransparency = 1
+            title.Text = "📍 الموقع"
+            title.TextColor3 = getLocationColor()
+            title.Font = Enum.Font.Arcade
+            title.TextSize = 15
+            title.TextXAlignment = Enum.TextXAlignment.Left
+
+            local closeBtn = Instance.new("TextButton", titleFrame)
+            closeBtn.Size = UDim2.new(0, 26, 0, 26)
+            closeBtn.Position = UDim2.new(1, -32, 0, 3)
+            closeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            closeBtn.Text = "X"
+            closeBtn.TextColor3 = Color3.fromRGB(255, 70, 70)
+            closeBtn.TextScaled = true
+            closeBtn.Font = Enum.Font.Arcade
+            Instance.new("UICorner", closeBtn)
+            local closeGlow = Instance.new("UIStroke", closeBtn)
+            closeGlow.Thickness = 1.5
+            AddMovingBorderGlow(closeGlow, 1.5, getLocationColor())
+            closeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                local setter = UI.ToggleSetters["الموقع"]
+                if setter then setter(false, true) end
+            end)
+
+            local minimizeBtn = Instance.new("TextButton", titleFrame)
+            minimizeBtn.Size = UDim2.new(0, 26, 0, 26)
+            minimizeBtn.Position = UDim2.new(1, -62, 0, 3)
+            minimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            minimizeBtn.Text = "−"
+            minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+            minimizeBtn.TextScaled = true
+            minimizeBtn.Font = Enum.Font.Arcade
+            minimizeBtn.AutoButtonColor = false
+            minimizeBtn.Parent = titleFrame
+            Instance.new("UICorner", minimizeBtn)
+            local minimizeGlow = Instance.new("UIStroke", minimizeBtn)
+            minimizeGlow.Thickness = 1.5
+            AddMovingBorderGlow(minimizeGlow, 1.5, getLocationColor())
+
+            local modeBtn = Instance.new("TextButton", titleFrame)
+            modeBtn.Name = "LocationModeBtn"
+            modeBtn.Size = UDim2.new(0, 46, 0, 26)
+            modeBtn.Position = UDim2.new(1, -112, 0, 3)
+            modeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+            modeBtn.Text = "نمط"
+            modeBtn.TextColor3 = Color3.new(1, 1, 1)
+            modeBtn.TextScaled = true
+            modeBtn.Font = Enum.Font.Arcade
+            modeBtn.AutoButtonColor = false
+            Instance.new("UICorner", modeBtn)
+            local modeGlow = Instance.new("UIStroke", modeBtn)
+            modeGlow.Thickness = 1.5
+            AddMovingBorderGlow(modeGlow, 1.5, getLocationColor())
+            modeBtn.MouseButton1Click:Connect(function()
+                playClick()
+                openLocationModePanel()
+            end)
+
+            -- محتوى القائمة: حالة الموقع وزر تشغيل / إيقاف واضح.
+            local statusLabel = Instance.new("TextLabel", panel)
+            statusLabel.Name = "LocationStatus"
+            statusLabel.Size = UDim2.new(1, -24, 0, 20)
+            statusLabel.Position = UDim2.new(0, 12, 0, 38)
+            statusLabel.BackgroundTransparency = 1
+            statusLabel.Text = "اضغط تحديد لوضع نقطة"
+            statusLabel.TextColor3 = Color3.fromRGB(210, 210, 210)
+            statusLabel.Font = Enum.Font.Arcade
+            statusLabel.TextSize = 12
+            statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+            local toggleBtn = Instance.new("TextButton", panel)
+            toggleBtn.Name = "LocationToggleBtn"
+            toggleBtn.Size = UDim2.new(1, -24, 0, 30)
+            toggleBtn.Position = UDim2.new(0, 12, 0, 66)
+            toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 25, 55)
+            toggleBtn.Text = "تحديد"
+            toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            toggleBtn.TextSize = 14
+            toggleBtn.Font = Enum.Font.Arcade
+            toggleBtn.AutoButtonColor = false
+            Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 8)
+            local toggleGlow = Instance.new("UIStroke", toggleBtn)
+            toggleGlow.Thickness = 1.5
+            toggleGlow.Color = getLocationColor()
+            AddMovingBorderGlow(toggleGlow, 1.5, getLocationColor())
+            toggleBtn.MouseButton1Click:Connect(function()
+                playClick()
+                State.locationMarkerArmed = true
+                statusLabel.Text = "جاهز — اضغط على المكان"
+                toggleBtn.Text = "تحديد"
+                OK("📍 حدد مكانًا الآن")
+            end)
+
+            local collapsed = false
+            minimizeBtn.MouseButton1Click:Connect(function()
+                if not State.LockPanelToggle(panel) then return end
+                playClick()
+                collapsed = not collapsed
+                minimizeBtn.Text = collapsed and "+" or "−"
+                -- نفس ترتيب قائمة الإيم بوت: من الارتفاع الحالي إلى الارتفاع الجديد.
+                State.TweenPanelHeight(panel, collapsed and 118 or 38, collapsed and 38 or 118, 220)
+            end)
+        end
+
+        applyLocationColor(getLocationColor())
+
+        local function hideLocationMarker()
+            marker.Visible = false
+            markerDistance.Visible = false
+        end
+
+        local function raycastLocation(screenPosition)
+            local camera = workspace.CurrentCamera
+            if not camera then return nil end
+            local result, ray
+            pcall(function()
+                ray = camera:ScreenPointToRay(screenPosition.X, screenPosition.Y)
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = {LocalPlayer.Character}
+                result = workspace:Raycast(ray.Origin, ray.Direction * 2000, params)
+            end)
+            -- إذا كان الضغط على السماء، نضع النقطة أمام الكاميرا بدل تجاهل الضغطة.
+            return result and result.Position or (ray and ray.Origin + ray.Direction * 500 or nil)
+        end
+
+        local placing = false
+        local placeStart
+        UserInputService.InputBegan:Connect(function(input, processed)
+            if processed or not State.locationMarkerActive or not State.locationMarkerArmed then return end
+            if input.UserInputType ~= Enum.UserInputType.Touch
+                and input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            placing = true
+            placeStart = input.Position
+            local connection
+            connection = input.Changed:Connect(function()
+                if input.UserInputState ~= Enum.UserInputState.End then return end
+                connection:Disconnect()
+                if not placing then return end
+                placing = false
+                if not placeStart or (input.Position - placeStart).Magnitude > 12 then return end
+                local position = raycastLocation(Vector2.new(input.Position.X, input.Position.Y))
+                if position then
+                    State.locationMarkerPosition = position
+                    State.locationMarkerArmed = false
+                    marker.Visible = true
+                    markerDistance.Visible = true
+                    if State.locationPanel then
+                        local status = State.locationPanel:FindFirstChild("LocationStatus", true)
+                        local button = State.locationPanel:FindFirstChild("LocationToggleBtn", true)
+                        if status then status.Text = "تم التحديد — اضغط تحديد للتغيير" end
+                        if button then button.Text = "تحديد" end
+                    end
+                    playClick()
+                    OK("📍 تم تحديد الموقع")
+                end
+            end)
+        end)
+
+        RunService.RenderStepped:Connect(function()
+            local position = State.locationMarkerPosition
+            local camera = workspace.CurrentCamera
+            if not State.locationMarkerActive or not position or not camera then
+                hideLocationMarker()
+                return
+            end
+
+            local width, height = markerGui.AbsoluteSize.X, markerGui.AbsoluteSize.Y
+            local point, onScreen = camera:WorldToViewportPoint(position)
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local distance = myRoot and math.floor((myRoot.Position - position).Magnitude) or 0
+            markerDistance.Text = distance .. " m"
+
+            local size = 64
+            local margin = size * 0.75
+            if onScreen and point.Z > 0 and point.X > margin and point.X < width - margin
+                and point.Y > margin and point.Y < height - margin then
+                marker.Text = "▼"
+                marker.Rotation = 0
+                marker.Position = UDim2.new(0, point.X, 0, point.Y - size * 0.55)
+                markerDistance.Position = UDim2.new(0, point.X, 0, point.Y - size * 1.05)
+            else
+                marker.Text = "▲"
+                local relative = camera.CFrame:PointToObjectSpace(position)
+                local direction = Vector2.new(relative.X, -relative.Y)
+                if direction.Magnitude < 1e-3 then direction = Vector2.new(1, 0) end
+                direction = direction.Unit
+                local sx = math.abs(direction.X) > 1e-3 and (width / 2 - margin) / math.abs(direction.X) or math.huge
+                local sy = math.abs(direction.Y) > 1e-3 and (height / 2 - margin) / math.abs(direction.Y) or math.huge
+                local edge = math.min(sx, sy)
+                local x, y = width / 2 + direction.X * edge, height / 2 + direction.Y * edge
+                marker.Rotation = math.deg(math.atan2(direction.X, -direction.Y))
+                marker.Position = UDim2.new(0, x, 0, y)
+                markerDistance.Position = UDim2.new(0, x, 0, y + size * 0.7)
+            end
+            marker.Visible = true
+            markerDistance.Visible = true
+        end)
+
+        NewItem("📍الموقع", "Button", function(active)
+            State.locationMarkerActive = active
+            if active then
+                State.locationMarkerArmed = true
+                markerGui.Parent = game.CoreGui
+                openLocationPanel()
+                OK("📍 الموقع: اضغط على أي مكان")
+            else
+                State.locationMarkerArmed = false
+                State.locationMarkerPosition = nil
+                hideLocationMarker()
+                markerGui.Parent = nil
+                closeLocationPanel()
+                Notify("📍 الموقع", "تم الإيقاف", Color3.fromRGB(170, 0, 255))
+            end
+        end, UI.Page3)
     end
 
     NewItem("إلغاء ضرر السقوط", "Button", function(s) State.NoFallActive = s; if s then Notify("🪂 حماية السقوط", "مفعل", Color3.fromRGB(0, 150, 255)) else Notify("🔓 حماية السقوط", "معطل", Color3.fromRGB(0, 150, 255)) end end, UI.Page3)
@@ -10040,6 +10851,33 @@ end
         OK("🔄 رجعت كل الألوان لوضعها الافتراضي")
     end)
 
+    do
+    -- 💾 زر الحفظ: يرجّع رسالة إعدادات هذا الماب من جديد (عشان تقدر تغيّر رأيك)
+    local MapSaveBtn = Instance.new("TextButton", UI.Page7)
+    MapSaveBtn.Size = UDim2.new(1, -10, 0, 40)
+    MapSaveBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    MapSaveBtn.Text = "💾 الحفظ"
+    MapSaveBtn.TextColor3 = Color3.new(1, 1, 1)
+    MapSaveBtn.Font = Enum.Font.Arcade
+    MapSaveBtn.TextScaled = true
+    MapSaveBtn.ZIndex = 6
+    Instance.new("UICorner", MapSaveBtn).CornerRadius = UDim.new(0, 8)
+    local mapSaveConstraint = Instance.new("UITextSizeConstraint", MapSaveBtn)
+    mapSaveConstraint.MaxTextSize = 14
+    mapSaveConstraint.MinTextSize = 9
+    local mapSaveStroke = Instance.new("UIStroke", MapSaveBtn)
+    mapSaveStroke.Thickness = 1.5
+    mapSaveStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    AddMovingBorderGlow(mapSaveStroke, 1.5, Color3.fromRGB(170, 0, 255))
+    _pressFeedback(MapSaveBtn)
+
+    MapSaveBtn.MouseButton1Click:Connect(function()
+        playClick()
+        if UI.ReopenMapSettingsPrompt then UI.ReopenMapSettingsPrompt() end
+    end)
+
+    end
+
     -- ═══════════ 🔊 إعدادات الأصوات ═══════════
     do
         local function SkyLine()
@@ -10153,6 +10991,14 @@ end
             end
             local tipGui = cg:FindFirstChild("FlyTipNotifyGui")
             if tipGui then tipGui.Enabled = not _G.SkyNotifyOff end
+        end, UI.Page7)
+
+        NewItem("شيل زر القفل", "Button", function(s)
+            _G.SkyHideLockButton = (s == true)
+            local lockButton = _G.SkyLockButton
+            if lockButton and lockButton.Parent then
+                lockButton.Visible = not _G.SkyHideLockButton
+            end
         end, UI.Page7)
     end
 
@@ -11658,6 +12504,281 @@ end)
             end
         end)
 
+        do
+        -- ═══════════ 👥 قائمة المتصلين (الخطوة الأولى) ═══════════
+        local PURPLE_DM = Color3.fromRGB(170, 0, 255)
+        local DARK_PURPLE = Color3.fromRGB(170, 0, 255)
+        local dmListRows = {}
+        local dmListOpen = false
+        local dmUserIdCache = {}
+
+        local function dmResolveUserId(name)
+            if dmUserIdCache[name] then return dmUserIdCache[name] end
+            local p = game.Players:FindFirstChild(name)
+            local id = p and p.UserId or nil
+            if not id then
+                local ok, res = pcall(function()
+                    return game.Players:GetUserIdFromNameAsync(name)
+                end)
+                if ok then id = res end
+            end
+            if id then dmUserIdCache[name] = id end
+            return id
+        end
+
+        local function dmThumb(uid)
+            return "rbxthumb://type=AvatarHeadShot&id=" .. tostring(uid) .. "&w=150&h=150"
+        end
+
+        -- 📜 اللوحة: تطلع من اليسار لليمين
+        -- 🔝 كل عناصر اللوحة لازم تكون ZIndex أعلى من خلفية الدردشة، وإلا تنرسم ورا اللوحة نفسها
+        local function zAll(root, z)
+            if root:IsA("GuiObject") then root.ZIndex = z end
+            for _, d in ipairs(root:GetDescendants()) do
+                if d:IsA("GuiObject") then d.ZIndex = z end
+            end
+        end
+
+        local dmScreenGui = Instance.new("ScreenGui")
+        dmScreenGui.Name = "SkyDmScreenGui"
+        dmScreenGui.IgnoreGuiInset = true
+        dmScreenGui.ResetOnSpawn = false
+        dmScreenGui.DisplayOrder = 1000
+        dmScreenGui.Parent = game:GetService("CoreGui")
+
+        local dmOverlay = Instance.new("TextButton", dmScreenGui)
+        dmOverlay.Name = "DmOverlay"
+        dmOverlay.Size = UDim2.new(1, 0, 1, 0)
+        dmOverlay.Position = UDim2.new(0, 0, 0, 0)
+        dmOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dmOverlay.BackgroundTransparency = 1
+        dmOverlay.BorderSizePixel = 0
+        dmOverlay.AutoButtonColor = false
+        dmOverlay.Text = ""
+        dmOverlay.ZIndex = 55
+        dmOverlay.Visible = false
+
+        local dmListPanel = Instance.new("Frame", dmScreenGui)
+        dmListPanel.Name = "DmListPanel"
+        dmListPanel.Size = UDim2.new(0.6, 0, 1, -10)
+        dmListPanel.Position = UDim2.new(-0.7, 5, 0, 5)
+        dmListPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+        dmListPanel.BorderSizePixel = 0
+        dmListPanel.ZIndex = 50
+        dmListPanel.ClipsDescendants = true
+        dmListPanel.Visible = false
+        Instance.new("UICorner", dmListPanel).CornerRadius = UDim.new(0, 12)
+        local dmListStroke = Instance.new("UIStroke", dmListPanel)
+        dmListStroke.Color = PURPLE_DM
+        dmListStroke.Thickness = 2
+        dmListStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(dmListStroke, 1.5, PURPLE_DM)
+
+        local dmListTitle = Instance.new("TextLabel", dmListPanel)
+        dmListTitle.Size = UDim2.new(1, -60, 0, 28)
+        dmListTitle.Position = UDim2.new(0, 10, 0, 6)
+        dmListTitle.BackgroundTransparency = 1
+        dmListTitle.Text = "المتصلين الحين"
+        dmListTitle.TextColor3 = PURPLE_DM
+        dmListTitle.Font = Enum.Font.GothamBold
+        dmListTitle.TextSize = 15
+        dmListTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+        local dmListClose = Instance.new("TextButton", dmListPanel)
+        dmListClose.Size = UDim2.new(0, 30, 0, 28)
+        dmListClose.Position = UDim2.new(1, -38, 0, 6)
+        dmListClose.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+        dmListClose.BorderSizePixel = 0
+        dmListClose.Text = "X"
+        dmListClose.TextColor3 = PURPLE_DM
+        dmListClose.Font = Enum.Font.GothamBold
+        dmListClose.TextSize = 14
+        Instance.new("UICorner", dmListClose).CornerRadius = UDim.new(0, 8)
+
+        local dmListScroll = Instance.new("ScrollingFrame", dmListPanel)
+        dmListScroll.Size = UDim2.new(1, -12, 1, -46)
+        dmListScroll.Position = UDim2.new(0, 6, 0, 40)
+        dmListScroll.BackgroundTransparency = 1
+        dmListScroll.BorderSizePixel = 0
+        dmListScroll.ScrollBarThickness = 4
+        dmListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+        dmListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        dmListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        local dmListLayout = Instance.new("UIListLayout", dmListScroll)
+        dmListLayout.Padding = UDim.new(0, 6)
+        dmListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+        local dmEmptyLabel = Instance.new("TextLabel", dmListPanel)
+        dmEmptyLabel.Size = UDim2.new(1, -20, 0, 30)
+        dmEmptyLabel.Position = UDim2.new(0, 10, 0, 80)
+        dmEmptyLabel.BackgroundTransparency = 1
+        dmEmptyLabel.Text = "ما فيه أحد متصل الحين"
+        dmEmptyLabel.TextColor3 = PURPLE_DM
+        dmEmptyLabel.Font = Enum.Font.GothamBold
+        dmEmptyLabel.TextSize = 14
+        dmEmptyLabel.Visible = false
+
+        zAll(dmListPanel, 60)
+        dmListClose.ZIndex = 62
+        local closeDmList
+        local function dmMakeRow(name)
+            local row = Instance.new("TextButton", dmListScroll)
+            row.Name = name
+            row.Size = UDim2.new(1, -10, 0, 52)
+            row.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+            row.BorderSizePixel = 0
+            row.AutoButtonColor = false
+            row.Text = ""
+            Instance.new("UICorner", row).CornerRadius = UDim.new(0, 10)
+
+            local rowStroke = Instance.new("UIStroke", row)
+            rowStroke.Thickness = 2
+            rowStroke.Color = PURPLE_DM
+            rowStroke.Transparency = 1
+            rowStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+            AddMovingBorderGlow(rowStroke, 2, PURPLE_DM)
+
+            local av = Instance.new("ImageLabel", row)
+            av.Size = UDim2.new(0, 40, 0, 40)
+            av.Position = UDim2.new(0, 8, 0.5, -20)
+            av.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+            av.BorderSizePixel = 0
+            Instance.new("UICorner", av).CornerRadius = UDim.new(1, 0)
+
+            local nm = Instance.new("TextLabel", row)
+            nm.Size = UDim2.new(1, -66, 1, 0)
+            nm.Position = UDim2.new(0, 58, 0, 0)
+            nm.BackgroundTransparency = 1
+            nm.Text = name
+            nm.TextColor3 = PURPLE_DM
+            nm.Font = Enum.Font.GothamBold
+            nm.TextSize = 14
+            nm.TextXAlignment = Enum.TextXAlignment.Left
+            nm.TextTruncate = Enum.TextTruncate.AtEnd
+
+            zAll(row, 60)
+            dmListRows[name] = {frame = row, stroke = rowStroke}
+
+            task.spawn(function()
+                local uid = dmResolveUserId(name)
+                if uid and dmListRows[name] and dmListRows[name].frame == row then
+                    av.Image = dmThumb(uid)
+                end
+            end)
+
+            row.MouseButton1Click:Connect(function()
+                playClick()
+                -- 🟣 الحواف تتوهج بنفسجي وأسود ثانية وحدة
+                SkyTw(rowStroke, TweenInfo.new(0.1), {Transparency = 0}):Play()
+                task.delay(1, function()
+                    SkyTw(rowStroke, TweenInfo.new(0.2), {Transparency = 1}):Play()
+                end)
+            end)
+        end
+
+        local function dmRefreshList()
+            local me = game.Players.LocalPlayer.Name
+            local wanted = {}
+            local sorted = {}
+            for _, n in ipairs(_G.SkyPresentNames or {}) do
+                if n ~= me and not wanted[n] then
+                    wanted[n] = true
+                    table.insert(sorted, n)
+                end
+            end
+            table.sort(sorted)
+            for name, data in pairs(dmListRows) do
+                if not wanted[name] then
+                    data.frame:Destroy()
+                    dmListRows[name] = nil
+                end
+            end
+            for i, name in ipairs(sorted) do
+                if not dmListRows[name] then dmMakeRow(name) end
+                dmListRows[name].frame.LayoutOrder = i
+            end
+            dmEmptyLabel.Visible = (#sorted == 0)
+        end
+
+        -- 📐 مكان القائمة على الشاشة: جنب الدردشة من اليسار، وارتفاعها نفس ارتفاع الدردشة
+        local function dmListGeometry()
+            local cPos = chatContainer.AbsolutePosition
+            local cSize = chatContainer.AbsoluteSize
+            local pw = math.floor(cSize.X * 0.6)
+            local ph = cSize.Y - 10
+            dmListPanel.Size = UDim2.fromOffset(pw, ph)
+            return cPos.X + 5, cPos.Y + 5, pw
+        end
+
+        local function openDmList()
+            if dmListOpen then return end
+            dmListOpen = true
+            dmRefreshList()
+            local tx, ty, pw = dmListGeometry()
+            dmListPanel.Position = UDim2.fromOffset(tx - pw - 20, ty)
+            dmOverlay.Visible = true
+            SkyTw(dmOverlay, TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {BackgroundTransparency = 0.45}):Play()
+            dmListPanel.Visible = true
+            SkyTw(dmListPanel, TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                Position = UDim2.fromOffset(tx, ty)
+            }):Play()
+            task.spawn(function()
+                while dmListOpen do
+                    task.wait(3)
+                    if dmListOpen then dmRefreshList() end
+                end
+            end)
+        end
+
+        function closeDmList()
+            if not dmListOpen then return end
+            dmListOpen = false
+            local tx, ty, pw = dmListGeometry()
+            SkyTw(dmOverlay, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {BackgroundTransparency = 1}):Play()
+            SkyTw(dmListPanel, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+                Position = UDim2.fromOffset(tx - pw - 20, ty)
+            }):Play()
+            task.delay(0.42, function()
+                if not dmListOpen then
+                    dmListPanel.Visible = false
+                    dmOverlay.Visible = false
+                end
+            end)
+        end
+
+        dmOverlay.MouseButton1Click:Connect(function()
+            closeDmList()
+        end)
+        dmListClose.MouseButton1Click:Connect(function()
+            playClick()
+            closeDmList()
+        end)
+
+        -- زر "💬 خاص" داخل شريط الكتابة (يسار)
+        local dmOpenBtn = Instance.new("TextButton", ChatInputBar)
+        dmOpenBtn.Name = "DmOpenBtn"
+        dmOpenBtn.AnchorPoint = Vector2.new(0, 0.5)
+        dmOpenBtn.Position = UDim2.new(0, 6, 0.5, 0)
+        dmOpenBtn.Size = UDim2.new(0, 70, 0, 32)
+        dmOpenBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        dmOpenBtn.BorderSizePixel = 0
+        dmOpenBtn.Text = "💬 خاص"
+        dmOpenBtn.TextColor3 = Color3.new(1, 1, 1)
+        dmOpenBtn.Font = Enum.Font.GothamBold
+        dmOpenBtn.TextSize = 13
+        dmOpenBtn.ZIndex = 16
+        Instance.new("UICorner", dmOpenBtn).CornerRadius = UDim.new(0, 8)
+        local dmOpenStroke = Instance.new("UIStroke", dmOpenBtn)
+        dmOpenStroke.Thickness = 1.5
+        dmOpenStroke.Color = Color3.fromRGB(170, 0, 255)
+        dmOpenStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        AddMovingBorderGlow(dmOpenStroke, 1.5, Color3.fromRGB(170, 0, 255))
+        dmOpenBtn.MouseButton1Click:Connect(function()
+            playClick()
+            if dmListOpen then closeDmList() else openDmList() end
+        end)
+        end
+
         -- ⬇️ زر "آخر رسالة": يظهر فقط إذا المستخدم طالع فوق في الدردشة
         -- نضع الزر داخل الشريط الثابت أسفل الدردشة حتى لا تقصّه منطقة التمرير أو تخفيه خلف الرسائل.
         local chatToBottomBtn = Instance.new("TextButton", ChatInputBar)
@@ -12108,7 +13229,7 @@ end)
         backOpt.Position = UDim2.new(0, 8, 0, 50)
         backOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
         backOpt.Text = "↩️ الرجوع"
-        backOpt.TextColor3 = Color3.new(1, 1, 1)
+        backOpt.TextColor3 = Color3.fromRGB(170, 0, 255)
         backOpt.Font = Enum.Font.Arcade
         backOpt.TextSize = 15
         backOpt.ZIndex = 52
@@ -12209,7 +13330,7 @@ end)
         copyBackOpt.Position = UDim2.new(0, 8, 0, 50)
         copyBackOpt.BackgroundColor3 = Color3.fromRGB(38, 34, 46)
         copyBackOpt.Text = "↩️ الرجوع"
-        copyBackOpt.TextColor3 = Color3.new(1, 1, 1)
+        copyBackOpt.TextColor3 = Color3.fromRGB(170, 0, 255)
         copyBackOpt.Font = Enum.Font.Arcade
         copyBackOpt.TextSize = 15
         copyBackOpt.ZIndex = 52
@@ -14158,6 +15279,7 @@ end)
                         end
                         table.sort(presentNow)
                         _ReadRx.present = presentNow
+                        _G.SkyPresentNames = presentNow
                         onlineLabel.Text = friendOnline and "🟢 متصل" or ""
                         _otherUserInChat = friendOnline
                         -- إذا لم يوجد أحد آخر داخل قائمة الدردشة تبقى رسائلي «غير مقروءة».
@@ -14493,32 +15615,26 @@ end)
     -- 💾 استرجاع آخر إعدادات محفوظة (بعد ما كل عناصر القائمة اتبنت وسجلت نفسها)
     task.spawn(function()
         task.wait(0.5)
-        if LoadConfig() then
-            OK("💾 تم استرجاع إعداداتك المحفوظة")
-        end
+        UI.StartMapSettingsFlow()
     end)
 
     OK("🔮 SKY V17.1 جاهز وملء الشاشة بالكامل!")
-
-    -- 🎭 وضع العرض للحساب المحدد: يظل السكربت يكمل تشغيله، لكن القائمة تكون فارغة بلا تابات أو أزرار.
-    if _skyRestrictedUser then
-        pcall(function()
-            UI.MainFrame.Visible = true
-            UI.MainFrame.BackgroundTransparency = 0.05
-            UI.MainFrame.Active = false
-            UI.SideBar.Visible = false
-            UI.TabBar.Visible = false
-            UI.Pages.Visible = false
-            for _, obj in ipairs(UI.MainFrame:GetDescendants()) do
-                if obj:IsA("GuiObject") then
-                    obj.Visible = false
-                end
-            end
-        end)
-    end
 end
 
-RunMyOriginalScript()
+-- 🧾 لو صار خطأ داخل السكربت، يطلع نص الخطأ على الشاشة
+local okRunScript, errRunScript = xpcall(RunMyOriginalScript, function(e)
+    return debug.traceback(tostring(e), 2)
+end)
+if not okRunScript then
+    warn("SKY ERROR: " .. tostring(errRunScript))
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "SKY خطأ",
+            Text = string.sub(tostring(errRunScript), 1, 180),
+            Duration = 30
+        })
+    end)
+end
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -15104,6 +16220,8 @@ button.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 button.Image = LOCKED_ICON
 button.ImageTransparency = 0.2
 button.ZIndex = 5
+_G.SkyLockButton = button
+button.Visible = not _G.SkyHideLockButton
 button.Active = true -- لجعل الزر قابلاً للتفاعل (بدون سحب)
 
 -- إضافة زوايا مستديرة وإطار
@@ -16053,88 +17171,13 @@ do
 end
 
 -- 💡 معلومة زر R: تظهر 4 ثوانٍ ثم تختفي تدريجيًا وببطء
-task.delay(0.8, showTouchRespawnTip)
+_G.SkyInfoTipsDone = false
+task.spawn(function()
+    task.wait(0.8)
+    showTouchRespawnTip() -- تظهر ثم تختفي (حوالي 3.5 ثانية)
+    task.wait(1.15)
+    showLockResetTip() -- تظهر بعد ما تخلص معلومة R
+    _G.SkyInfoTipsDone = true
+end)
 
 -- 💡 معلومة زر القفل: تظهر بعد معلومة زر R عشان ما تتداخل معاها
-task.delay(5.5, showLockResetTip)
-
--- ====================== وضع القائمة الفارغة للحساب المحدد ======================
--- ننتظر اكتمال إنشاء الواجهة، ثم نعرض إطارًا فارغًا أولًا وبعده تظهر الرسالة بتدرج واهتزاز.
-if _skyRestrictedUser then
-    task.spawn(function()
-        task.wait(0.15)
-
-        local mainFrame = ScreenGui:FindFirstChild("SkyMainFrame", true)
-        if mainFrame and mainFrame:IsA("GuiObject") then
-            -- إخفاء كل المحتويات دون حذفها حتى لا تتعطل أجزاء السكربت الداخلية.
-            for _, obj in ipairs(mainFrame:GetDescendants()) do
-                if obj:IsA("GuiObject") then
-                    obj.Visible = false
-                elseif obj:IsA("UIStroke") then
-                    obj.Transparency = 1
-                end
-            end
-            mainFrame.Visible = true
-            mainFrame.BackgroundTransparency = 0.05
-            mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-            mainFrame.ClipsDescendants = true
-        end
-
-        ScreenGui.Enabled = true
-        task.wait(0.65) -- تظهر القائمة الفارغة قبل الرسالة
-
-        local message = Instance.new("TextLabel")
-        message.Name = "SkyAccessNotice"
-        message.AnchorPoint = Vector2.new(0.5, 0.5)
-        message.Position = UDim2.new(0.5, 0, 0.5, 0)
-        message.Size = UDim2.new(0.82, 0, 0, 92)
-        message.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-        message.BackgroundTransparency = 1
-        message.BorderSizePixel = 0
-        message.Text = "ليه تحضرني ؟؟ تحسبني ما اقدر اجيبك؟🤨"
-        message.TextColor3 = Color3.fromRGB(255, 255, 255)
-        message.TextTransparency = 1
-        message.TextWrapped = true
-        message.Font = Enum.Font.GothamBold
-        message.TextSize = 20
-        message.ZIndex = 1000
-        message.Parent = ScreenGui
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 12)
-        corner.Parent = message
-
-        local stroke = Instance.new("UIStroke")
-        stroke.Color = Color3.fromRGB(175, 0, 255)
-        stroke.Transparency = 1
-        stroke.Thickness = 1.5
-        stroke.Parent = message
-
-        local tweenService = game:GetService("TweenService")
-        tweenService:Create(message, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            BackgroundTransparency = 0.08,
-            TextTransparency = 0
-        }):Play()
-        tweenService:Create(stroke, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Transparency = 0
-        }):Play()
-
-        -- اهتزازات قصيرة ثم ترجع الرسالة إلى المنتصف.
-        task.spawn(function()
-            local base = UDim2.new(0.5, 0, 0.5, 0)
-            for i = 1, 10 do
-                local dx = (i % 2 == 0) and 8 or -8
-                local dy = (i % 3 == 0) and 3 or -3
-                local t = tweenService:Create(message, TweenInfo.new(0.055, Enum.EasingStyle.Linear), {
-                    Position = UDim2.new(0.5, dx, 0.5, dy)
-                })
-                t:Play()
-                t.Completed:Wait()
-            end
-            tweenService:Create(message, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Position = base
-            }):Play()
-        end)
-    end)
-end
-
