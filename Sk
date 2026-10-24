@@ -6968,6 +6968,7 @@ local function UpdatePlayerList()
                     _hookSelectedPlayerDeath(p)
                     _syncSelectedPlayerFeatures(p)
                     EVIL_NOTIFY("تم اختيار: "..p.Name)
+                    if _G.SkyOpenPrivate then _G.SkyOpenPrivate(p.UserId, p.Name) end
                     UpdatePlayerList()
                 end)
                 HookRespawnNotif(p)
@@ -12040,7 +12041,7 @@ end)
         local chatNotifyBtn = Instance.new("TextButton", chatContainer)
         chatNotifyBtn.Name = "ChatNotificationButton"
         chatNotifyBtn.Size = UDim2.new(0, 40, 0, 32)
-        chatNotifyBtn.Position = UDim2.new(1, -40, 0, 6)
+        chatNotifyBtn.Position = UDim2.new(1, -86, 0, 6)
         chatNotifyBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         chatNotifyBtn.Text = "🔔"
         chatNotifyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -12456,8 +12457,8 @@ end)
             rebuildChatForMode()
         end
 
-        generalChatBtn.MouseButton1Click:Connect(function() playClick(); switchChatMode("general") end)
-        friendsChatBtn.MouseButton1Click:Connect(function() playClick(); switchChatMode("friends") end)
+        generalChatBtn.MouseButton1Click:Connect(function() playClick(); if _G.SkyPmExit then _G.SkyPmExit() end; switchChatMode("general") end)
+        friendsChatBtn.MouseButton1Click:Connect(function() playClick(); if _G.SkyPmExit then _G.SkyPmExit() end; switchChatMode("friends") end)
 
         -- 💬 كل وضع له مربع رسائل مستقل بالكامل.
         -- نفس المكان + نفس المقاس + نفس الشكل، لكن الرسائل لا تشترك في نفس الـScrollingFrame.
@@ -12668,6 +12669,8 @@ end)
 
             row.MouseButton1Click:Connect(function()
                 playClick()
+                if dmListOpen then closeDmList() end
+                if _G.SkyOpenPrivate then _G.SkyOpenPrivate(dmResolveUserId(name), name) end
                 -- 🟣 الحواف تتوهج بنفسجي وأسود ثانية وحدة
                 SkyTw(rowStroke, TweenInfo.new(0.1), {Transparency = 0}):Play()
                 task.delay(1, function()
@@ -12744,6 +12747,228 @@ end)
                     dmOverlay.Visible = false
                 end
             end)
+        end
+
+        -- 💬 دردشة خاصة مع شخص واحد: تستبدل قائمة العام ومربع كتابة العام فقط، والتبويبات تبقى كما هي
+        local pmHistory = {} -- [userId] = {list = {...}, seen = {}}
+        local pmLog, pmList, pmInput, pmGlow
+        local pmHeader, pmHeaderAv, pmHeaderName, pmBackBtn
+        local PM_GLOW_NAME = "InputBoxGlowFrame"
+
+        local function pmHistoryFor(uid)
+            local h = pmHistory[uid]
+            if not h then
+                h = {list = {}, seen = {}}
+                pmHistory[uid] = h
+            end
+            return h
+        end
+
+        -- نفس دالة عرض رسايل العام (addChatMsg) عشان الشكل يكون مطابق، لكن تكتب داخل سجل الخاص فقط
+        local function pmAppendBubble(m)
+            if not pmLog or not pmLog.Parent or not pmList then return end
+            local savedLog, savedList = chatLog, chatList
+            chatLog, chatList = pmLog, pmList
+            _G.SkyPmRendering = true
+            local ok, err = pcall(addChatMsg, m.sender, m.text, m.id, m.userId, m.timestamp, "private", m.jobId, m.placeId, m.clientId, m.replyTo)
+            _G.SkyPmRendering = false
+            chatLog, chatList = savedLog, savedList
+            if not ok then WARN("فشل عرض الرسالة الخاصة: " .. tostring(err)) end
+            task.defer(function()
+                task.wait()
+                if pmLog and pmLog.Parent then
+                    pmLog.CanvasPosition = Vector2.new(0, math.max(0, pmLog.AbsoluteCanvasSize.Y))
+                end
+            end)
+        end
+
+        local function pmClearLog()
+            if not pmLog then return end
+            for _, c in ipairs(pmLog:GetChildren()) do
+                if c:IsA("GuiObject") then c:Destroy() end
+            end
+        end
+
+        -- سجل الخاص وصندوق الكتابة الخاص يُبنون مرة وحدة، بنفس شكل العام
+        local function ensurePmLog()
+            if pmLog and pmLog.Parent then return end
+            pmLog, pmList = createSeparateChatLog("PrivateChatLog")
+            pmLog.Visible = false
+
+            pmHeader = Instance.new("Frame", chatContainer)
+            pmHeader.Name = "PmHeader"
+            pmHeader.AnchorPoint = Vector2.new(0.5, 0)
+            pmHeader.Position = UDim2.new(0.5, 0, 0, 4)
+            pmHeader.Size = UDim2.new(0.62, 0, 0, 36)
+            pmHeader.BackgroundColor3 = Color3.fromRGB(9, 9, 12)
+            pmHeader.BackgroundTransparency = 0.16
+            pmHeader.BorderSizePixel = 0
+            pmHeader.ZIndex = 14
+            pmHeader.Visible = false
+            Instance.new("UICorner", pmHeader).CornerRadius = UDim.new(0, 10)
+            local pmHStroke = Instance.new("UIStroke", pmHeader)
+            pmHStroke.Color = Color3.fromRGB(170, 0, 255)
+            pmHStroke.Thickness = 1.5
+
+            pmHeaderAv = Instance.new("ImageLabel", pmHeader)
+            pmHeaderAv.Name = "PmAvatar"
+            pmHeaderAv.Size = UDim2.new(0, 28, 0, 28)
+            pmHeaderAv.Position = UDim2.new(0, 6, 0.5, -14)
+            pmHeaderAv.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+            pmHeaderAv.BorderSizePixel = 0
+            pmHeaderAv.ZIndex = 15
+            Instance.new("UICorner", pmHeaderAv).CornerRadius = UDim.new(1, 0)
+
+            pmHeaderName = Instance.new("TextLabel", pmHeader)
+            pmHeaderName.Name = "PmName"
+            pmHeaderName.Position = UDim2.new(0, 42, 0, 0)
+            pmHeaderName.Size = UDim2.new(1, -50, 1, 0)
+            pmHeaderName.BackgroundTransparency = 1
+            pmHeaderName.TextColor3 = Color3.new(1, 1, 1)
+            pmHeaderName.Font = Enum.Font.Arcade
+            pmHeaderName.TextSize = 13
+            pmHeaderName.TextXAlignment = Enum.TextXAlignment.Left
+            pmHeaderName.TextTruncate = Enum.TextTruncate.AtEnd
+            pmHeaderName.ZIndex = 15
+
+            -- 🔙 زر الرجوع فوق يمين، يمين الجرس (يبان بس وإحنا بالخاص)
+            pmBackBtn = Instance.new("TextButton", chatContainer)
+            pmBackBtn.Name = "PmBackBtn"
+            pmBackBtn.AnchorPoint = Vector2.new(0, 0)
+            pmBackBtn.Position = UDim2.new(1, -40, 0, 6)
+            pmBackBtn.Size = UDim2.new(0, 40, 0, 32)
+            pmBackBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+            pmBackBtn.BorderSizePixel = 0
+            pmBackBtn.AutoButtonColor = false
+            pmBackBtn.Text = "<"
+            pmBackBtn.TextColor3 = Color3.new(1, 1, 1)
+            pmBackBtn.Font = Enum.Font.Arcade
+            pmBackBtn.TextSize = 17
+            pmBackBtn.ZIndex = 20
+            pmBackBtn.Visible = false
+            Instance.new("UICorner", pmBackBtn).CornerRadius = UDim.new(0, 8)
+            local pmBackStroke = Instance.new("UIStroke", pmBackBtn)
+            pmBackStroke.Color = Color3.fromRGB(170, 0, 255)
+            pmBackStroke.Thickness = 1.5
+            pmBackBtn.MouseButton1Click:Connect(function()
+                playClick()
+                if _G.SkyPmExit then _G.SkyPmExit() end
+            end)
+
+            local glowSrc = ChatInputBar:FindFirstChild(PM_GLOW_NAME)
+            if glowSrc then
+                pmGlow = glowSrc:Clone()
+                pmGlow.Name = "PmInputGlowFrame"
+                pmGlow.Visible = false
+                pmGlow.Parent = ChatInputBar
+                local gStroke = pmGlow:FindFirstChildOfClass("UIStroke")
+                local gGrad = gStroke and gStroke:FindFirstChildOfClass("UIGradient")
+                if gGrad then
+                    task.spawn(function()
+                        while pmGlow and pmGlow.Parent do
+                            if not _G.SkyGlowOff then gGrad.Rotation = (gGrad.Rotation + 2) % 360 end
+                            task.wait(0.03)
+                        end
+                    end)
+                end
+            end
+
+            pmInput = inputBox:Clone()
+            pmInput.Name = "PmInputBox"
+            pmInput.Text = ""
+            pmInput.Visible = false
+            pmInput.Parent = ChatInputBar
+            pmInput.FocusLost:Connect(function(enter)
+                if enter and _G.SkyPmSend then _G.SkyPmSend(pmInput) end
+            end)
+        end
+
+        local function pmShow(uid, name)
+            ensurePmLog()
+            _G.SkyPmActiveUserId = uid
+            _G.SkyPmTarget = {userId = uid, name = name}
+            pmInput.PlaceholderText = "رسالة خاصة لـ " .. tostring(name) .. "..."
+            local pl = game.Players:GetPlayerByUserId(uid)
+            pmHeaderName.Text = pl and pl.DisplayName or tostring(name)
+            pmHeaderAv.Image = dmThumb(uid)
+            chatModeBar.Visible = false
+            pmHeader.Visible = true
+            pmBackBtn.Visible = true
+            if _G.SkyChatFloatBtn then _G.SkyChatFloatBtn.Visible = false end
+            pmClearLog()
+            local h = pmHistoryFor(uid)
+            table.sort(h.list, function(a, b) return (tonumber(a.timestamp) or 0) < (tonumber(b.timestamp) or 0) end)
+            for _, m in ipairs(h.list) do pmAppendBubble(m) end
+
+            -- نخفي قائمة العام ومربع العام، ونبين قائمة الخاص ومربع الخاص
+            generalChatLog.Visible = false
+            friendsChatLog.Visible = false
+            inputBox.Visible = false
+            local glowSrc = ChatInputBar:FindFirstChild(PM_GLOW_NAME)
+            if glowSrc then glowSrc.Visible = false end
+            pmLog.Visible = true
+            pmInput.Visible = true
+            if pmGlow then pmGlow.Visible = true end
+        end
+
+        -- يرجّع العام/أخوياك كما كانوا (يُستدعى من أزرار التبويب)
+        _G.SkyPmExit = function()
+            if not _G.SkyPmActiveUserId then return end
+            _G.SkyPmActiveUserId = nil
+            _G.SkyPmTarget = nil
+            if pmInput then
+                pmInput:ReleaseFocus()
+                pmInput.Visible = false
+            end
+            if pmGlow then pmGlow.Visible = false end
+            if pmLog then pmLog.Visible = false end
+            if pmHeader then pmHeader.Visible = false end
+            if pmBackBtn then pmBackBtn.Visible = false end
+            if _G.SkyChatFloatBtn then _G.SkyChatFloatBtn.Visible = true end
+            chatModeBar.Visible = true
+            inputBox.Visible = true
+            local glowSrc = ChatInputBar:FindFirstChild(PM_GLOW_NAME)
+            if glowSrc then glowSrc.Visible = true end
+            if currentChatMode == "friends" then
+                friendsChatLog.Visible = true
+                inputBox.PlaceholderText = "اكتب رسالة لاخوياك..."
+            else
+                generalChatLog.Visible = true
+                inputBox.PlaceholderText = "اكتب رسالتك هنا..."
+            end
+        end
+
+        -- يحفظ الرسالة الخاصة (مرة وحدة لكل رسالة) ويعرضها إذا الخاص مع نفس الشخص مفتوح
+        _G.SkyPmStore = function(partnerId, m, key)
+            if not partnerId or not key then return end
+            local h = pmHistoryFor(partnerId)
+            if h.seen[key] then return end
+            h.seen[key] = true
+            table.insert(h.list, m)
+            if _G.SkyPmActiveUserId == partnerId then pmAppendBubble(m) end
+        end
+
+        -- يستقبل أي رسالة خاصة من السيرفر ويحدد الطرف الثاني فيها
+        _G.SkyPmIncoming = function(m)
+            local myId = game.Players.LocalPlayer.UserId
+            local uid, tid = tonumber(m.userId), tonumber(m.targetUserId)
+            if not uid or not tid or uid == tid then return end
+            local partner
+            if tid == myId then partner = uid
+            elseif uid == myId then partner = tid
+            else return end
+            local key = tostring(m.clientId or m.id or (tostring(m.timestamp) .. ":" .. tostring(m.text)))
+            _G.SkyPmStore(partner, m, key)
+        end
+
+        -- يفتح الخاص مع شخص (من صورته بالقائمة أو من قائمة الخاص)
+        _G.SkyOpenPrivate = function(uid, name)
+            if not uid or not name then return end
+            if dmListOpen then closeDmList() end
+            if State._chatPanel and State._chatPanel.Parent then State._chatPanel.Visible = true end
+            State._chatPageOpen = true
+            if parentPage then parentPage.Visible = true end
+            pmShow(tonumber(uid), tostring(name))
         end
 
         dmOverlay.MouseButton1Click:Connect(function()
@@ -13689,7 +13914,7 @@ end)
             local isSenderFriend = (not isMine) and isChatFriend(userId)
             local CHAT_OTHER_GRAY = Color3.fromRGB(145, 145, 155)
             local senderChatColor = isMine and COLOR_MINE or (isSenderFriend and Color3.fromRGB(0, 140, 255) or CHAT_OTHER_GRAY)
-            local edgeColor = isPrivate and Color3.fromRGB(255, 50, 55) or senderChatColor
+            local edgeColor = (isPrivate and not _G.SkyPmRendering) and Color3.fromRGB(255, 50, 55) or senderChatColor
             local AVATAR_SIZE = 28
             local AVATAR_GAP = 6
             local QUOTE_H, QUOTE_GAP = 32, 4
@@ -13772,7 +13997,7 @@ end)
             local bubbleGlowColor
             if _copyModeActive then
                 bubbleGlowColor = Color3.fromRGB(0, 140, 255)
-            elseif isPrivate then
+            elseif isPrivate and not _G.SkyPmRendering then
                 bubbleGlowColor = Color3.fromRGB(255, 45, 50)
             elseif isMine and _deleteModeActive then
                 bubbleGlowColor = Color3.fromRGB(255, 50, 50)
@@ -14241,6 +14466,7 @@ end)
         ChatFloatBtn.Font = Enum.Font.Arcade
         ChatFloatBtn.TextSize = 17
         ChatFloatBtn.ZIndex = 18
+        _G.SkyChatFloatBtn = ChatFloatBtn -- 🫧 مرجع زر الفقاعات (يختفي بس وانت بالخاص)
         Instance.new("UICorner", ChatFloatBtn).CornerRadius = UDim.new(1, 0)
         local ChatFloatStroke = Instance.new("UIStroke", ChatFloatBtn)
         ChatFloatStroke.Color = Color3.fromRGB(170, 0, 255)
@@ -15130,6 +15356,50 @@ end)
             if enter then sendMsg(inputBox) end
         end)
 
+        -- 🔒 إرسال رسالة خاصة (من مربع الكتابة الخاص فقط)
+        _G.SkyPmSend = function(box)
+            local target = _G.SkyPmTarget
+            if not target then return end
+            local text = tostring(box.Text or "")
+            if text:gsub("%s+", "") == "" then return end
+            local me = game.Players.LocalPlayer
+            local badWord = findBadChatWord(text)
+            box.Text = ""
+            box:ReleaseFocus()
+            if badWord ~= nil then
+                setChatMute(me.UserId, badWord)
+                Notify("🚫 الدردشة", "تم كتمك لمدة دقيقة بسبب ألفاظ غير لائقة", Color3.fromRGB(255, 70, 70), true)
+                return
+            end
+            if chatMuteRemaining(me.UserId) > 0 then
+                Notify("⏳ الدردشة", "أنت مكتوم مؤقتًا، حاول بعد دقيقة", Color3.fromRGB(255, 170, 70), true)
+                return
+            end
+            local clientId = tostring(me.UserId) .. ":" .. tostring(os.clock()) .. ":" .. tostring(math.random(1, 1000000000))
+            local data = {
+                sender = me.Name,
+                text = text,
+                timestamp = os.time(),
+                userId = me.UserId,
+                targetUserId = target.userId,
+                chatType = "private",
+                jobId = game.JobId,
+                placeId = game.PlaceId,
+                clientId = clientId
+            }
+            _G.SkyPmStore(target.userId, data, clientId)
+            task.spawn(function()
+                pcall(function()
+                    request({
+                        Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = game:GetService("HttpService"):JSONEncode(data)
+                    })
+                end)
+            end)
+        end
+
 
         ChatFloatBtn.MouseButton1Click:Connect(function()
             playClick()
@@ -15328,6 +15598,14 @@ end)
                     lastData = response.Body
                     local data = game:GetService("HttpService"):JSONDecode(response.Body)
                     if data then
+                        if _G.SkyPmIncoming then
+                            for k, pm in pairs(data) do
+                                if type(pm) == "table" and pm.chatType == "private" then
+                                    pm.id = pm.id or k
+                                    pcall(_G.SkyPmIncoming, pm)
+                                end
+                            end
+                        end
                         local msgs = {}
                         for k, v in pairs(data) do
                             v.id = k -- 🔑 مفتاح فايربيس الفريد
