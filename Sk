@@ -12701,6 +12701,7 @@ end)
                 dmListRows[name].frame.LayoutOrder = i
             end
             dmEmptyLabel.Visible = (#sorted == 0)
+            if _G.SkyPmRefresh then _G.SkyPmRefresh() end
         end
 
         -- 📐 مكان القائمة على الشاشة: جنب الدردشة من اليسار، وارتفاعها نفس ارتفاع الدردشة
@@ -12716,6 +12717,7 @@ end)
         local function openDmList()
             if dmListOpen then return end
             dmListOpen = true
+            if _G.SkyPmOnDmOpened then _G.SkyPmOnDmOpened() end
             dmRefreshList()
             local tx, ty, pw = dmListGeometry()
             dmListPanel.Position = UDim2.fromOffset(tx - pw - 20, ty)
@@ -12752,6 +12754,7 @@ end)
         -- 💬 دردشة خاصة مع شخص واحد: تستبدل قائمة العام ومربع كتابة العام فقط، والتبويبات تبقى كما هي
         local pmHistory = {} -- [userId] = {list = {...}, seen = {}}
         local pmLog, pmList, pmInput, pmGlow
+        local pmUnread, pmTotalShown, pmTotalBadge, pmRefreshBadges -- نعرّفها هنا عشان pmShow يشوفها
         local pmHeader, pmHeaderAv, pmHeaderName, pmBackBtn
         local PM_GLOW_NAME = "InputBoxGlowFrame"
 
@@ -12809,6 +12812,7 @@ end)
             local pmHStroke = Instance.new("UIStroke", pmHeader)
             pmHStroke.Color = Color3.fromRGB(170, 0, 255)
             pmHStroke.Thickness = 1.5
+            pcall(function() AddMovingBorderGlow(pmHStroke, 1.5, Color3.fromRGB(170, 0, 255)) end)
 
             pmHeaderAv = Instance.new("ImageLabel", pmHeader)
             pmHeaderAv.Name = "PmAvatar"
@@ -12818,6 +12822,10 @@ end)
             pmHeaderAv.BorderSizePixel = 0
             pmHeaderAv.ZIndex = 15
             Instance.new("UICorner", pmHeaderAv).CornerRadius = UDim.new(1, 0)
+            local pmAvStroke = Instance.new("UIStroke", pmHeaderAv)
+            pmAvStroke.Color = Color3.fromRGB(170, 0, 255)
+            pmAvStroke.Thickness = 1.5
+            pcall(function() AddMovingBorderGlow(pmAvStroke, 1.5, Color3.fromRGB(170, 0, 255)) end)
 
             pmHeaderName = Instance.new("TextLabel", pmHeader)
             pmHeaderName.Name = "PmName"
@@ -12891,6 +12899,8 @@ end)
             local pl = game.Players:GetPlayerByUserId(uid)
             pmHeaderName.Text = pl and pl.DisplayName or tostring(name)
             pmHeaderAv.Image = dmThumb(uid)
+            pmUnread[uid] = 0
+            pmRefreshBadges()
             chatModeBar.Visible = false
             pmHeader.Visible = true
             pmBackBtn.Visible = true
@@ -12938,14 +12948,120 @@ end)
             end
         end
 
-        -- يحفظ الرسالة الخاصة (مرة وحدة لكل رسالة) ويعرضها إذا الخاص مع نفس الشخص مفتوح
+        -- 🔔 إشعارات الخاص: عدد الرسايل من كل شخص + الإشعار المنبثق + زر كتم الخاص
+        pmUnread = {} -- [userId] = عدد الرسايل اللي ما شفتها منه
+        pmTotalShown = false
+
+        local function pmTotalCount()
+            local t = 0
+            for _, n in pairs(pmUnread) do t = t + n end
+            return t
+        end
+
+        local function pmMakeBadge(parent, pos, anchor, size)
+            local b = Instance.new("TextLabel", parent)
+            b.Name = "PmBadge"
+            b.AnchorPoint = anchor
+            b.Position = pos
+            b.Size = size
+            b.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+            b.BorderSizePixel = 0
+            b.TextColor3 = Color3.new(1, 1, 1)
+            b.Font = Enum.Font.Arcade
+            b.TextSize = 11
+            b.TextScaled = true
+            b.ZIndex = 30
+            b.Visible = false
+            Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
+            local bs = Instance.new("UIStroke", b)
+            bs.Color = Color3.new(0, 0, 0)
+            bs.Thickness = 1.5
+            return b
+        end
+
+        pmRefreshBadges = function()
+            -- العدد الكلي فوق زر "💬 خاص" (يختفي بعد ما تفتح القائمة)
+            local dmBtn = ChatInputBar:FindFirstChild("DmOpenBtn")
+            if dmBtn and not pmTotalBadge then
+                pmTotalBadge = pmMakeBadge(dmBtn, UDim2.new(1, 2, 0, -2), Vector2.new(0.5, 0.5), UDim2.new(0, 20, 0, 16))
+            end
+            if pmTotalBadge then
+                local t = pmTotalCount()
+                pmTotalBadge.Text = tostring(t)
+                pmTotalBadge.Visible = pmTotalShown and t > 0
+            end
+            -- عدد كل شخص فوق رأسه بالقائمة (يبان بعد ما تفتح القائمة)
+            for name, data in pairs(dmListRows) do
+                local uid = dmResolveUserId(name)
+                local n = uid and (pmUnread[uid] or 0) or 0
+                local badge = data.frame:FindFirstChild("PmBadge")
+                if n > 0 and not pmTotalShown then
+                    if not badge then
+                        badge = pmMakeBadge(data.frame, UDim2.new(0, 8, 0.5, -20), Vector2.new(0.5, 0.5), UDim2.new(0, 18, 0, 16))
+                    end
+                    badge.Text = tostring(n)
+                    badge.Visible = true
+                elseif badge then
+                    badge.Visible = false
+                end
+            end
+        end
+        _G.SkyPmRefresh = pmRefreshBadges
+
+        -- يُستدعى من زر "💬 خاص" لما تفتح القائمة: يخفي العدد الكلي ويبين عدد كل شخص
+        _G.SkyPmOnDmOpened = function()
+            pmTotalShown = false
+            pmRefreshBadges()
+        end
+
+        local function pmOnNewIncoming(partner, m)
+            local viewing = _G.SkyPmActiveUserId == partner and State._chatPageOpen
+            if viewing then return end
+            pmUnread[partner] = (pmUnread[partner] or 0) + 1
+            pmTotalShown = true
+            pmRefreshBadges()
+            -- 🛡️ رسايل المطور الخاصة العادية ما تطلع كإشعار تنبيه للشخص (التنبيهات الحقيقية لها نظامها الخاص)
+            if not _G.SkyPmMuted and tostring(m.sender) ~= "AAbbooyi" then
+                local pl = game.Players:GetPlayerByUserId(partner)
+                local who = pl and pl.DisplayName or tostring(m.sender)
+                Notify("💬 كلمت خاص", who .. ": " .. tostring(m.text), Color3.fromRGB(170, 0, 255), false, partner)
+            end
+        end
+
+        -- زر الكتم الخاص بجنب الجرس
+        _G.SkyPmMuted = false
+        local pmMuteBtn = Instance.new("TextButton", chatContainer)
+        pmMuteBtn.Name = "PmMuteBtn"
+        pmMuteBtn.Size = UDim2.new(0, 40, 0, 32)
+        pmMuteBtn.Position = UDim2.new(1, -130, 0, 6)
+        pmMuteBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        pmMuteBtn.BorderSizePixel = 0
+        pmMuteBtn.AutoButtonColor = false
+        pmMuteBtn.Text = "🔔"
+        pmMuteBtn.TextColor3 = Color3.new(1, 1, 1)
+        pmMuteBtn.TextSize = 17
+        pmMuteBtn.Font = Enum.Font.Arcade
+        pmMuteBtn.ZIndex = 20
+        Instance.new("UICorner", pmMuteBtn).CornerRadius = UDim.new(0, 8)
+        local pmMuteStroke = Instance.new("UIStroke", pmMuteBtn)
+        pmMuteStroke.Color = Color3.fromRGB(170, 0, 255)
+        pmMuteStroke.Thickness = 1.5
+        pcall(function() AddMovingBorderGlow(pmMuteStroke, 1.5, Color3.fromRGB(170, 0, 255)) end)
+        pmMuteBtn.MouseButton1Click:Connect(function()
+            playClick()
+            _G.SkyPmMuted = not _G.SkyPmMuted
+            pmMuteBtn.Text = _G.SkyPmMuted and "🔕" or "🔔"
+        end)
+
+        -- يحفظ الرسالة الخاصة (مرة وحدة لكل رسالة) ويرجع true إذا كانت جديدة
         _G.SkyPmStore = function(partnerId, m, key)
-            if not partnerId or not key then return end
+            if not partnerId or not key then return false end
             local h = pmHistoryFor(partnerId)
-            if h.seen[key] then return end
+            if h.seen[key] then return false end
             h.seen[key] = true
             table.insert(h.list, m)
             if _G.SkyPmActiveUserId == partnerId then pmAppendBubble(m) end
+            return true
         end
 
         -- يستقبل أي رسالة خاصة من السيرفر ويحدد الطرف الثاني فيها
@@ -12958,7 +13074,11 @@ end)
             elseif uid == myId then partner = tid
             else return end
             local key = tostring(m.clientId or m.id or (tostring(m.timestamp) .. ":" .. tostring(m.text)))
-            _G.SkyPmStore(partner, m, key)
+            local isNew = _G.SkyPmStore(partner, m, key)
+            -- إشعار بس للرسايل الجديدة من الشخص الثاني (مو رسايلي، ومو من قبل تشغيل السكربت)
+            if isNew and uid ~= myId and (tonumber(m.timestamp) or 0) >= CHAT_SESSION_STARTED_AT then
+                pmOnNewIncoming(partner, m)
+            end
         end
 
         -- يفتح الخاص مع شخص (من صورته بالقائمة أو من قائمة الخاص)
@@ -15666,7 +15786,7 @@ end)
                                     local privateAlertKey = m.id and tostring(m.id) or fallback
                                     if not _shownPrivateAlertIds[privateAlertKey] then
                                         _shownPrivateAlertIds[privateAlertKey] = true
-                                        if m.sender ~= game.Players.LocalPlayer.Name and showPrivateAlert then
+                                        if m.developerMessage == true and m.sender ~= game.Players.LocalPlayer.Name and showPrivateAlert then
                                             showPrivateAlert(m.text)
                                         end
                                     end
@@ -15768,7 +15888,7 @@ end)
                                         lastOtherBubble = m
                                     end
                                 elseif not notificationMuted and not notificationBadWord
-                                    and (m.chatType ~= "private" or tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId) then
+                                    and m.chatType ~= "private" then
                                     local isFriendsNotification = m.chatType == "friends"
                                     local notificationsEnabled = isFriendsNotification and chatNotifyFriendsEnabled or chatNotifyGeneralEnabled
                                     if notificationsEnabled then
