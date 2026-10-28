@@ -3927,10 +3927,6 @@ end)
             if _fpsTimer >= 0.4 then
                 local fps = math.floor(_fpsFrames / _fpsTimer + 0.5)
                 _fpsFrames, _fpsTimer = 0, 0
-                -- نرسل القراءة الحالية للمراقب الخارجي بدون إنشاء حلقة FPS ثانية.
-                if _G.SkyPerformanceFpsSink then
-                    _G.SkyPerformanceFpsSink(fps)
-                end
                 if UI.FPSLabel and UI.FPSLabel.Parent then
                     UI.FPSLabel.Text = fps .. " FPS"
                     if fps >= 50 then
@@ -6968,7 +6964,6 @@ local function UpdatePlayerList()
                     _hookSelectedPlayerDeath(p)
                     _syncSelectedPlayerFeatures(p)
                     EVIL_NOTIFY("تم اختيار: "..p.Name)
-                    if _G.SkyOpenPrivate then _G.SkyOpenPrivate(p.UserId, p.Name) end
                     UpdatePlayerList()
                 end)
                 HookRespawnNotif(p)
@@ -12605,6 +12600,9 @@ end)
         dmListScroll.ScrollingDirection = Enum.ScrollingDirection.Y
         dmListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
         dmListScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        dmListScroll.Active = true
+        dmListScroll.ScrollingEnabled = true
+        dmListScroll.ElasticBehavior = Enum.ElasticBehavior.Always
         local dmListLayout = Instance.new("UIListLayout", dmListScroll)
         dmListLayout.Padding = UDim.new(0, 6)
         dmListLayout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -12753,7 +12751,7 @@ end)
 
         -- 💬 دردشة خاصة مع شخص واحد: تستبدل قائمة العام ومربع كتابة العام فقط، والتبويبات تبقى كما هي
         local pmHistory = {} -- [userId] = {list = {...}, seen = {}}
-        local pmLog, pmList, pmInput, pmGlow
+        local pmLog, pmList, pmInput, pmGlow, pmMuteBtn
         local pmUnread, pmTotalShown, pmTotalBadge, pmRefreshBadges -- نعرّفها هنا عشان pmShow يشوفها
         local pmHeader, pmHeaderAv, pmHeaderName, pmBackBtn
         local PM_GLOW_NAME = "InputBoxGlowFrame"
@@ -12777,12 +12775,6 @@ end)
             _G.SkyPmRendering = false
             chatLog, chatList = savedLog, savedList
             if not ok then WARN("فشل عرض الرسالة الخاصة: " .. tostring(err)) end
-            task.defer(function()
-                task.wait()
-                if pmLog and pmLog.Parent then
-                    pmLog.CanvasPosition = Vector2.new(0, math.max(0, pmLog.AbsoluteCanvasSize.Y))
-                end
-            end)
         end
 
         local function pmClearLog()
@@ -12899,11 +12891,20 @@ end)
             local pl = game.Players:GetPlayerByUserId(uid)
             pmHeaderName.Text = pl and pl.DisplayName or tostring(name)
             pmHeaderAv.Image = dmThumb(uid)
+            local hadUnread = pmUnread[uid] or 0
+            if hadUnread > 0 then
+                State.UnreadChatCount = math.max(0, (State.UnreadChatCount or 0) - hadUnread)
+                if UI.MiniChatBadge then
+                    UI.MiniChatBadge.Text = State.UnreadChatCount > 99 and "99+" or tostring(State.UnreadChatCount)
+                    UI.MiniChatBadge.Visible = State.UnreadChatCount > 0 and State._chatPanelOpen and not State.MainUIVisible
+                end
+            end
             pmUnread[uid] = 0
             pmRefreshBadges()
             chatModeBar.Visible = false
             pmHeader.Visible = true
             pmBackBtn.Visible = true
+            if pmMuteBtn then pmMuteBtn.Visible = true end
             if _G.SkyChatFloatBtn then _G.SkyChatFloatBtn.Visible = false end
             pmClearLog()
             local h = pmHistoryFor(uid)
@@ -12934,6 +12935,7 @@ end)
             if pmLog then pmLog.Visible = false end
             if pmHeader then pmHeader.Visible = false end
             if pmBackBtn then pmBackBtn.Visible = false end
+            if pmMuteBtn then pmMuteBtn.Visible = false end
             if _G.SkyChatFloatBtn then _G.SkyChatFloatBtn.Visible = true end
             chatModeBar.Visible = true
             inputBox.Visible = true
@@ -12970,7 +12972,7 @@ end)
             b.Font = Enum.Font.Arcade
             b.TextSize = 11
             b.TextScaled = true
-            b.ZIndex = 30
+            b.ZIndex = 70
             b.Visible = false
             Instance.new("UICorner", b).CornerRadius = UDim.new(1, 0)
             local bs = Instance.new("UIStroke", b)
@@ -12997,7 +12999,7 @@ end)
                 local badge = data.frame:FindFirstChild("PmBadge")
                 if n > 0 and not pmTotalShown then
                     if not badge then
-                        badge = pmMakeBadge(data.frame, UDim2.new(0, 8, 0.5, -20), Vector2.new(0.5, 0.5), UDim2.new(0, 18, 0, 16))
+                        badge = pmMakeBadge(data.frame, UDim2.new(0, 12, 0.5, -22), Vector2.new(0.5, 0.5), UDim2.new(0, 20, 0, 16))
                     end
                     badge.Text = tostring(n)
                     badge.Visible = true
@@ -13020,6 +13022,11 @@ end)
             pmUnread[partner] = (pmUnread[partner] or 0) + 1
             pmTotalShown = true
             pmRefreshBadges()
+            State.UnreadChatCount = (State.UnreadChatCount or 0) + 1
+            if UI.MiniChatBadge then
+                UI.MiniChatBadge.Text = State.UnreadChatCount > 99 and "99+" or tostring(State.UnreadChatCount)
+                UI.MiniChatBadge.Visible = State._chatPanelOpen and not State.MainUIVisible
+            end
             -- 🛡️ رسايل المطور الخاصة العادية ما تطلع كإشعار تنبيه للشخص (التنبيهات الحقيقية لها نظامها الخاص)
             if not _G.SkyPmMuted and tostring(m.sender) ~= "AAbbooyi" then
                 local pl = game.Players:GetPlayerByUserId(partner)
@@ -13030,7 +13037,8 @@ end)
 
         -- زر الكتم الخاص بجنب الجرس
         _G.SkyPmMuted = false
-        local pmMuteBtn = Instance.new("TextButton", chatContainer)
+        pmMuteBtn = Instance.new("TextButton", chatContainer)
+        pmMuteBtn.Visible = false
         pmMuteBtn.Name = "PmMuteBtn"
         pmMuteBtn.Size = UDim2.new(0, 40, 0, 32)
         pmMuteBtn.Position = UDim2.new(1, -130, 0, 6)
@@ -13130,7 +13138,7 @@ end)
         chatToBottomBtn.Name = "ChatToBottomBtn"
         chatToBottomBtn.AnchorPoint = Vector2.new(0.5, 0.5)
         -- رفع الزر قليلًا فوق شريط الكتابة.
-        chatToBottomBtn.Position = UDim2.new(0.5, -45, 0, -28)
+        chatToBottomBtn.Position = UDim2.new(0.5, 0, 0, -28)
         chatToBottomBtn.Size = UDim2.new(0, 38, 0, 30)
         chatToBottomBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 45)
         chatToBottomBtn.BackgroundTransparency = 0.08
@@ -13180,6 +13188,20 @@ end)
         chatToBottomBtn.MouseButton1Down:Connect(chatToBottomPress)
         chatToBottomBtn.MouseButton1Up:Connect(chatToBottomRelease)
 
+        -- ✨ وهج خفيف للسهم عشان ينتبه له المستخدم
+        task.spawn(function()
+            while chatToBottomBtn and chatToBottomBtn.Parent do
+                if chatToBottomBtn.Visible then
+                    SkyTw(chatToBottomStroke, TweenInfo.new(0.6), {Transparency = 0.6}):Play()
+                    task.wait(0.6)
+                    SkyTw(chatToBottomStroke, TweenInfo.new(0.6), {Transparency = 0.05}):Play()
+                    task.wait(0.6)
+                else
+                    task.wait(0.3)
+                end
+            end
+        end)
+
         local function updateChatToBottomButton()
             -- نخفيه فقط إذا كانت صفحة الدردشة غير ظاهرة فعليًا.
             if not parentPage.Visible or not ChatInputBar.Visible then
@@ -13204,7 +13226,7 @@ end)
             end
 
             -- يظهر فقط إذا كانت أكثر من رسالتين مخفيتين تحت العرض.
-            chatToBottomBtn.Visible = hiddenBelowCount > 2 and maxY > 12
+            chatToBottomBtn.Visible = hiddenBelowCount > 0 and maxY > 12
             chatToBottomBtn.Active = chatToBottomBtn.Visible
         end
 
@@ -15381,16 +15403,7 @@ end)
                 addChatMsg(myName, text, nil, myUserId, data.timestamp, data.chatType, data.jobId, data.placeId, clientId, data.replyTo)
             end
 
-            task.defer(function()
-                task.wait()
-                task.wait()
-                local contentHeight = chatList.AbsoluteContentSize.Y
-                local visibleHeight = chatLog.AbsoluteSize.Y
-                local targetY = math.max(0, contentHeight - visibleHeight + 70)
-                local maxY = math.max(0, chatLog.AbsoluteCanvasSize.Y - visibleHeight)
-                targetY = math.min(targetY, maxY)
-                chatLog.CanvasPosition = Vector2.new(0, targetY)
-            end)
+            -- ⛔ ما ننزل السحاب تلقائياً عند الإرسال (السهم تحت يوديك لآخر رسالة)
 
             task.spawn(function()
                 local ok, res = pcall(function()
@@ -15595,7 +15608,7 @@ end)
                 _FriendsBadge.set(0)
             end
                 -- 🟢 نبعت "أنا موجود بالدردشة" بس وتاب الدردشة يكون مفتوح عندي فعلاً
-                if State._chatPageOpen then
+                do -- 🟢 نعلن حضوري دايماً (حتى لو أنت برا الدردشة أو تلعب) عشان تبان للناس بقائمة الخاص
                     task.spawn(function()
                         pcall(function()
                             request({
@@ -15805,10 +15818,7 @@ end)
                                     end
                                     if isChatMessageVisible(m) then
                                         addChatMsg(m.sender, m.text, m.id, m.userId, m.timestamp, m.chatType, m.jobId, m.placeId, m.clientId, m.replyTo)
-                                        -- عند وصول رسالة من شخص آخر، انزل مباشرةً إلى آخر رسالة.
-                                        if m.sender ~= game.Players.LocalPlayer.Name then
-                                            scrollChatToLatestMessage()
-                                        end
+                                        -- ⛔ ما ننزل السحاب تلقائياً عند وصول رسالة (السهم تحت يوديك لآخر رسالة)
                                     end
                                 end
                                 existing[key] = true
@@ -16040,25 +16050,12 @@ local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- 📉 تنبيه الأداء البسيط: مستقل عن واجهة السكربت حتى لا يمنع تشغيلها.
-local SkyPerformancePromptShown = false
--- يبدأ الفحص مباشرة؛ لا تظهر نافذة تجريبية عند تشغيل السكربت.
-local SkyAutoFPSCheck = true
-local SkyAutomaticMode = false
-local SkyLowFpsSeconds = 0
-local SkyLowFpsPromptLatched = false
+-- وضع الأداء اليدوي فقط؛ لا توجد مراقبة أو تنبيهات تلقائية لتغيّر FPS.
 local SkyPerformanceMode = false
-local SkyRecoveryCheck = false
-local SkyRecoverySeconds = 0
-local SkyRecoveryPromptShown = false
 local SkySavedGradients = {}
 local SkySavedEffects = {}
 local function SkyEnablePerformanceMode()
-    if SkyPerformanceMode then
-        SkyAutoFPSCheck = true
-        SkyRecoveryCheck = true
-        return
-    end
+    if SkyPerformanceMode then return end
     SkyPerformanceMode = true
     -- حفظ مؤثرات الـGlow ثم فصلها مؤقتًا حتى يمكن إعادتها لاحقًا.
     for _, item in ipairs(game.CoreGui:GetDescendants()) do
@@ -16074,10 +16071,6 @@ local function SkyEnablePerformanceMode()
             item.Enabled = false
         end
     end
-    -- يبدأ فحص العودة للوضع الطبيعي مباشرة بعد إتمام تخفيف المؤثرات.
-    SkyAutoFPSCheck = true
-    SkyRecoveryCheck = true
-    SkyRecoverySeconds = 0
 end
 
 local function SkyRestorePerformanceMode()
@@ -16095,8 +16088,6 @@ local function SkyRestorePerformanceMode()
     SkySavedGradients = {}
     SkySavedEffects = {}
     SkyPerformanceMode = false
-    SkyRecoveryCheck = false
-    SkyRecoverySeconds = 0
 end
 
 _G.SkyEnablePerformanceMode = SkyEnablePerformanceMode
@@ -16232,243 +16223,6 @@ local function SkyShowFullscreenLoading(message, onDone, loadingTitle, loadingMo
     SkyTw(bar, TweenInfo.new(0.35), {BackgroundTransparency = 1}):Play()
     task.wait(0.5)
     if loadingGui then loadingGui:Destroy() end
-end
-
-local function SkyShowPerformancePrompt(autoMode, recoveryMode)
-    -- رسالة ارتفاع FPS مسموحة بعد شاشة التحميل السابقة.
-    if SkyPerformancePromptShown and not recoveryMode then return end
-    if recoveryMode and SkyRecoveryPromptShown then return end
-    if recoveryMode then SkyRecoveryPromptShown = true end
-    SkyPerformancePromptShown = true
-
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "SkySimplePerformancePrompt"
-    gui.IgnoreGuiInset = true
-    gui.ResetOnSpawn = false
-    gui.DisplayOrder = 1000000
-    gui.Parent = game.CoreGui
-
-    local black = Instance.new("Frame", gui)
-    black.Size = UDim2.new(1, 0, 1, 0)
-    black.BackgroundColor3 = Color3.new(0, 0, 0)
-    black.BackgroundTransparency = 1
-    black.BorderSizePixel = 0
-    black.ZIndex = 1
-
-    local box = Instance.new("Frame", gui)
-    box.Size = UDim2.new(0, 360, 0, 390)
-    box.Position = UDim2.new(0.5, 0, 1.2, 0)
-    box.AnchorPoint = Vector2.new(0.5, 0.5)
-    box.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
-    box.BorderSizePixel = 0
-    box.ZIndex = 2
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 14)
-
-    local boxLimit = Instance.new("UISizeConstraint", box)
-    boxLimit.MaxSize = Vector2.new(390, 430)
-    boxLimit.MinSize = Vector2.new(300, 360)
-
-    local edge = Instance.new("UIStroke", box)
-    edge.Thickness = 4
-    edge.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    local edgeGlow = Instance.new("UIGradient", edge)
-    edgeGlow.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(235, 70, 255)),
-        ColorSequenceKeypoint.new(0.30, Color3.fromRGB(100, 0, 150)),
-        ColorSequenceKeypoint.new(0.50, Color3.fromRGB(3, 3, 5)),
-        ColorSequenceKeypoint.new(0.70, Color3.fromRGB(100, 0, 150)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(235, 70, 255)),
-    })
-    task.spawn(function()
-        while edge and edge.Parent do
-            if not _G.SkyGlowOff then edgeGlow.Rotation = (edgeGlow.Rotation + 2) % 360 end
-            task.wait(0.035)
-        end
-    end)
-
-    local title = Instance.new("TextLabel", box)
-    title.Size = UDim2.new(1, -30, 0, 42)
-    title.Position = UDim2.new(0.5, 0, 0, 22)
-    title.AnchorPoint = Vector2.new(0.5, 0)
-    title.BackgroundTransparency = 1
-    title.Text = recoveryMode and "⚠️ تنبيه أداء" or (autoMode and "يتم منع الأنميشن" or "⚠️ تنبيه أداء")
-    title.TextColor3 = Color3.fromRGB(205, 80, 255)
-    title.Font = Enum.Font.ArialBold
-    title.TextSize = 24
-    title.TextTransparency = 1
-    title.ZIndex = 3
-
-    local text = Instance.new("TextLabel", box)
-    text.Size = UDim2.new(1, -36, 0, 100)
-    text.Position = UDim2.new(0.5, 0, 0, 78)
-    text.AnchorPoint = Vector2.new(0.5, 0)
-    text.BackgroundTransparency = 1
-    text.Text = recoveryMode and "تنبيه: الـ FPS ارتفع إلى 60 أو أكثر.\nهل تبي ترجع الوضع الطبيعي؟" or (autoMode and "تنبيه: الـ FPS نازل...\nسيتم منع الأنميشن الآن لتحسين الأداء." or "الـ FPS قاعد ينزل، هل تبي أشيل الأنميشن؟\nإيقافه ممكن يحسن الأداء شوي.")
-    text.TextColor3 = Color3.fromRGB(240, 240, 240)
-    text.Font = Enum.Font.Arial
-    text.TextSize = 17
-    text.TextWrapped = true
-    text.TextTransparency = 1
-    text.ZIndex = 3
-
-    local yes = Instance.new("TextButton", box)
-    yes.Size = UDim2.new(0.78, 0, 0, 48)
-    yes.Position = UDim2.new(0.5, 0, 0, 205)
-    yes.AnchorPoint = Vector2.new(0.5, 0)
-    yes.BackgroundColor3 = Color3.fromRGB(45, 8, 65)
-    yes.Text = recoveryMode and "لا، خله نفس ما هو" or "إيه، شيل الأنميشن"
-    yes.TextColor3 = Color3.new(1, 1, 1)
-    yes.Font = Enum.Font.ArialBold
-    yes.TextSize = 16
-    yes.ZIndex = 3
-    Instance.new("UICorner", yes).CornerRadius = UDim.new(0, 9)
-    local yesGlow = Instance.new("UIStroke", yes)
-    yesGlow.Thickness = 3
-    local yesGradient = Instance.new("UIGradient", yesGlow)
-    yesGradient.Color = edgeGlow.Color
-
-    local no = Instance.new("TextButton", box)
-    no.Size = UDim2.new(0.78, 0, 0, 48)
-    no.Position = UDim2.new(0.5, 0, 0, 265)
-    no.AnchorPoint = Vector2.new(0.5, 0)
-    no.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    no.Text = recoveryMode and "إيه، خليه الوضع الطبيعي" or "لا، خله كما هو"
-    no.TextColor3 = Color3.new(1, 1, 1)
-    no.Font = Enum.Font.ArialBold
-    no.TextSize = 16
-    no.ZIndex = 3
-    Instance.new("UICorner", no).CornerRadius = UDim.new(0, 9)
-    local noGlow = Instance.new("UIStroke", no)
-    noGlow.Thickness = 3
-    local noGradient = Instance.new("UIGradient", noGlow)
-    noGradient.Color = edgeGlow.Color
-
-    local automatic = Instance.new("TextButton", box)
-    automatic.Size = UDim2.new(0.78, 0, 0, 48)
-    automatic.Position = UDim2.new(0.5, 0, 0, 325)
-    automatic.AnchorPoint = Vector2.new(0.5, 0)
-    automatic.BackgroundColor3 = Color3.fromRGB(35, 8, 48)
-    automatic.Text = "خليه تلقائي"
-    automatic.TextColor3 = Color3.fromRGB(245, 220, 255)
-    automatic.Font = Enum.Font.ArialBold
-    automatic.TextSize = 16
-    automatic.ZIndex = 3
-    Instance.new("UICorner", automatic).CornerRadius = UDim.new(0, 9)
-    local automaticGlow = Instance.new("UIStroke", automatic)
-    automaticGlow.Thickness = 3
-    local automaticGradient = Instance.new("UIGradient", automaticGlow)
-    automaticGradient.Color = edgeGlow.Color
-    automatic.Visible = not recoveryMode
-
-    local function close()
-        SkyTw(black, TweenInfo.new(0.25), {BackgroundTransparency = 1}):Play()
-        SkyTw(box, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Position = UDim2.new(0.5, 0, 1.2, 0)
-        }):Play()
-        task.delay(0.32, function() if gui then gui:Destroy() end end)
-    end
-
-    yes.MouseButton1Click:Connect(function()
-        if recoveryMode then
-            -- إبقاء وضع الأداء كما هو بدون إعادة المؤثرات.
-            SkyRecoveryCheck = false
-            SkyRecoverySeconds = 0
-            SkyPerformancePromptShown = false
-            close()
-            return
-        end
-        close()
-        task.delay(0.35, function()
-            SkyShowFullscreenLoading("جاري حذف الأشياء الثقيلة وتحسين الـ FPS...", function()
-                SkyEnablePerformanceMode()
-                SkyPerformancePromptShown = true
-                SkyLowFpsPromptLatched = true
-            end, "يتم حذف الأنميشن التي تخفف الـ FPS", "low")
-        end)
-    end)
-    no.MouseButton1Click:Connect(function()
-        if recoveryMode then
-            -- إعادة المؤثرات التي تم فصلها سابقًا، والعودة للوضع الطبيعي.
-            close()
-            task.delay(0.35, function()
-                SkyShowFullscreenLoading("يتم تحميل كل الأنميشن والأشياء الأخرى...", function()
-                    SkyRestorePerformanceMode()
-                    SkyPerformancePromptShown = false
-                end, "يتم تحميل كل الأنميشن", "restore")
-            end)
-            return
-        end
-        -- إبقاء الفحص فعالًا، مع مهلة قصيرة حتى لا تتكرر النافذة بسرعة.
-        close()
-        task.delay(8, function()
-            SkyPerformancePromptShown = false
-        end)
-    end)
-    automatic.MouseButton1Click:Connect(function()
-        -- «خليه تلقائي»: أولًا تختفي القائمة بالكامل، ثم تظهر شاشة تحميل Sky الكاملة.
-        -- لا يظهر أي صندوق/قائمة أثناء التحميل. بعد انتهاء التحميل فقط يبدأ الوضع التلقائي.
-        SkyAutomaticMode = true
-        SkyAutoFPSCheck = true
-        SkyLowFpsSeconds = 0
-        close()
-        task.delay(0.35, function()
-            SkyPerformancePromptShown = true
-            SkyLowFpsPromptLatched = true
-            SkyShowFullscreenLoading("قاعد يحمل الأغراض المطلوبة ويجهز حذف الأشياء الثقيلة...", function()
-                SkyEnablePerformanceMode()
-                SkyAutomaticMode = true
-                SkyAutoFPSCheck = true
-                SkyRecoveryCheck = true
-                SkyRecoverySeconds = 0
-            end, "يتم حذف الأنميشن التي تخفف الـ FPS", "low")
-        end)
-    end)
-
-    SkyTw(black, TweenInfo.new(0.5), {
-        BackgroundTransparency = autoMode and 0 or 0.42
-    }):Play()
-    SkyTw(box, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Position = UDim2.new(0.5, 0, 0.52, 0)
-    }):Play()
-    task.delay(0.25, function()
-        SkyTw(title, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
-        SkyTw(text, TweenInfo.new(0.45), {TextTransparency = 0}):Play()
-    end)
-end
-
--- لا تظهر القائمة عند التشغيل؛ تظهر فقط بعد رصد هبوط FPS.
-_G.SkyEnableFPSAutoPrompt = function()
-    SkyAutoFPSCheck = true
-    SkyPerformancePromptShown = false
-end
--- استقبال قراءة العداد الموجود أصلًا؛ لا يوجد RenderStepped إضافي للمراقبة.
-_G.SkyPerformanceFpsSink = function(fps)
-    if not SkyAutoFPSCheck then return end
-    -- بعد تفعيل وضع الأداء نستمر في فحص الارتفاع حتى لو ظهرت شاشة التحميل سابقًا.
-    if SkyPerformancePromptShown and not SkyRecoveryCheck then return end
-    if SkyPerformanceMode or SkyRecoveryCheck then
-        -- بعد الضغط على «خليه تلقائي»: عند 55 FPS أو أكثر يظهر خيار الوضع الطبيعي.
-        if fps >= 55 then
-            SkyRecoverySeconds = SkyRecoverySeconds + 0.4
-            if SkyRecoverySeconds >= 2 then
-                SkyShowPerformancePrompt(false, true)
-            end
-        else
-            SkyRecoverySeconds = 0
-        end
-        return
-    end
-    if fps <= 35 then
-        if SkyLowFpsPromptLatched then return end
-        SkyLowFpsSeconds = SkyLowFpsSeconds + 0.4
-        if SkyLowFpsSeconds >= 2 then
-            SkyLowFpsPromptLatched = true
-            SkyShowPerformancePrompt(SkyAutomaticMode)
-        end
-    else
-        SkyLowFpsSeconds = 0
-        SkyLowFpsPromptLatched = false
-    end
 end
 
 -- 💾 تصريح مسبق: تُملأ لاحقًا بدالة حفظ مكان زر R وزر القفل، وتُستدعى عند نهاية السحب
