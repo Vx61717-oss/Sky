@@ -2,8 +2,6 @@
 local FIREBASE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chat.json"
 -- حالات كتم الدردشة المشتركة بين نسخ السكربت.
 local MODERATION_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/moderation.json"
-local BLOCKS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/blocks.json"
-local REPORTS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/reports.json"
 local CHAT_MUTE_SECONDS = 60
 local TYPING_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/typing.json"
 local PRESENCE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/presence.json"
@@ -14,6 +12,104 @@ local AUTH_TOKEN = ""
 -- 🌐 توافق مع مختلف برامج الإكسبلويت: كل وحد يسمي دالة الطلبات باسم مختلف
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
+
+-- ====================== نظام الحظر والبلاغات (المرحلة 1: التخزين) ======================
+-- نفصل بيانات الحظر والبلاغات عن سجل الدردشة وعن كتم الكلمات المؤقت.
+local CHAT_BLOCKS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chatBlocks.json"
+local CHAT_REPORTS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chatReports.json"
+local SkyBlockedUsers = {}
+local SkyBlockDataLoaded = false
+
+local function SkyHttpJson(url, method, payload)
+    if not request then return false, nil end
+    local ok, response = pcall(function()
+        return request({
+            Url = url .. "?auth=" .. AUTH_TOKEN,
+            Method = method or "GET",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = payload and game:GetService("HttpService"):JSONEncode(payload) or nil
+        })
+    end)
+    if not ok or not response then return false, nil end
+    local status = tonumber(response.StatusCode)
+    if status and status ~= 200 and status ~= 201 and status ~= 204 then
+        return false, response
+    end
+    return true, response
+end
+
+local function SkyRefreshBlockedUsers()
+    if not request then return end
+    local myId = game:GetService("Players").LocalPlayer.UserId
+    local url = CHAT_BLOCKS_URL:gsub("%.json$", "/" .. tostring(myId) .. ".json")
+    local ok, response = SkyHttpJson(url, "GET")
+    if not ok or not response or not response.Body then return end
+    local decodedOk, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(response.Body)
+    end)
+    if not decodedOk then return end
+
+    local fresh = {}
+    if type(data) == "table" then
+        for userId, record in pairs(data) do
+            if record ~= false and record ~= nil then
+                fresh[tostring(userId)] = type(record) == "table" and record or {blocked = true}
+            end
+        end
+    end
+    SkyBlockedUsers = fresh
+    SkyBlockDataLoaded = true
+end
+
+local function SkyIsChatBlocked(userId)
+    if userId == nil then return false end
+    return SkyBlockedUsers[tostring(userId)] ~= nil
+end
+
+local function SkyBlockChatUser(userId, userName)
+    userId = tonumber(userId)
+    if not userId or userId == game:GetService("Players").LocalPlayer.UserId then
+        return false
+    end
+    local myId = game:GetService("Players").LocalPlayer.UserId
+    local url = CHAT_BLOCKS_URL:gsub("%.json$", "/" .. tostring(myId) .. "/" .. tostring(userId) .. ".json")
+    local record = {
+        blocked = true,
+        userId = userId,
+        userName = tostring(userName or ("User " .. tostring(userId))),
+        blockedAt = os.time()
+    }
+    local ok = SkyHttpJson(url, "PUT", record)
+    if ok then SkyBlockedUsers[tostring(userId)] = record end
+    return ok
+end
+
+local function SkySubmitChatReport(targetUserId, targetName, reason, sourceType)
+    targetUserId = tonumber(targetUserId)
+    reason = tostring(reason or ""):sub(1, 1200)
+    if not targetUserId or targetUserId == game:GetService("Players").LocalPlayer.UserId
+        or reason:gsub("%s+", "") == "" then
+        return false
+    end
+
+    local me = game:GetService("Players").LocalPlayer
+    local payload = {
+        reporterName = me.Name,
+        reporterUserId = me.UserId,
+        reportedName = tostring(targetName or ("User " .. tostring(targetUserId))),
+        reportedUserId = targetUserId,
+        reason = reason,
+        source = tostring(sourceType or "chat"),
+        timestamp = os.time(),
+        placeId = tostring(game.PlaceId),
+        status = "new"
+    }
+    local ok = SkyHttpJson(CHAT_REPORTS_URL, "POST", payload)
+    return ok
+end
+
+-- تحميل الحظر عند بدء السكربت؛ وسيعاد تحديثه دوريًا من حلقة الدردشة.
+task.spawn(SkyRefreshBlockedUsers)
 
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
@@ -4097,7 +4193,7 @@ end)
     UI.TabBar.BorderSizePixel = 0
     UI.TabBar.ClipsDescendants = true
     Instance.new("UICorner", UI.TabBar).CornerRadius = UDim.new(0, 15)
-    UI.TabBar.CanvasSize = UDim2.new(0, 1220, 0, 0) -- مساحة أفقية إضافية لتاب البلاغات للمطوّر
+    UI.TabBar.CanvasSize = UDim2.new(0, 1080, 0, 0) -- مساحة أفقية للسحب يميناً ويساراً
     UI.TabBar.AutomaticCanvasSize = Enum.AutomaticSize.None
     UI.TabBar.ScrollingDirection = Enum.ScrollingDirection.X
     UI.TabBar.ScrollingEnabled = true
@@ -4432,15 +4528,6 @@ UI.btn6 = CreateTabBtn("❓ السكربت", 1.0)
 UI.btn7 = CreateTabBtn("⚙️ الإعدادات", 1.4)
 UI.btn8 = CreateTabBtn("📝 ملاحظات", 1.6)
 UI.btn9 = CreateTabBtn("👤 الملف", 0)
--- 🚩 تاب البلاغات لا يظهر إلا للمطوّر.
-local ReportsTabButton = CreateTabBtn("🚩 البلاغات", 1.8)
-ReportsTabButton.Name = "SkyReportsTabButton"
-ReportsTabButton.Visible = game.Players.LocalPlayer.Name == "AAbbooyi"
-ReportsTabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-ReportsTabButton.TextColor3 = Color3.fromRGB(245, 245, 245)
-local ReportsTabStroke = Instance.new("UIStroke", ReportsTabButton)
-ReportsTabStroke.Thickness = 1.5
-ReportsTabStroke.Color = Color3.fromRGB(255, 65, 65)
 -- بطاقة مميزة لتاب الملاحظات
 UI.btn8.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 UI.btn8.TextColor3 = Color3.fromRGB(220, 255, 240)
@@ -12406,25 +12493,6 @@ end)
         -- لا ترجع للواجهة حتى لو كانت ما زالت محفوظة في Firebase.
         local CHAT_SESSION_STARTED_AT = os.time()
         local chatMessageCache = {}
-        local blockedUserIds = {}
-        local myBlockListUrl = BLOCKS_URL:gsub("%.json$", "/" .. tostring(game.Players.LocalPlayer.UserId) .. ".json") .. "?auth=" .. AUTH_TOKEN
-        local function isUserBlocked(userId)
-            return userId ~= nil and blockedUserIds[tostring(userId)] == true
-        end
-        local function loadMyBlocks()
-            local ok, response = pcall(function() return request({Url = myBlockListUrl, Method = "GET"}) end)
-            if not ok or not response or not response.Body then return end
-            local decodedOk, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
-            if decodedOk and type(data) == "table" then
-                blockedUserIds = {}
-                for id, value in pairs(data) do
-                    if value == true or (type(value) == "table" and value.blocked == true) then
-                        blockedUserIds[tostring(id)] = true
-                    end
-                end
-            end
-        end
-        task.spawn(loadMyBlocks)
         local addChatMsg
         local inputBox -- ⬅️ معرّف هنا فوق (كان يتعرّف بعد switchChatMode فيصير nil جواها ويوقف الدالة قبل ما تعيد بناء الرسائل)
 
@@ -13138,11 +13206,8 @@ end)
             local sorted = {}
             for _, n in ipairs(_G.SkyPresentNames or {}) do
                 if n ~= me and not wanted[n] then
-                    local uid = dmResolveUserId(n)
-                    if not isUserBlocked(uid) then
-                        wanted[n] = true
-                        table.insert(sorted, n)
-                    end
+                    wanted[n] = true
+                    table.insert(sorted, n)
                 end
             end
             table.sort(sorted)
@@ -13342,10 +13407,6 @@ end)
         end
 
         local function pmShow(uid, name)
-            if isUserBlocked(uid) then
-                Notify("🚫 محظور", "أزل الحظر أولاً لفتح المحادثة", Color3.fromRGB(255, 70, 70), true)
-                return
-            end
             ensurePmLog()
             _G.SkyPmActiveUserId = uid
             _G.SkyPmTarget = {userId = uid, name = name}
@@ -13543,7 +13604,6 @@ end)
             if tid == myId then partner = uid
             elseif uid == myId then partner = tid
             else return end
-            if isUserBlocked(partner) then return end
             local key = tostring(m.clientId or m.id or (tostring(m.timestamp) .. ":" .. tostring(m.text)))
             local isNew = _G.SkyPmStore(partner, m, key)
             -- إشعار بس للرسايل الجديدة من الشخص الثاني (مو رسايلي، ومو من قبل تشغيل السكربت)
@@ -14541,7 +14601,6 @@ end)
             row:SetAttribute("ChatClientId", tostring(clientId or ""))
             row:SetAttribute("ChatTimestamp", tonumber(timestamp) or 0)
             row:SetAttribute("ChatSender", tostring(sender))
-            row:SetAttribute("ChatUserId", tonumber(userId) or 0)
             row:SetAttribute("ChatText", tostring(text))
             row:SetAttribute("ChatJobId", tostring(jobId or ""))
             row:SetAttribute("ChatPlaceId", tostring(placeId or game.PlaceId))
@@ -15314,7 +15373,7 @@ end)
         playerInfoFrame.Name = "PlayerInfoFrame"
         playerInfoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         playerInfoFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        playerInfoFrame.Size = UDim2.new(0, 350, 0, 410)
+        playerInfoFrame.Size = UDim2.new(0, 350, 0, 350)
         playerInfoFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
         playerInfoFrame.Visible = false
         playerInfoFrame.ZIndex = 91
@@ -15401,92 +15460,10 @@ end)
         joinServerStroke.Thickness = 1.8
         AddMovingBorderGlow(joinServerStroke, 1.6, Color3.fromRGB(170, 0, 255))
 
-        local blockUserButton = Instance.new("TextButton", playerInfoFrame)
-        blockUserButton.Name = "BlockUserButton"
-        blockUserButton.Size = UDim2.new(0.48, -10, 0, 34)
-        blockUserButton.Position = UDim2.new(0, 14, 0, 194)
-        blockUserButton.BackgroundColor3 = Color3.fromRGB(75, 28, 30)
-        blockUserButton.Text = "🚫 حظر"
-        blockUserButton.TextColor3 = Color3.fromRGB(255, 180, 180)
-        blockUserButton.Font = Enum.Font.GothamBold
-        blockUserButton.TextSize = 13
-        blockUserButton.ZIndex = 93
-        Instance.new("UICorner", blockUserButton).CornerRadius = UDim.new(0, 8)
-
-        local reportUserButton = Instance.new("TextButton", playerInfoFrame)
-        reportUserButton.Name = "ReportUserButton"
-        reportUserButton.Size = UDim2.new(0.48, -10, 0, 34)
-        reportUserButton.Position = UDim2.new(0.52, -4, 0, 194)
-        reportUserButton.BackgroundColor3 = Color3.fromRGB(55, 25, 25)
-        reportUserButton.Text = "⚠️ بلاغ"
-        reportUserButton.TextColor3 = Color3.fromRGB(255, 210, 150)
-        reportUserButton.Font = Enum.Font.GothamBold
-        reportUserButton.TextSize = 13
-        reportUserButton.ZIndex = 93
-        Instance.new("UICorner", reportUserButton).CornerRadius = UDim.new(0, 8)
-
-        local reportComposer = Instance.new("Frame", playerInfoGui)
-        reportComposer.Name = "SkyReportComposer"
-        reportComposer.AnchorPoint = Vector2.new(0.5, 0.5)
-        reportComposer.Position = UDim2.new(0.5, 0, 0.5, 0)
-        reportComposer.Size = UDim2.new(0, 320, 0, 230)
-        reportComposer.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
-        reportComposer.Visible = false
-        reportComposer.ZIndex = 150
-        Instance.new("UICorner", reportComposer).CornerRadius = UDim.new(0, 12)
-        local reportComposerStroke = Instance.new("UIStroke", reportComposer)
-        reportComposerStroke.Color = Color3.fromRGB(255, 65, 65)
-        reportComposerStroke.Thickness = 2
-        local reportPrompt = Instance.new("TextLabel", reportComposer)
-        reportPrompt.Size = UDim2.new(1, -20, 0, 38)
-        reportPrompt.Position = UDim2.new(0, 10, 0, 8)
-        reportPrompt.BackgroundTransparency = 1
-        reportPrompt.Text = "اكتب سبب البلاغ"
-        reportPrompt.TextColor3 = Color3.fromRGB(255, 220, 220)
-        reportPrompt.Font = Enum.Font.GothamBold
-        reportPrompt.TextSize = 15
-        reportPrompt.ZIndex = 151
-        local reportReasonBox = Instance.new("TextBox", reportComposer)
-        reportReasonBox.Size = UDim2.new(1, -20, 0, 112)
-        reportReasonBox.Position = UDim2.new(0, 10, 0, 52)
-        reportReasonBox.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
-        reportReasonBox.TextColor3 = Color3.new(1, 1, 1)
-        reportReasonBox.PlaceholderText = "اشرح المشكلة باختصار..."
-        reportReasonBox.Text = ""
-        reportReasonBox.ClearTextOnFocus = false
-        reportReasonBox.MultiLine = true
-        reportReasonBox.TextWrapped = true
-        reportReasonBox.TextXAlignment = Enum.TextXAlignment.Right
-        reportReasonBox.TextYAlignment = Enum.TextYAlignment.Top
-        reportReasonBox.Font = Enum.Font.Gotham
-        reportReasonBox.TextSize = 14
-        reportReasonBox.ZIndex = 151
-        Instance.new("UICorner", reportReasonBox).CornerRadius = UDim.new(0, 8)
-        local reportSubmitButton = Instance.new("TextButton", reportComposer)
-        reportSubmitButton.Size = UDim2.new(0.58, -10, 0, 38)
-        reportSubmitButton.Position = UDim2.new(0, 10, 1, -50)
-        reportSubmitButton.BackgroundColor3 = Color3.fromRGB(115, 35, 35)
-        reportSubmitButton.Text = "إرسال البلاغ"
-        reportSubmitButton.TextColor3 = Color3.new(1, 1, 1)
-        reportSubmitButton.Font = Enum.Font.GothamBold
-        reportSubmitButton.TextSize = 13
-        reportSubmitButton.ZIndex = 151
-        Instance.new("UICorner", reportSubmitButton).CornerRadius = UDim.new(0, 8)
-        local reportCancelButton = Instance.new("TextButton", reportComposer)
-        reportCancelButton.Size = UDim2.new(0.38, -10, 0, 38)
-        reportCancelButton.Position = UDim2.new(0.62, 0, 1, -50)
-        reportCancelButton.BackgroundColor3 = Color3.fromRGB(38, 38, 44)
-        reportCancelButton.Text = "إلغاء"
-        reportCancelButton.TextColor3 = Color3.new(1, 1, 1)
-        reportCancelButton.Font = Enum.Font.GothamBold
-        reportCancelButton.TextSize = 13
-        reportCancelButton.ZIndex = 151
-        Instance.new("UICorner", reportCancelButton).CornerRadius = UDim.new(0, 8)
-
         local developerTools = Instance.new("Frame", playerInfoFrame)
         developerTools.Name = "DeveloperPlayerTools"
         developerTools.Size = UDim2.new(1, -28, 0, 136)
-        developerTools.Position = UDim2.new(0, 14, 0, 238)
+        developerTools.Position = UDim2.new(0, 14, 0, 194)
         developerTools.BackgroundColor3 = Color3.fromRGB(22, 12, 18)
         developerTools.Visible = false
         developerTools.ZIndex = 92
@@ -15656,190 +15633,6 @@ end)
             end)
         end
 
-        -- 🚩 لوحة البلاغات الخاصة بحساب المطوّر فقط.
-        local reportsTabButton = ReportsTabButton
-        local reportsPanel = Instance.new("Frame", ScreenGui)
-        reportsPanel.Name = "SkyReportsPanel"
-        reportsPanel.AnchorPoint = Vector2.new(0.5, 0.5)
-        reportsPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
-        reportsPanel.Size = UDim2.new(0, 390, 0, 430)
-        reportsPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
-        reportsPanel.Visible = false
-        reportsPanel.ZIndex = 80
-        Instance.new("UICorner", reportsPanel).CornerRadius = UDim.new(0, 12)
-        local reportsStroke = Instance.new("UIStroke", reportsPanel)
-        reportsStroke.Color = Color3.fromRGB(255, 65, 65)
-        reportsStroke.Thickness = 2
-        local reportsTitle = Instance.new("TextLabel", reportsPanel)
-        reportsTitle.Size = UDim2.new(1, -54, 0, 34)
-        reportsTitle.Position = UDim2.new(0, 10, 0, 6)
-        reportsTitle.BackgroundTransparency = 1
-        reportsTitle.Text = "🚩 بلاغات المستخدمين"
-        reportsTitle.TextColor3 = Color3.fromRGB(255, 120, 120)
-        reportsTitle.Font = Enum.Font.GothamBold
-        reportsTitle.TextSize = 16
-        reportsTitle.ZIndex = 81
-        local reportsClose = Instance.new("TextButton", reportsPanel)
-        reportsClose.Size = UDim2.new(0, 32, 0, 28)
-        reportsClose.Position = UDim2.new(1, -40, 0, 7)
-        reportsClose.Text = "X"
-        reportsClose.BackgroundColor3 = Color3.fromRGB(55, 25, 25)
-        reportsClose.TextColor3 = Color3.new(1, 1, 1)
-        reportsClose.ZIndex = 82
-        Instance.new("UICorner", reportsClose)
-        local reportsScroll = Instance.new("ScrollingFrame", reportsPanel)
-        reportsScroll.Position = UDim2.new(0, 8, 0, 44)
-        reportsScroll.Size = UDim2.new(1, -16, 1, -52)
-        reportsScroll.BackgroundTransparency = 1
-        reportsScroll.BorderSizePixel = 0
-        reportsScroll.ScrollBarThickness = 4
-        reportsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        reportsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-        reportsScroll.ZIndex = 81
-        local reportsLayout = Instance.new("UIListLayout", reportsScroll)
-        reportsLayout.Padding = UDim.new(0, 7)
-        reportsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        local function openReportedHistory(targetId, targetName)
-            for _, child in ipairs(reportsPanel:GetChildren()) do
-                if child.Name == "ReportHistoryOverlay" then child:Destroy() end
-            end
-            local history = Instance.new("Frame", reportsPanel)
-            history.Name = "ReportHistoryOverlay"
-            history.Size = UDim2.new(1, -20, 1, -60)
-            history.Position = UDim2.new(0, 10, 0, 50)
-            history.BackgroundColor3 = Color3.fromRGB(15, 15, 19)
-            history.ZIndex = 90
-            Instance.new("UICorner", history).CornerRadius = UDim.new(0, 9)
-            local title = Instance.new("TextLabel", history)
-            title.Size = UDim2.new(1, -46, 0, 30)
-            title.Position = UDim2.new(0, 8, 0, 4)
-            title.BackgroundTransparency = 1
-            title.Text = "رسائل العام: " .. tostring(targetName)
-            title.TextColor3 = Color3.fromRGB(255, 180, 180)
-            title.Font = Enum.Font.GothamBold
-            title.TextSize = 13
-            title.ZIndex = 91
-            local close = Instance.new("TextButton", history)
-            close.Size = UDim2.new(0, 30, 0, 27)
-            close.Position = UDim2.new(1, -36, 0, 4)
-            close.Text = "رجوع"
-            close.TextColor3 = Color3.new(1, 1, 1)
-            close.BackgroundColor3 = Color3.fromRGB(45, 35, 35)
-            close.ZIndex = 92
-            Instance.new("UICorner", close)
-            local scroll = Instance.new("ScrollingFrame", history)
-            scroll.Position = UDim2.new(0, 6, 0, 38)
-            scroll.Size = UDim2.new(1, -12, 1, -44)
-            scroll.BackgroundTransparency = 1
-            scroll.BorderSizePixel = 0
-            scroll.ScrollBarThickness = 4
-            scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-            scroll.ZIndex = 91
-            local layout = Instance.new("UIListLayout", scroll)
-            layout.Padding = UDim.new(0, 4)
-            layout.SortOrder = Enum.SortOrder.LayoutOrder
-            close.MouseButton1Click:Connect(function() history:Destroy() end)
-            task.spawn(function()
-                local ok, response = pcall(function() return request({Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"}) end)
-                if not ok or not response or not response.Body then return end
-                local parsed, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
-                if not parsed or type(data) ~= "table" then return end
-                local rows = {}
-                for _, m in pairs(data) do
-                    if type(m) == "table" and tonumber(m.userId) == tonumber(targetId)
-                        and (m.chatType == nil or m.chatType == "general" or m.chatType == "friends") then
-                        table.insert(rows, m)
-                    end
-                end
-                table.sort(rows, function(a,b) return (tonumber(a.timestamp) or 0) < (tonumber(b.timestamp) or 0) end)
-                for i = math.max(1, #rows - 99), #rows do
-                    local m = rows[i]
-                    if m then
-                        local row = Instance.new("TextLabel", scroll)
-                        row.Size = UDim2.new(1, -4, 0, 48)
-                        row.BackgroundColor3 = Color3.fromRGB(30, 25, 28)
-                        row.TextColor3 = Color3.fromRGB(240, 230, 230)
-                        row.Font = Enum.Font.Gotham
-                        row.TextSize = 12
-                        row.TextWrapped = true
-                        row.TextXAlignment = Enum.TextXAlignment.Right
-                        row.Text = os.date("%Y-%m-%d %H:%M", tonumber(m.timestamp) or os.time()) .. "\n" .. tostring(m.text or "")
-                        row.ZIndex = 92
-                        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
-                    end
-                end
-            end)
-        end
-        local function refreshReports()
-            if not isDeveloper then return end
-            for _, child in ipairs(reportsScroll:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
-            task.spawn(function()
-                local ok, response = pcall(function() return request({Url = REPORTS_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"}) end)
-                if not ok or not response or not response.Body then return end
-                local parsed, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
-                if not parsed or type(data) ~= "table" then return end
-                local list = {}
-                for key, report in pairs(data) do
-                    if type(report) == "table" then report._key = key; table.insert(list, report) end
-                end
-                table.sort(list, function(a,b) return (tonumber(a.timestamp) or 0) > (tonumber(b.timestamp) or 0) end)
-                if #list == 0 then
-                    local empty = Instance.new("TextLabel", reportsScroll)
-                    empty.Size = UDim2.new(1, -4, 0, 42)
-                    empty.BackgroundTransparency = 1
-                    empty.Text = "ما فيه بلاغات حالياً"
-                    empty.TextColor3 = Color3.fromRGB(210, 210, 210)
-                    empty.Font = Enum.Font.Gotham
-                    empty.TextSize = 14
-                    empty.ZIndex = 82
-                    return
-                end
-                for i, report in ipairs(list) do
-                    local card = Instance.new("Frame", reportsScroll)
-                    card.Name = "ReportCard"
-                    card.Size = UDim2.new(1, -4, 0, 130)
-                    card.BackgroundColor3 = Color3.fromRGB(28, 22, 25)
-                    card.BorderSizePixel = 0
-                    card.LayoutOrder = i
-                    card.ZIndex = 82
-                    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
-                    local body = Instance.new("TextLabel", card)
-                    body.Position = UDim2.new(0, 8, 0, 5)
-                    body.Size = UDim2.new(1, -16, 0, 78)
-                    body.BackgroundTransparency = 1
-                    body.TextColor3 = Color3.fromRGB(245, 230, 230)
-                    body.Font = Enum.Font.Gotham
-                    body.TextSize = 12
-                    body.TextWrapped = true
-                    body.TextXAlignment = Enum.TextXAlignment.Right
-                    body.TextYAlignment = Enum.TextYAlignment.Top
-                    body.Text = "المبلّغ: " .. tostring(report.reporterName or "?") .. "  |  المُبلّغ عليه: " .. tostring(report.targetName or report.targetUserId or "?") .. "\nالسبب: " .. tostring(report.reason or "")
-                    body.ZIndex = 83
-                    local historyBtn = Instance.new("TextButton", card)
-                    historyBtn.Position = UDim2.new(0, 8, 1, -40)
-                    historyBtn.Size = UDim2.new(1, -16, 0, 32)
-                    historyBtn.BackgroundColor3 = Color3.fromRGB(75, 30, 35)
-                    historyBtn.Text = "عرض رسائل العام للشخص المُبلّغ عليه"
-                    historyBtn.TextColor3 = Color3.new(1, 1, 1)
-                    historyBtn.Font = Enum.Font.GothamBold
-                    historyBtn.TextSize = 12
-                    historyBtn.ZIndex = 84
-                    Instance.new("UICorner", historyBtn).CornerRadius = UDim.new(0, 7)
-                    historyBtn.MouseButton1Click:Connect(function() openReportedHistory(report.targetUserId, report.targetName) end)
-                end
-            end)
-        end
-        if isDeveloper then
-            reportsTabButton.MouseButton1Click:Connect(function()
-                reportsPanel.Visible = true
-                refreshReports()
-            end)
-            reportsClose.MouseButton1Click:Connect(function() reportsPanel.Visible = false end)
-            for _, normalTab in ipairs({UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8, UI.btn9}) do
-                normalTab.MouseButton1Click:Connect(function() reportsPanel.Visible = false end)
-            end
-        end
         local selectedInfoUserId
         local selectedInfoPlayer
         local selectedInfoJobId
@@ -15853,69 +15646,6 @@ end)
             selectedInfoPlaceId = nil
         end
         playerInfoClose.MouseButton1Click:Connect(closePlayerInfo)
-        blockUserButton.MouseButton1Click:Connect(function()
-            if not selectedInfoUserId or selectedInfoUserId == game.Players.LocalPlayer.UserId then return end
-            local id = tostring(selectedInfoUserId)
-            local shouldBlock = not isUserBlocked(id)
-            blockedUserIds[id] = shouldBlock and true or nil
-            task.spawn(function()
-                pcall(function()
-                    request({Url = myBlockListUrl, Method = "PUT", Headers = { ["Content-Type"] = "application/json" }, Body = game:GetService("HttpService"):JSONEncode(blockedUserIds)})
-                end)
-            end)
-            blockUserButton.Text = shouldBlock and "✅ إلغاء الحظر" or "🚫 حظر"
-            if shouldBlock then
-                for key, msg in pairs(chatMessageCache) do
-                    if type(msg) == "table" and tonumber(msg.userId) == selectedInfoUserId then chatMessageCache[key] = nil end
-                end
-                for _, log in pairs({generalChatLog, friendsChatLog, chatLog}) do
-                    if log and log.Parent then
-                        for _, row in ipairs(log:GetChildren()) do
-                            if row:IsA("Frame") and tonumber(row:GetAttribute("ChatUserId")) == selectedInfoUserId then row:Destroy() end
-                        end
-                    end
-                end
-                if _G.SkyPmActiveUserId == selectedInfoUserId and _G.SkyPmExit then _G.SkyPmExit() end
-                if _G.SkyPmRefresh then _G.SkyPmRefresh() end
-                Notify("🚫 الحظر", "لن تظهر لك رسائل هذا الشخص أو إشعاراته في هذه النسخة", Color3.fromRGB(255, 70, 70), true)
-            else
-                Notify("✅ الحظر", "تم إلغاء الحظر", Color3.fromRGB(100, 230, 150), true)
-            end
-        end)
-        reportUserButton.MouseButton1Click:Connect(function()
-            if not selectedInfoUserId or selectedInfoUserId == game.Players.LocalPlayer.UserId then return end
-            reportComposer:SetAttribute("TargetUserId", selectedInfoUserId)
-            reportComposer:SetAttribute("TargetName", selectedInfoPlayer and selectedInfoPlayer.Name or playerInfoTitle.Text)
-            reportReasonBox.Text = ""
-            reportComposer.Visible = true
-        end)
-        reportCancelButton.MouseButton1Click:Connect(function() reportComposer.Visible = false end)
-        reportSubmitButton.MouseButton1Click:Connect(function()
-            local reason = tostring(reportReasonBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-            local targetId = tonumber(reportComposer:GetAttribute("TargetUserId"))
-            if not targetId or reason == "" then
-                Notify("البلاغ", "اكتب سبب البلاغ أولاً", Color3.fromRGB(255, 170, 80), true)
-                return
-            end
-            reportSubmitButton.Active = false
-            local payload = {reporterId = game.Players.LocalPlayer.UserId, reporterName = game.Players.LocalPlayer.Name,
-                targetUserId = targetId, targetName = tostring(reportComposer:GetAttribute("TargetName") or ""),
-                reason = reason:sub(1, 700), timestamp = os.time(), status = "new"}
-            task.spawn(function()
-                local ok, response = pcall(function()
-                    return request({Url = REPORTS_URL .. "?auth=" .. AUTH_TOKEN, Method = "POST",
-                        Headers = { ["Content-Type"] = "application/json" }, Body = game:GetService("HttpService"):JSONEncode(payload)})
-                end)
-                reportSubmitButton.Active = true
-                if ok and response and (not response.StatusCode or response.StatusCode == 200) then
-                    reportComposer.Visible = false
-                    closePlayerInfo()
-                    Notify("✅ تم إرسال البلاغ", "وصل البلاغ للمطوّر للمراجعة", Color3.fromRGB(100, 230, 150), true)
-                else
-                    Notify("تعذر إرسال البلاغ", "تحقق من الاتصال وحاول مرة ثانية", Color3.fromRGB(255, 70, 70), true)
-                end
-            end)
-        end)
         -- الضغط خارج القائمة لا يغلقها؛ الإغلاق من زر X فقط.
 
         openPlayerInfo = function(sender, userId, jobId, placeId)
@@ -15949,9 +15679,6 @@ end)
                 .. '<font color="#93C5FD">' .. tostring(username) .. '</font> <font color="#FFFFFF">اسم المستخدم</font>\n'
                 .. '<font color="#86EFAC">' .. tostring(mapName) .. '</font> <font color="#FFFFFF">داخل الماب</font>'
             developerTools.Visible = isDeveloper and selectedInfoUserId ~= game.Players.LocalPlayer.UserId
-            blockUserButton.Visible = selectedInfoUserId ~= nil and selectedInfoUserId ~= game.Players.LocalPlayer.UserId
-            reportUserButton.Visible = blockUserButton.Visible
-            blockUserButton.Text = isUserBlocked(selectedInfoUserId) and "✅ إلغاء الحظر" or "🚫 حظر"
             joinServerBtn.Visible = selectedInfoPlayer ~= nil or (selectedInfoJobId and selectedInfoJobId ~= "")
             playerInfoBackdrop.Visible = true
             playerInfoFrame.Visible = true
@@ -16289,11 +16016,6 @@ end)
         _G.SkyPmSend = function(box)
             local target = _G.SkyPmTarget
             if not target then return end
-            if isUserBlocked(target.userId) then
-                box.Text = ""
-                Notify("🚫 محظور", "أزل الحظر أولاً لإرسال رسالة", Color3.fromRGB(255, 70, 70), true)
-                return
-            end
             local text = tostring(box.Text or "")
             if text:gsub("%s+", "") == "" then return end
             local me = game.Players.LocalPlayer
@@ -16591,7 +16313,6 @@ end)
                                 end
                             end
                             local senderMuted = m.userId and chatMuteRemaining(m.userId) > 0
-                            local senderBlocked = isUserBlocked(m.userId)
                             local key = "id:" .. tostring(m.id)
                             local fallback = "msg:" .. tostring(m.timestamp) .. ":" .. tostring(m.sender) .. ":" .. tostring(m.text)
                             if not existing[key] and not existing[fallback] then
@@ -16605,7 +16326,7 @@ end)
                                             showPrivateAlert(m.text)
                                         end
                                     end
-                                elseif not senderMuted and not senderBlocked and not incomingBadWord
+                                elseif not senderMuted and not incomingBadWord
                                     and m.chatType ~= "bubble"
                                     and m.chatType ~= "private" -- 🔒 التنبيهات الخاصة ما تنرسم بالدردشة أبداً (لا عندي ولا عند غيري)
                                     and not (m.chatType == "developer" and m.developerMessage == true) then
@@ -16687,10 +16408,7 @@ end)
                             if _lastSeenTimestamp and m.timestamp > _lastSeenTimestamp and m.sender ~= myName then
                                 local notificationBadWord = findBadChatWord(m.text)
                                 local notificationMuted = m.userId and chatMuteRemaining(m.userId) > 0
-                                local notificationBlocked = isUserBlocked(m.userId)
-                                if notificationBlocked then
-                                    -- لا تنبيه ولا فقاعة من مستخدم محظور.
-                                elseif m.chatType == "developer" and m.developerMessage == true and m.sender == "AAbbooyi" then
+                                if m.chatType == "developer" and m.developerMessage == true and m.sender == "AAbbooyi" then
                                     lastDeveloperMsg = m
                                 elseif m.chatType == "private" and m.developerMessage == true and m.sender == "AAbbooyi"
                                     and tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId then
