@@ -2,6 +2,8 @@
 local FIREBASE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chat.json"
 -- حالات كتم الدردشة المشتركة بين نسخ السكربت.
 local MODERATION_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/moderation.json"
+local BLOCKS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/blocks.json"
+local REPORTS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/reports.json"
 local CHAT_MUTE_SECONDS = 60
 local TYPING_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/typing.json"
 local PRESENCE_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/presence.json"
@@ -3421,7 +3423,7 @@ end)
                 local targetRoot = tChar and tChar:FindFirstChild("HumanoidRootPart")
 
                 if myRoot and targetRoot then
-                    State._hmmPhase = (State._hmmPhase or 0) + 0.65
+                    State._hmmPhase = (State._hmmPhase or 0) + 0.65 * (State.BangSpeed or 1)
 
                     -- حدّ الحركة يكون عند مسافة قريبة خلف اللاعب فقط،
                     -- ثم يرجع للخلف بدون أن يتجاوز نقطة الوقوف خلفه.
@@ -3543,7 +3545,7 @@ end)
                     local predictedHead = targetHead.Position + headVelocity * headLead
 
                     -- بانق 2 يكون أمام الوجه، مع نفس حركة الرجوع والتقدم.
-                    State._headBangPhase = (State._headBangPhase or 0) + 0.65
+                    State._headBangPhase = (State._headBangPhase or 0) + 0.65 * (State.BangSpeed or 1)
                     local frontMinDistance = 1.15
                     local frontMaxDistance = 2.75
                     local frontWave = (math.sin(State._headBangPhase) + 1) * 0.5
@@ -4080,8 +4082,8 @@ end)
     UI.SideBar = Instance.new("Frame")
     UI.SideBar.Name = "UI.SideBar"
     UI.SideBar.Parent = UI.MainFrame
-    UI.SideBar.Size = UDim2.new(0, 140, 1, -64)
-    UI.SideBar.Position = UDim2.new(0, 0, 0, 60)
+    UI.SideBar.Size = UDim2.new(1, -10, 0, 50)
+    UI.SideBar.Position = UDim2.new(0, 5, 0, 56)
     UI.SideBar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     UI.SideBar.BorderSizePixel = 0
     UI.SideBar.ClipsDescendants = true
@@ -4095,19 +4097,19 @@ end)
     UI.TabBar.BorderSizePixel = 0
     UI.TabBar.ClipsDescendants = true
     Instance.new("UICorner", UI.TabBar).CornerRadius = UDim.new(0, 15)
-    UI.TabBar.CanvasSize = UDim2.new(0, 0, 0, 900) -- مساحة إضافية للسحب تحت التابات
+    UI.TabBar.CanvasSize = UDim2.new(0, 1220, 0, 0) -- مساحة أفقية إضافية لتاب البلاغات للمطوّر
     UI.TabBar.AutomaticCanvasSize = Enum.AutomaticSize.None
-    UI.TabBar.ScrollingDirection = Enum.ScrollingDirection.Y
+    UI.TabBar.ScrollingDirection = Enum.ScrollingDirection.X
     UI.TabBar.ScrollingEnabled = true
-    UI.TabBar.ScrollBarThickness = 5
+    UI.TabBar.ScrollBarThickness = 4
     UI.TabBar.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
     UI.TabBar.ElasticBehavior = Enum.ElasticBehavior.Always
     UI.TabBar.Active = true
     UI.TabBar.ZIndex = 6
 
     UI.Pages.Parent = UI.MainFrame
-    UI.Pages.Size = UDim2.new(1, -160, 1, -70)
-    UI.Pages.Position = UDim2.new(0, 150, 0, 60)
+    UI.Pages.Size = UDim2.new(1, -16, 1, -122)
+    UI.Pages.Position = UDim2.new(0, 8, 0, 112)
     UI.Pages.BackgroundTransparency = 1
     UI.Pages.ZIndex = 6
 
@@ -4405,8 +4407,8 @@ end)
     local function CreateTabBtn(name, pos)
         local idx = math.floor(pos * 5 + 0.5)
         local btn = Instance.new("TextButton", UI.TabBar)
-        btn.Size = UDim2.new(1, -16, 0, 40)
-        btn.Position = UDim2.new(0, 8, 0, idx * 48 + 6)
+        btn.Size = UDim2.new(0, 112, 0, 40)
+        btn.Position = UDim2.new(0, idx * 118 + 6, 0, 4)
         btn.Text = _TranslateText(name)
         btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         btn.TextColor3 = Color3.new(1,1,1)
@@ -4421,14 +4423,24 @@ end)
         return btn
     end
 
-UI.btn1 = CreateTabBtn("✈️ المميزات", 0)
-UI.btn2 = CreateTabBtn("😈 تخريب", 0.2)
-UI.btn3 = CreateTabBtn("🛠️ مساعده", 0.4)
-UI.btn4 = CreateTabBtn("🎵 الموسيقى", 0.6)
-UI.btn5 = CreateTabBtn("💬 الدردشة", 1.0)
-UI.btn6 = CreateTabBtn("❓ السكربت", 0.8)
-UI.btn7 = CreateTabBtn("⚙️ الإعدادات", 1.2)
-UI.btn8 = CreateTabBtn("📝 ملاحظات", 1.4)
+UI.btn1 = CreateTabBtn("✈️ المميزات", 0.2)
+UI.btn2 = CreateTabBtn("😈 تخريب", 0.4)
+UI.btn3 = CreateTabBtn("🛠️ مساعده", 0.6)
+UI.btn4 = CreateTabBtn("🎵 الموسيقى", 0.8)
+UI.btn5 = CreateTabBtn("💬 الدردشة", 1.2)
+UI.btn6 = CreateTabBtn("❓ السكربت", 1.0)
+UI.btn7 = CreateTabBtn("⚙️ الإعدادات", 1.4)
+UI.btn8 = CreateTabBtn("📝 ملاحظات", 1.6)
+UI.btn9 = CreateTabBtn("👤 الملف", 0)
+-- 🚩 تاب البلاغات لا يظهر إلا للمطوّر.
+local ReportsTabButton = CreateTabBtn("🚩 البلاغات", 1.8)
+ReportsTabButton.Name = "SkyReportsTabButton"
+ReportsTabButton.Visible = game.Players.LocalPlayer.Name == "AAbbooyi"
+ReportsTabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+ReportsTabButton.TextColor3 = Color3.fromRGB(245, 245, 245)
+local ReportsTabStroke = Instance.new("UIStroke", ReportsTabButton)
+ReportsTabStroke.Thickness = 1.5
+ReportsTabStroke.Color = Color3.fromRGB(255, 65, 65)
 -- بطاقة مميزة لتاب الملاحظات
 UI.btn8.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 UI.btn8.TextColor3 = Color3.fromRGB(220, 255, 240)
@@ -4463,6 +4475,7 @@ UI.tabBadge5 = CreateTabBadge(UI.btn5)
 UI.tabBadge6 = CreateTabBadge(UI.btn6)
 UI.tabBadge7 = CreateTabBadge(UI.btn7)
 UI.tabBadge8 = CreateTabBadge(UI.btn8)
+UI.tabBadge9 = CreateTabBadge(UI.btn9)
 
 -- 🔔 بادج عائم فوق القائمة نفسها (يبان حتى وهي نحيفة/مصغّرة بعد الضغط على X)
 -- مربوط بالـ UI.MainFrame مباشرة عشان ما يختفي مع إخفاء UI.TabBar/UI.SideBar
@@ -4495,7 +4508,8 @@ UI.TabColors = {
     [5] = Color3.fromRGB(0, 255, 150),-- موسيقى: ذهبي
     [6] = Color3.fromRGB(255, 105, 180), -- السكربت : وردي
     [7] = Color3.fromRGB(200, 200, 210), -- الإعدادات: فضي
-    [8] = Color3.fromRGB(35, 120, 220) -- التاب 8: أزرق واضح -- التاب 8: أزرق غامق -- التاب 8: أخضر, 
+    [8] = Color3.fromRGB(35, 120, 220),
+    [9] = Color3.fromRGB(170, 0, 255), -- الملف الشخصي 
 }
 -- 📌 نسخة أصلية من الألوان الافتراضية (تستخدمها زر "استرجاع الألوان الافتراضية" بتاب الإعدادات)
 UI.DefaultTabColors = {}
@@ -4546,11 +4560,12 @@ local function BlendColor3(base, tint, amount)
     )
 end
 
-UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8}
+UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8, UI.btn9}
 
 -- عند الضغط على تاب: زره ياخذ لون التاب (ممزوج مع الأساس)، والباقي يرجعون للون الأساسي
 
-UI.btn1.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR -- التاب الأول مفعّل افتراضيًا
+UI.btn1.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
+UI.btn9.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR -- الملف الشخصي هو التبويب المفتوح افتراضياً
 UI.btn2.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn3.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn4.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
@@ -4578,6 +4593,8 @@ UI.btn7Stroke = Instance.new("UIStroke", UI.btn7); UI.btn7Stroke.Thickness = 2.5
 UI.tabGlowGrad[7] = AddMovingBorderGlow(UI.btn7Stroke, 1.5, UI.TabColors[7])
 UI.btn8Stroke = Instance.new("UIStroke", UI.btn8); UI.btn8Stroke.Thickness = 2.5; UI.btn8Stroke.Transparency = 0; UI.btn8Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 UI.tabGlowGrad[8] = AddMovingBorderGlow(UI.btn8Stroke, 1.5, UI.TabColors[8])
+UI.btn9Stroke = Instance.new("UIStroke", UI.btn9); UI.btn9Stroke.Thickness = 2.5; UI.btn9Stroke.Transparency = 0; UI.btn9Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UI.tabGlowGrad[9] = AddMovingBorderGlow(UI.btn9Stroke, 1.5, UI.TabColors[9])
 -- خلفية داكنة ثابتة؛ اللون يظهر في الحواف فقط مثل التصميم المطلوب
 for _, button in ipairs(UI.tabButtons) do
     button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -4614,9 +4631,9 @@ end
 
 UI.Underline = Instance.new("Frame")
 UI.Underline.Parent = UI.SideBar
-UI.Underline.Size = UDim2.new(0, 3, 0, 40)
-UI.Underline.Position = UDim2.new(0, 0, 0, 6)
-UI.Underline.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+UI.Underline.Size = UDim2.new(0, 104, 0, 3)
+UI.Underline.Position = UDim2.new(0, 6, 0, 46)
+UI.Underline.BackgroundColor3 = UI.TabColors[9]
 UI.Underline.BorderSizePixel = 0
 UI.Underline.ZIndex = 7
 
@@ -4625,25 +4642,26 @@ Instance.new("UICorner", UI.Underline).CornerRadius = UDim.new(1,0)
 local function MoveUnderline(pos)
     -- ترتيب الأزرار الفعلي؛ btn6 وbtn5 موضعهما متبادلان في السكربت.
     local tabByPosition = {
-        [0] = 1,
-        [0.2] = 2,
-        [0.4] = 3,
-        [0.6] = 4,
-        [0.8] = 6,
-        [1.0] = 5,
-        [1.2] = 7,
-        [1.4] = 8,
+        [0] = 9,
+        [0.2] = 1,
+        [0.4] = 2,
+        [0.6] = 3,
+        [0.8] = 4,
+        [1.0] = 6,
+        [1.2] = 5,
+        [1.4] = 7,
+        [1.6] = 8,
     }
     local key = math.floor(pos * 10 + 0.5) / 10
     local button = UI["btn" .. tostring(tabByPosition[key] or 1)]
     if not button then return end
 
     UI._activeUnderlineButton = button
-    local targetY = button.AbsolutePosition.Y - UI.SideBar.AbsolutePosition.Y + 2
+    local targetX = button.AbsolutePosition.X - UI.SideBar.AbsolutePosition.X + 6
     SkyTw(
         UI.Underline,
         TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        {Position = UDim2.new(0, 0, 0, targetY)}
+        {Position = UDim2.new(0, targetX, 0, 46)}
     ):Play()
 end
 
@@ -4651,8 +4669,8 @@ end
 UI.TabBar:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
     local button = UI._activeUnderlineButton
     if button and button.Parent then
-        local targetY = button.AbsolutePosition.Y - UI.SideBar.AbsolutePosition.Y + 2
-        UI.Underline.Position = UDim2.new(0, 0, 0, targetY)
+        local targetX = button.AbsolutePosition.X - UI.SideBar.AbsolutePosition.X + 6
+        UI.Underline.Position = UDim2.new(0, targetX, 0, 46)
     end
 end)
 
@@ -4679,7 +4697,7 @@ end)
         return s
     end
 
-    UI.Page1 = CreatePage(); UI.Page1.Visible = true
+    UI.Page1 = CreatePage(); UI.Page1.Visible = false
     UI.Page2 = CreatePage()
     UI.Page3 = CreatePage()
     UI.Page4 = CreatePage()
@@ -4687,6 +4705,14 @@ end)
     UI.Page6 = CreatePage()
     UI.Page7 = CreatePage()
     UI.Page8 = CreatePage()
+    UI.Page9 = CreatePage(); UI.Page9.Visible = true
+    -- هامش داخلي حتى لا يُقص إطار بطاقة الملف عند حدود صفحة التمرير.
+    do
+        local profilePadding = UI.Page9:FindFirstChildOfClass("UIPadding") or Instance.new("UIPadding")
+        profilePadding.PaddingTop = UDim.new(0, 8)
+        profilePadding.PaddingLeft = UDim.new(0, 8)
+        profilePadding.PaddingRight = UDim.new(0, 8)
+    end
 
     -- 🎨 الحين صفحات التابات موجودة فعليًا، نربط كل وحدة بلونها ورقمها
     UI.PageGlowColor[UI.Page1] = UI.TabColors[1]
@@ -4697,6 +4723,7 @@ end)
     UI.PageGlowColor[UI.Page6] = UI.TabColors[6]
     UI.PageGlowColor[UI.Page7] = UI.TabColors[7]
     UI.PageGlowColor[UI.Page8] = UI.TabColors[8]
+    UI.PageGlowColor[UI.Page9] = UI.TabColors[9]
 
     UI.PageIndexOf[UI.Page1] = 1
     UI.PageIndexOf[UI.Page2] = 2
@@ -4706,6 +4733,7 @@ end)
     UI.PageIndexOf[UI.Page6] = 6
     UI.PageIndexOf[UI.Page7] = 7
     UI.PageIndexOf[UI.Page8] = 8
+    UI.PageIndexOf[UI.Page9] = 9
     
     -- 🔢 عداد العناصر المفعّلة في كل صفحة + ربطها بزر التاب وبادجه
     UI.PageTabMap = {
@@ -4717,8 +4745,9 @@ end)
         [UI.Page6] = {btn = UI.btn6, badge = UI.tabBadge6},
         [UI.Page7] = {btn = UI.btn7, badge = UI.tabBadge7},
         [UI.Page8] = {btn = UI.btn8, badge = UI.tabBadge8},
+        [UI.Page9] = {btn = UI.btn9, badge = UI.tabBadge9},
     }
-    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0, [UI.Page5] = 0, [UI.Page6] = 0, [UI.Page7] = 0, [UI.Page8] = 0}
+    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0, [UI.Page5] = 0, [UI.Page6] = 0, [UI.Page7] = 0, [UI.Page8] = 0, [UI.Page9] = 0}
 
     local function UpdateBadge(parent)
         local info = UI.PageTabMap[parent]
@@ -6506,6 +6535,254 @@ end)
         end, UI.Page6)
     end
 
+    -- 👤 الملف الشخصي: أقسام مرتبة (عام + الإشعارات) على نمط صفحة الإعدادات.
+    do
+        local profileCard = Instance.new("Frame")
+        profileCard.Name = "SkyProfileCard"
+        profileCard.LayoutOrder = -100
+        profileCard.Size = UDim2.new(1, -4, 0, 258)
+        profileCard.BackgroundColor3 = Color3.fromRGB(22, 19, 29)
+        profileCard.BorderSizePixel = 0
+        profileCard.ZIndex = 7
+        profileCard.Parent = UI.Page9
+        Instance.new("UICorner", profileCard).CornerRadius = UDim.new(0, 14)
+        local cardStroke = Instance.new("UIStroke", profileCard)
+        cardStroke.Thickness = 1.4
+        cardStroke.Color = Color3.fromRGB(170, 0, 255)
+        cardStroke.Transparency = 0.15
+
+        local avatar = Instance.new("ImageLabel")
+        avatar.Name = "PlayerAvatar"
+        avatar.Position = UDim2.new(1, -84, 0, 14)
+        avatar.Size = UDim2.new(0, 68, 0, 68)
+        avatar.BackgroundColor3 = Color3.fromRGB(42, 36, 52)
+        avatar.BorderSizePixel = 0
+        avatar.ZIndex = 8
+        avatar.Parent = profileCard
+        Instance.new("UICorner", avatar).CornerRadius = UDim.new(1, 0)
+        local avatarStroke = Instance.new("UIStroke", avatar)
+        avatarStroke.Color = Color3.fromRGB(170, 0, 255)
+        avatarStroke.Thickness = 2
+
+        -- قسم معلومات مختصر في المساحة الفارغة يسار الصورة الشخصية.
+        local infoCard = Instance.new("Frame")
+        infoCard.Name = "ProfileInfoCard"
+        infoCard.Position = UDim2.new(0, 12, 0, 12)
+        infoCard.Size = UDim2.new(1, -112, 0, 78)
+        infoCard.BackgroundColor3 = Color3.fromRGB(13, 12, 18)
+        infoCard.BackgroundTransparency = 0.08
+        infoCard.BorderSizePixel = 0
+        infoCard.ZIndex = 8
+        infoCard.Parent = profileCard
+        Instance.new("UICorner", infoCard).CornerRadius = UDim.new(0, 9)
+        local infoStroke = Instance.new("UIStroke", infoCard)
+        infoStroke.Color = Color3.fromRGB(170, 0, 255)
+        infoStroke.Thickness = 1.3
+        infoStroke.Transparency = 0.12
+
+        local infoTitle = Instance.new("TextLabel")
+        infoTitle.Name = "InfoTitle"
+        infoTitle.Position = UDim2.new(0, 7, 0, 3)
+        infoTitle.Size = UDim2.new(1, -14, 0, 18)
+        infoTitle.BackgroundTransparency = 1
+        infoTitle.Text = "ⓘ معلومات السكربت"
+        infoTitle.TextColor3 = Color3.fromRGB(205, 155, 255)
+        infoTitle.Font = Enum.Font.GothamBold
+        infoTitle.TextSize = 13
+        infoTitle.TextXAlignment = Enum.TextXAlignment.Right
+        infoTitle.ZIndex = 9
+        infoTitle.Parent = infoCard
+
+        local infoScroll = Instance.new("ScrollingFrame")
+        infoScroll.Name = "InfoList"
+        infoScroll.Position = UDim2.new(0, 5, 0, 23)
+        infoScroll.Size = UDim2.new(1, -10, 1, -27)
+        infoScroll.BackgroundTransparency = 1
+        infoScroll.BorderSizePixel = 0
+        infoScroll.ScrollBarThickness = 3
+        infoScroll.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
+        infoScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        infoScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        infoScroll.ZIndex = 9
+        infoScroll.Parent = infoCard
+
+        local infoLayout = Instance.new("UIListLayout")
+        infoLayout.Padding = UDim.new(0, 3)
+        infoLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        infoLayout.Parent = infoScroll
+
+        local scriptInfoItems = {
+            "اضغط زر القفل 3 مرات بسرعة لإرجاع القوائم لمكانها الأصلي",
+            "ضغطة واحدة على القفل تشغّل أو توقف تثبيت اتجاه الشخصية",
+            "يمكن تحريك زر القفل ضمن مساحة الحركة المحددة له",
+            "زر R مخصص لإعادة إحياء الشخصية",
+            "القوائم تحتفظ بمواضعها أثناء الجلسة",
+            "يمكن تغيير ألوان التابات من صفحة الإعدادات",
+            "صفحة الملف تعرض اسمك واسم الماب وعدد اللاعبين وعمر الحساب",
+            "توجد صفحات للمميزات والتخريب والمساعدة والموسيقى والدردشة",
+            "توجد صفحة للملاحظات والتقييمات داخل السكربت",
+        }
+
+        for index, infoText in ipairs(scriptInfoItems) do
+            local infoRow = Instance.new("TextLabel")
+            infoRow.Name = "InfoRow" .. index
+            infoRow.Size = UDim2.new(1, -3, 0, 36)
+            infoRow.BackgroundTransparency = 1
+            infoRow.Text = "• " .. infoText
+            infoRow.TextColor3 = Color3.fromRGB(225, 220, 235)
+            infoRow.Font = Enum.Font.Gotham
+            infoRow.TextSize = 12
+            infoRow.TextWrapped = true
+            infoRow.TextXAlignment = Enum.TextXAlignment.Right
+            infoRow.TextYAlignment = Enum.TextYAlignment.Center
+            infoRow.ZIndex = 10
+            infoRow.Parent = infoScroll
+        end
+
+        local function profileLabel(parent, name, text, pos, size, color, fontSize, bold)
+            local label = Instance.new("TextLabel")
+            label.Name = name
+            label.Position = pos
+            label.Size = size
+            label.BackgroundTransparency = 1
+            label.Text = text
+            label.TextColor3 = color or Color3.fromRGB(245, 245, 245)
+            label.Font = bold and Enum.Font.GothamBold or Enum.Font.Gotham
+            label.TextSize = fontSize or 14
+            label.TextXAlignment = Enum.TextXAlignment.Right
+            label.TextYAlignment = Enum.TextYAlignment.Center
+            label.TextTruncate = Enum.TextTruncate.AtEnd
+            label.ZIndex = 8
+            label.Parent = parent
+            return label
+        end
+        profileLabel(profileCard, "DisplayName", LocalPlayer.DisplayName, UDim2.new(0, 14, 0, 88), UDim2.new(1, -28, 0, 20), Color3.fromRGB(255, 255, 255), 16, true)
+        profileLabel(profileCard, "Username", "@" .. LocalPlayer.Name, UDim2.new(0, 14, 0, 108), UDim2.new(1, -28, 0, 17), Color3.fromRGB(175, 175, 185), 13, false)
+
+        task.spawn(function()
+            local ok, image = pcall(function()
+                return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+            end)
+            if ok and image and avatar.Parent then avatar.Image = image end
+        end)
+
+        -- قسم «عام» مدمج داخل بطاقة الملف ويبدأ أسفل الصورة والاسم مباشرة.
+        profileLabel(profileCard, "GeneralSectionTitle", "عام", UDim2.new(0, 12, 0, 130), UDim2.new(1, -24, 0, 20), Color3.fromRGB(190, 125, 255), 15, true)
+        local generalDivider = Instance.new("Frame")
+        generalDivider.Name = "GeneralSectionDivider"
+        generalDivider.Position = UDim2.new(0, 10, 0, 153)
+        generalDivider.Size = UDim2.new(1, -20, 0, 1)
+        generalDivider.BackgroundColor3 = Color3.fromRGB(190, 125, 255)
+        generalDivider.BackgroundTransparency = 0.55
+        generalDivider.BorderSizePixel = 0
+        generalDivider.ZIndex = 8
+        generalDivider.Parent = profileCard
+
+        local mapName = "غير معروف"
+        pcall(function()
+            local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+            if info and info.Name and info.Name ~= "" then mapName = info.Name end
+        end)
+        profileLabel(profileCard, "GameName", "الماب: " .. mapName, UDim2.new(0, 12, 0, 160), UDim2.new(1, -24, 0, 20), Color3.fromRGB(230, 220, 245), 12, false)
+        local playerCountLabel = profileLabel(profileCard, "PlayerCount", "اللاعبون في السيرفر: " .. tostring(#Players:GetPlayers()), UDim2.new(0, 12, 0, 182), UDim2.new(1, -24, 0, 18), Color3.fromRGB(175, 220, 255), 12, false)
+        profileLabel(profileCard, "AccountAge", "عمر الحساب: " .. tostring(LocalPlayer.AccountAge) .. " يوم", UDim2.new(0, 12, 0, 202), UDim2.new(1, -24, 0, 17), Color3.fromRGB(200, 185, 220), 11, false)
+        task.spawn(function()
+            while profileCard.Parent do
+                playerCountLabel.Text = "اللاعبون في السيرفر: " .. tostring(#Players:GetPlayers())
+                task.wait(3)
+            end
+        end)
+
+        -- بطاقات إضافية أسفل بطاقة الملف، بنفس الهوية البنفسجية والسوداء.
+        local function createProfileSection(sectionName, titleText, rows, cardHeight, order)
+            local section = Instance.new("Frame")
+            section.Name = sectionName
+            section.Size = UDim2.new(1, -4, 0, cardHeight)
+            section.BackgroundColor3 = Color3.fromRGB(18, 15, 24)
+            section.BackgroundTransparency = 0.04
+            section.BorderSizePixel = 0
+            section.LayoutOrder = order
+            section.ZIndex = 7
+            section.Parent = UI.Page9
+            Instance.new("UICorner", section).CornerRadius = UDim.new(0, 12)
+
+            local outline = Instance.new("UIStroke")
+            outline.Color = Color3.fromRGB(170, 0, 255)
+            outline.Thickness = 1.25
+            outline.Transparency = 0.22
+            outline.Parent = section
+
+            local heading = Instance.new("TextLabel")
+            heading.Name = "SectionTitle"
+            heading.Position = UDim2.new(0, 12, 0, 7)
+            heading.Size = UDim2.new(1, -24, 0, 23)
+            heading.BackgroundTransparency = 1
+            heading.Text = titleText
+            heading.TextColor3 = Color3.fromRGB(205, 155, 255)
+            heading.Font = Enum.Font.GothamBold
+            heading.TextSize = 15
+            heading.TextXAlignment = Enum.TextXAlignment.Right
+            heading.ZIndex = 8
+            heading.Parent = section
+
+            local line = Instance.new("Frame")
+            line.Position = UDim2.new(0, 10, 0, 34)
+            line.Size = UDim2.new(1, -20, 0, 1)
+            line.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+            line.BackgroundTransparency = 0.55
+            line.BorderSizePixel = 0
+            line.ZIndex = 8
+            line.Parent = section
+
+            local body = Instance.new("Frame")
+            body.Name = "SectionContent"
+            body.Position = UDim2.new(0, 10, 0, 41)
+            body.Size = UDim2.new(1, -20, 1, -47)
+            body.BackgroundTransparency = 1
+            body.ZIndex = 8
+            body.Parent = section
+
+            local layout = Instance.new("UIListLayout")
+            layout.Padding = UDim.new(0, sectionName == "PrivateMessageSafety" and 7 or 3)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Parent = body
+
+            for rowIndex, rowText in ipairs(rows) do
+                local row = Instance.new("TextLabel")
+                row.Name = "InfoLine" .. rowIndex
+                local rowHeight = (sectionName == "PrivateMessageSafety") and 30 or 22
+                row.Size = UDim2.new(1, 0, 0, rowHeight)
+                row.BackgroundTransparency = 1
+                row.Text = "• " .. rowText
+                row.TextColor3 = Color3.fromRGB(225, 220, 235)
+                row.Font = Enum.Font.Gotham
+                row.TextSize = 12
+                row.TextWrapped = true
+                row.TextXAlignment = Enum.TextXAlignment.Right
+                row.TextYAlignment = Enum.TextYAlignment.Center
+                row.ZIndex = 9
+                row.Parent = body
+            end
+            return section
+        end
+
+        createProfileSection("ProfileImportant", "⚠ مهم", {
+            "ترى مو كل المابات تستخدم نفس طريقة المشي أو النط.",
+            "بعض المابات يكون عندها نظام خاص للسرعة أو القفز أو الـ FOV، وأشياء ثانية بعد.",
+            "فإذا شفت السرعة أو النط أو أي ميزة من هذي ما تضبط معك، مو شرط يكون فيها خلل.",
+            "غالباً الماب يستخدم طريقة مختلفة عن الطريقة اللي يعتمد عليها السكربت، سواء طريقة الماب نفسها أو الطريقة العادية.",
+            "يعني ممكن بعض المميزات ما تشتغل في كل المابات، وهذا يعتمد على نظام الماب.",
+        }, 188, -99)
+
+        createProfileSection("PrivateMessageSafety", "الي يكلمك ف الخاص 🤨", {
+            "تنبيه ⚠️ انتبه وأنت تكلم أي شخص بالخاص.",
+            "مو كل الناس تعرف نواياهم.",
+            "بعضهم ممكن يحرش معك أو يستدرجك عشان ياخذ معلومات عنك.",
+            "لا تعطي رقم جوالك أو سنابك أو حساباتك أو معلوماتك الشخصية.",
+            "حتى لو حسيت إنك تعرفه وتثق فيه.",
+            "خصوصيتك أهم من أي محادثة ❤️"
+        }, 270, -98)
+    end
     -- المميزات
     NewItem("السرعه", "Input", function(v) 
         local n = tonumber(v) 
@@ -7369,18 +7646,161 @@ local function UpdatePlayerList()
             OK("🔙 كاميرا عادية")
         end
     end, ControlsArea)
-    NewItem("جلوس فوق رأسه", "Button", function(s) if s then saveMyPos(); OK("🪑 جالس على: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟")) else OK("🚶 توقف الجلوس") end; State.sittingOnHead = s end, ControlsArea)    NewItem("نــ-ـيـ-ك", "Button", function(s)
+    -- لوحة سرعة عائمة مشتركة لبانق1 وبانق2، مستقلة عن القائمة الرئيسية.
+    State.BangSpeed = State.BangSpeed or 1
+    State.OpenBangSpeedPanel = function()
+        local old = ScreenGui:FindFirstChild("BangSpeedPanel")
+        if old then old:Destroy() end
+        local panel = Instance.new("Frame")
+        panel.Name = "BangSpeedPanel"
+        panel.Size = UDim2.new(0, 250, 0, 118)
+        panel.Position = UDim2.new(0.5, -125, 0.72, 0)
+        panel.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+        panel.BorderSizePixel = 0
+        panel.ZIndex = 1000
+        panel.Active = true
+        panel.Draggable = true
+        local glow = Instance.new("Frame")
+        glow.Name = "BangSpeedGlow"
+        glow.BackgroundTransparency = 1
+        glow.BorderSizePixel = 0
+        glow.Size = UDim2.new(panel.Size.X.Scale, panel.Size.X.Offset + 10, panel.Size.Y.Scale, panel.Size.Y.Offset + 10)
+        glow.Position = UDim2.new(panel.Position.X.Scale, panel.Position.X.Offset - 5, panel.Position.Y.Scale, panel.Position.Y.Offset - 5)
+        glow.ZIndex = 998
+        glow.Parent = ScreenGui
+        Instance.new("UICorner", glow).CornerRadius = UDim.new(0, 16)
+        local purpleGlow = Instance.new("UIStroke")
+        purpleGlow.Color = Color3.fromRGB(170, 0, 255)
+        purpleGlow.Thickness = 8
+        purpleGlow.Transparency = 0.35
+        purpleGlow.Parent = glow
+        local blackShadow = Instance.new("Frame")
+        blackShadow.Name = "BangSpeedBlackShadow"
+        blackShadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        blackShadow.BackgroundTransparency = 0.2
+        blackShadow.BorderSizePixel = 0
+        blackShadow.Size = UDim2.new(panel.Size.X.Scale, panel.Size.X.Offset + 14, panel.Size.Y.Scale, panel.Size.Y.Offset + 14)
+        blackShadow.Position = UDim2.new(panel.Position.X.Scale, panel.Position.X.Offset + 2, panel.Position.Y.Scale, panel.Position.Y.Offset + 4)
+        blackShadow.ZIndex = 997
+        blackShadow.Parent = ScreenGui
+        Instance.new("UICorner", blackShadow).CornerRadius = UDim.new(0, 18)
+        panel:GetPropertyChangedSignal("Position"):Connect(function()
+            if panel.Parent then
+                glow.Position = UDim2.new(panel.Position.X.Scale, panel.Position.X.Offset - 5, panel.Position.Y.Scale, panel.Position.Y.Offset - 5)
+                blackShadow.Position = UDim2.new(panel.Position.X.Scale, panel.Position.X.Offset + 2, panel.Position.Y.Scale, panel.Position.Y.Offset + 4)
+            end
+        end)
+        panel.Parent = ScreenGui
+        panel.Destroying:Connect(function()
+            if glow then glow:Destroy() end
+            if blackShadow then blackShadow:Destroy() end
+        end)
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 12)
+        corner.Parent = panel
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(170, 0, 255)
+        stroke.Thickness = 3
+        stroke.Parent = panel
+        local blackGlow = Instance.new("UIStroke")
+        blackGlow.Color = Color3.fromRGB(0, 0, 0)
+        blackGlow.Thickness = 4
+        blackGlow.Transparency = 0.15
+        blackGlow.Parent = panel
+        local title = Instance.new("TextLabel")
+        title.BackgroundTransparency = 1
+        title.Size = UDim2.new(1, -42, 0, 34)
+        title.Position = UDim2.new(0, 10, 0, 5)
+        title.Font = Enum.Font.GothamBold
+        title.Text = "سرعة البانق"
+        title.TextColor3 = Color3.fromRGB(170, 0, 255)
+        title.TextSize = 17
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.ZIndex = 1001
+        title.Parent = panel
+        local close = Instance.new("TextButton")
+        close.Size = UDim2.new(0, 30, 0, 30)
+        close.Position = UDim2.new(1, -36, 0, 5)
+        close.BackgroundTransparency = 1
+        close.Text = "×"
+        close.TextColor3 = Color3.fromRGB(170, 0, 255)
+        close.TextSize = 24
+        close.ZIndex = 1001
+        close.Parent = panel
+        close.Activated:Connect(function() panel:Destroy() end)
+        local valueLabel = Instance.new("TextLabel")
+        valueLabel.BackgroundTransparency = 1
+        valueLabel.Size = UDim2.new(1, -20, 0, 24)
+        valueLabel.Position = UDim2.new(0, 10, 0, 40)
+        valueLabel.Font = Enum.Font.Gotham
+        valueLabel.TextColor3 = Color3.fromRGB(170, 0, 255)
+        valueLabel.TextSize = 15
+        valueLabel.ZIndex = 1001
+        valueLabel.Parent = panel
+        local track = Instance.new("TextButton")
+        track.Name = "SpeedTrack"
+        track.Size = UDim2.new(1, -32, 0, 12)
+        track.Position = UDim2.new(0, 16, 0, 82)
+        track.BackgroundColor3 = Color3.fromRGB(55, 0, 80)
+        track.Text = ""
+        track.AutoButtonColor = false
+        track.ZIndex = 1001
+        track.Parent = panel
+        Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+        local fill = Instance.new("Frame")
+        fill.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+        fill.BorderSizePixel = 0
+        fill.ZIndex = 1002
+        fill.Parent = track
+        Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 20, 0, 20)
+        knob.AnchorPoint = Vector2.new(0.5, 0.5)
+        knob.BackgroundColor3 = Color3.fromRGB(170, 0, 255)
+        knob.BorderSizePixel = 0
+        knob.ZIndex = 1003
+        knob.Parent = track
+        Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+        local dragging = false
+        local UIS = game:GetService("UserInputService")
+        local function setSpeedFromX(x)
+            local width = math.max(track.AbsoluteSize.X, 1)
+            local ratio = math.clamp((x - track.AbsolutePosition.X) / width, 0, 1)
+            State.BangSpeed = math.floor((0.25 + ratio * 2.75) * 100 + 0.5) / 100
+            fill.Size = UDim2.new(ratio, 0, 1, 0)
+            knob.Position = UDim2.new(ratio, 0, 0.5, 0)
+            valueLabel.Text = string.format("السرعة: %.2f×", State.BangSpeed)
+        end
+        track.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                setSpeedFromX(input.Position.X)
+            end
+        end)
+        UIS.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                setSpeedFromX(input.Position.X)
+            end
+        end)
+        UIS.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+        end)
+        setSpeedFromX(track.AbsolutePosition.X + track.AbsoluteSize.X * ((State.BangSpeed - 0.25) / 2.75))
+    end
+    NewItem("جلوس فوق رأسه", "Button", function(s) if s then saveMyPos(); OK("🪑 جالس على: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟")) else OK("🚶 توقف الجلوس") end; State.sittingOnHead = s end, ControlsArea)    NewItem("بانق1", "Button", function(s)
         State.hmmActive = s
         State._hmmPhase = 0
+        if State.OpenBangSpeedPanel then State.OpenBangSpeedPanel() end
         if s then
             OK("نــ-ـيـ-ك: تشغيل")
         else
             OK("نــ-ـيـ-ك: إيقاف")
         end
     end, ControlsArea)
-    NewItem("يــمــص", "Button", function(s)
+    NewItem("بانق2", "Button", function(s)
         State.headBangActive = s
         State._headBangPhase = 0
+        if State.OpenBangSpeedPanel then State.OpenBangSpeedPanel() end
         if s then
             saveMyPos()
             OK("يــمــص: جلوس فوق رأس اللاعب")
@@ -11055,7 +11475,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page1)
-        MoveUnderline(0)
+        MoveUnderline(0.2)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[1]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[1])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[1])
@@ -11075,7 +11495,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page6.Visible = false
         UI.Page7.Visible = false
         UI.Page8.Visible = false
-        MoveUnderline(0.2)
+        MoveUnderline(0.4)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[2]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[2])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[2])
@@ -11119,7 +11539,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page3)
-        MoveUnderline(0.4)
+        MoveUnderline(0.6)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[3]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[3])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[3])
@@ -11137,7 +11557,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page4)
-        MoveUnderline(0.6)
+        MoveUnderline(0.8)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[4]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[4])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[4])
@@ -11278,7 +11698,7 @@ UI.btn1.MouseButton1Click:Connect(function()
     UI.Page7.Visible = false
     UI.Page8.Visible = false
     AnimatePage(UI.Page6)
-    MoveUnderline(0.8)
+    MoveUnderline(1.0)
     SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[6]}):Play()
     SetGlowColor(UI.MainGlowGradient, UI.TabColors[6])
     SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[6])
@@ -11296,7 +11716,7 @@ end)
         UI.Page7.Visible = true
         UI.Page8.Visible = false
         AnimatePage(UI.Page7)
-        MoveUnderline(1.2)
+        MoveUnderline(1.4)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[7]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[7])
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[7])
@@ -11634,6 +12054,22 @@ end)
     end)
     
     -- أي تاب ثاني يتفتح = صفحة الدردشة مب ظاهرة
+    -- الملف الشخصي: صفحة مستقلة وهي أول تبويب في الشريط.
+    UI.btn9.MouseButton1Click:Connect(function()
+        playClick()
+        for _, page in ipairs({UI.Page1, UI.Page2, UI.Page3, UI.Page4, UI.Page5, UI.Page6, UI.Page7, UI.Page8}) do
+            page.Visible = false
+        end
+        UI.Page9.Visible = true
+        MoveUnderline(0)
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[9]}):Play()
+        SetGlowColor(UI.MainGlowGradient, UI.TabColors[9])
+        SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[9])
+        SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[9])
+    end)
+    for _, tabButton in ipairs({UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn6, UI.btn7}) do
+        tabButton.MouseButton1Click:Connect(function() UI.Page9.Visible = false end)
+    end
     UI.btn1.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
     UI.btn2.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
     UI.btn3.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
@@ -11970,6 +12406,25 @@ end)
         -- لا ترجع للواجهة حتى لو كانت ما زالت محفوظة في Firebase.
         local CHAT_SESSION_STARTED_AT = os.time()
         local chatMessageCache = {}
+        local blockedUserIds = {}
+        local myBlockListUrl = BLOCKS_URL:gsub("%.json$", "/" .. tostring(game.Players.LocalPlayer.UserId) .. ".json") .. "?auth=" .. AUTH_TOKEN
+        local function isUserBlocked(userId)
+            return userId ~= nil and blockedUserIds[tostring(userId)] == true
+        end
+        local function loadMyBlocks()
+            local ok, response = pcall(function() return request({Url = myBlockListUrl, Method = "GET"}) end)
+            if not ok or not response or not response.Body then return end
+            local decodedOk, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
+            if decodedOk and type(data) == "table" then
+                blockedUserIds = {}
+                for id, value in pairs(data) do
+                    if value == true or (type(value) == "table" and value.blocked == true) then
+                        blockedUserIds[tostring(id)] = true
+                    end
+                end
+            end
+        end
+        task.spawn(loadMyBlocks)
         local addChatMsg
         local inputBox -- ⬅️ معرّف هنا فوق (كان يتعرّف بعد switchChatMode فيصير nil جواها ويوقف الدالة قبل ما تعيد بناء الرسائل)
 
@@ -12683,8 +13138,11 @@ end)
             local sorted = {}
             for _, n in ipairs(_G.SkyPresentNames or {}) do
                 if n ~= me and not wanted[n] then
-                    wanted[n] = true
-                    table.insert(sorted, n)
+                    local uid = dmResolveUserId(n)
+                    if not isUserBlocked(uid) then
+                        wanted[n] = true
+                        table.insert(sorted, n)
+                    end
                 end
             end
             table.sort(sorted)
@@ -12884,6 +13342,10 @@ end)
         end
 
         local function pmShow(uid, name)
+            if isUserBlocked(uid) then
+                Notify("🚫 محظور", "أزل الحظر أولاً لفتح المحادثة", Color3.fromRGB(255, 70, 70), true)
+                return
+            end
             ensurePmLog()
             _G.SkyPmActiveUserId = uid
             _G.SkyPmTarget = {userId = uid, name = name}
@@ -13081,6 +13543,7 @@ end)
             if tid == myId then partner = uid
             elseif uid == myId then partner = tid
             else return end
+            if isUserBlocked(partner) then return end
             local key = tostring(m.clientId or m.id or (tostring(m.timestamp) .. ":" .. tostring(m.text)))
             local isNew = _G.SkyPmStore(partner, m, key)
             -- إشعار بس للرسايل الجديدة من الشخص الثاني (مو رسايلي، ومو من قبل تشغيل السكربت)
@@ -14078,6 +14541,7 @@ end)
             row:SetAttribute("ChatClientId", tostring(clientId or ""))
             row:SetAttribute("ChatTimestamp", tonumber(timestamp) or 0)
             row:SetAttribute("ChatSender", tostring(sender))
+            row:SetAttribute("ChatUserId", tonumber(userId) or 0)
             row:SetAttribute("ChatText", tostring(text))
             row:SetAttribute("ChatJobId", tostring(jobId or ""))
             row:SetAttribute("ChatPlaceId", tostring(placeId or game.PlaceId))
@@ -14850,7 +15314,7 @@ end)
         playerInfoFrame.Name = "PlayerInfoFrame"
         playerInfoFrame.AnchorPoint = Vector2.new(0.5, 0.5)
         playerInfoFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-        playerInfoFrame.Size = UDim2.new(0, 350, 0, 350)
+        playerInfoFrame.Size = UDim2.new(0, 350, 0, 410)
         playerInfoFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
         playerInfoFrame.Visible = false
         playerInfoFrame.ZIndex = 91
@@ -14937,10 +15401,92 @@ end)
         joinServerStroke.Thickness = 1.8
         AddMovingBorderGlow(joinServerStroke, 1.6, Color3.fromRGB(170, 0, 255))
 
+        local blockUserButton = Instance.new("TextButton", playerInfoFrame)
+        blockUserButton.Name = "BlockUserButton"
+        blockUserButton.Size = UDim2.new(0.48, -10, 0, 34)
+        blockUserButton.Position = UDim2.new(0, 14, 0, 194)
+        blockUserButton.BackgroundColor3 = Color3.fromRGB(75, 28, 30)
+        blockUserButton.Text = "🚫 حظر"
+        blockUserButton.TextColor3 = Color3.fromRGB(255, 180, 180)
+        blockUserButton.Font = Enum.Font.GothamBold
+        blockUserButton.TextSize = 13
+        blockUserButton.ZIndex = 93
+        Instance.new("UICorner", blockUserButton).CornerRadius = UDim.new(0, 8)
+
+        local reportUserButton = Instance.new("TextButton", playerInfoFrame)
+        reportUserButton.Name = "ReportUserButton"
+        reportUserButton.Size = UDim2.new(0.48, -10, 0, 34)
+        reportUserButton.Position = UDim2.new(0.52, -4, 0, 194)
+        reportUserButton.BackgroundColor3 = Color3.fromRGB(55, 25, 25)
+        reportUserButton.Text = "⚠️ بلاغ"
+        reportUserButton.TextColor3 = Color3.fromRGB(255, 210, 150)
+        reportUserButton.Font = Enum.Font.GothamBold
+        reportUserButton.TextSize = 13
+        reportUserButton.ZIndex = 93
+        Instance.new("UICorner", reportUserButton).CornerRadius = UDim.new(0, 8)
+
+        local reportComposer = Instance.new("Frame", playerInfoGui)
+        reportComposer.Name = "SkyReportComposer"
+        reportComposer.AnchorPoint = Vector2.new(0.5, 0.5)
+        reportComposer.Position = UDim2.new(0.5, 0, 0.5, 0)
+        reportComposer.Size = UDim2.new(0, 320, 0, 230)
+        reportComposer.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+        reportComposer.Visible = false
+        reportComposer.ZIndex = 150
+        Instance.new("UICorner", reportComposer).CornerRadius = UDim.new(0, 12)
+        local reportComposerStroke = Instance.new("UIStroke", reportComposer)
+        reportComposerStroke.Color = Color3.fromRGB(255, 65, 65)
+        reportComposerStroke.Thickness = 2
+        local reportPrompt = Instance.new("TextLabel", reportComposer)
+        reportPrompt.Size = UDim2.new(1, -20, 0, 38)
+        reportPrompt.Position = UDim2.new(0, 10, 0, 8)
+        reportPrompt.BackgroundTransparency = 1
+        reportPrompt.Text = "اكتب سبب البلاغ"
+        reportPrompt.TextColor3 = Color3.fromRGB(255, 220, 220)
+        reportPrompt.Font = Enum.Font.GothamBold
+        reportPrompt.TextSize = 15
+        reportPrompt.ZIndex = 151
+        local reportReasonBox = Instance.new("TextBox", reportComposer)
+        reportReasonBox.Size = UDim2.new(1, -20, 0, 112)
+        reportReasonBox.Position = UDim2.new(0, 10, 0, 52)
+        reportReasonBox.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
+        reportReasonBox.TextColor3 = Color3.new(1, 1, 1)
+        reportReasonBox.PlaceholderText = "اشرح المشكلة باختصار..."
+        reportReasonBox.Text = ""
+        reportReasonBox.ClearTextOnFocus = false
+        reportReasonBox.MultiLine = true
+        reportReasonBox.TextWrapped = true
+        reportReasonBox.TextXAlignment = Enum.TextXAlignment.Right
+        reportReasonBox.TextYAlignment = Enum.TextYAlignment.Top
+        reportReasonBox.Font = Enum.Font.Gotham
+        reportReasonBox.TextSize = 14
+        reportReasonBox.ZIndex = 151
+        Instance.new("UICorner", reportReasonBox).CornerRadius = UDim.new(0, 8)
+        local reportSubmitButton = Instance.new("TextButton", reportComposer)
+        reportSubmitButton.Size = UDim2.new(0.58, -10, 0, 38)
+        reportSubmitButton.Position = UDim2.new(0, 10, 1, -50)
+        reportSubmitButton.BackgroundColor3 = Color3.fromRGB(115, 35, 35)
+        reportSubmitButton.Text = "إرسال البلاغ"
+        reportSubmitButton.TextColor3 = Color3.new(1, 1, 1)
+        reportSubmitButton.Font = Enum.Font.GothamBold
+        reportSubmitButton.TextSize = 13
+        reportSubmitButton.ZIndex = 151
+        Instance.new("UICorner", reportSubmitButton).CornerRadius = UDim.new(0, 8)
+        local reportCancelButton = Instance.new("TextButton", reportComposer)
+        reportCancelButton.Size = UDim2.new(0.38, -10, 0, 38)
+        reportCancelButton.Position = UDim2.new(0.62, 0, 1, -50)
+        reportCancelButton.BackgroundColor3 = Color3.fromRGB(38, 38, 44)
+        reportCancelButton.Text = "إلغاء"
+        reportCancelButton.TextColor3 = Color3.new(1, 1, 1)
+        reportCancelButton.Font = Enum.Font.GothamBold
+        reportCancelButton.TextSize = 13
+        reportCancelButton.ZIndex = 151
+        Instance.new("UICorner", reportCancelButton).CornerRadius = UDim.new(0, 8)
+
         local developerTools = Instance.new("Frame", playerInfoFrame)
         developerTools.Name = "DeveloperPlayerTools"
         developerTools.Size = UDim2.new(1, -28, 0, 136)
-        developerTools.Position = UDim2.new(0, 14, 0, 194)
+        developerTools.Position = UDim2.new(0, 14, 0, 238)
         developerTools.BackgroundColor3 = Color3.fromRGB(22, 12, 18)
         developerTools.Visible = false
         developerTools.ZIndex = 92
@@ -15110,6 +15656,190 @@ end)
             end)
         end
 
+        -- 🚩 لوحة البلاغات الخاصة بحساب المطوّر فقط.
+        local reportsTabButton = ReportsTabButton
+        local reportsPanel = Instance.new("Frame", ScreenGui)
+        reportsPanel.Name = "SkyReportsPanel"
+        reportsPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+        reportsPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+        reportsPanel.Size = UDim2.new(0, 390, 0, 430)
+        reportsPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+        reportsPanel.Visible = false
+        reportsPanel.ZIndex = 80
+        Instance.new("UICorner", reportsPanel).CornerRadius = UDim.new(0, 12)
+        local reportsStroke = Instance.new("UIStroke", reportsPanel)
+        reportsStroke.Color = Color3.fromRGB(255, 65, 65)
+        reportsStroke.Thickness = 2
+        local reportsTitle = Instance.new("TextLabel", reportsPanel)
+        reportsTitle.Size = UDim2.new(1, -54, 0, 34)
+        reportsTitle.Position = UDim2.new(0, 10, 0, 6)
+        reportsTitle.BackgroundTransparency = 1
+        reportsTitle.Text = "🚩 بلاغات المستخدمين"
+        reportsTitle.TextColor3 = Color3.fromRGB(255, 120, 120)
+        reportsTitle.Font = Enum.Font.GothamBold
+        reportsTitle.TextSize = 16
+        reportsTitle.ZIndex = 81
+        local reportsClose = Instance.new("TextButton", reportsPanel)
+        reportsClose.Size = UDim2.new(0, 32, 0, 28)
+        reportsClose.Position = UDim2.new(1, -40, 0, 7)
+        reportsClose.Text = "X"
+        reportsClose.BackgroundColor3 = Color3.fromRGB(55, 25, 25)
+        reportsClose.TextColor3 = Color3.new(1, 1, 1)
+        reportsClose.ZIndex = 82
+        Instance.new("UICorner", reportsClose)
+        local reportsScroll = Instance.new("ScrollingFrame", reportsPanel)
+        reportsScroll.Position = UDim2.new(0, 8, 0, 44)
+        reportsScroll.Size = UDim2.new(1, -16, 1, -52)
+        reportsScroll.BackgroundTransparency = 1
+        reportsScroll.BorderSizePixel = 0
+        reportsScroll.ScrollBarThickness = 4
+        reportsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        reportsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+        reportsScroll.ZIndex = 81
+        local reportsLayout = Instance.new("UIListLayout", reportsScroll)
+        reportsLayout.Padding = UDim.new(0, 7)
+        reportsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        local function openReportedHistory(targetId, targetName)
+            for _, child in ipairs(reportsPanel:GetChildren()) do
+                if child.Name == "ReportHistoryOverlay" then child:Destroy() end
+            end
+            local history = Instance.new("Frame", reportsPanel)
+            history.Name = "ReportHistoryOverlay"
+            history.Size = UDim2.new(1, -20, 1, -60)
+            history.Position = UDim2.new(0, 10, 0, 50)
+            history.BackgroundColor3 = Color3.fromRGB(15, 15, 19)
+            history.ZIndex = 90
+            Instance.new("UICorner", history).CornerRadius = UDim.new(0, 9)
+            local title = Instance.new("TextLabel", history)
+            title.Size = UDim2.new(1, -46, 0, 30)
+            title.Position = UDim2.new(0, 8, 0, 4)
+            title.BackgroundTransparency = 1
+            title.Text = "رسائل العام: " .. tostring(targetName)
+            title.TextColor3 = Color3.fromRGB(255, 180, 180)
+            title.Font = Enum.Font.GothamBold
+            title.TextSize = 13
+            title.ZIndex = 91
+            local close = Instance.new("TextButton", history)
+            close.Size = UDim2.new(0, 30, 0, 27)
+            close.Position = UDim2.new(1, -36, 0, 4)
+            close.Text = "رجوع"
+            close.TextColor3 = Color3.new(1, 1, 1)
+            close.BackgroundColor3 = Color3.fromRGB(45, 35, 35)
+            close.ZIndex = 92
+            Instance.new("UICorner", close)
+            local scroll = Instance.new("ScrollingFrame", history)
+            scroll.Position = UDim2.new(0, 6, 0, 38)
+            scroll.Size = UDim2.new(1, -12, 1, -44)
+            scroll.BackgroundTransparency = 1
+            scroll.BorderSizePixel = 0
+            scroll.ScrollBarThickness = 4
+            scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+            scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+            scroll.ZIndex = 91
+            local layout = Instance.new("UIListLayout", scroll)
+            layout.Padding = UDim.new(0, 4)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            close.MouseButton1Click:Connect(function() history:Destroy() end)
+            task.spawn(function()
+                local ok, response = pcall(function() return request({Url = FIREBASE_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"}) end)
+                if not ok or not response or not response.Body then return end
+                local parsed, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
+                if not parsed or type(data) ~= "table" then return end
+                local rows = {}
+                for _, m in pairs(data) do
+                    if type(m) == "table" and tonumber(m.userId) == tonumber(targetId)
+                        and (m.chatType == nil or m.chatType == "general" or m.chatType == "friends") then
+                        table.insert(rows, m)
+                    end
+                end
+                table.sort(rows, function(a,b) return (tonumber(a.timestamp) or 0) < (tonumber(b.timestamp) or 0) end)
+                for i = math.max(1, #rows - 99), #rows do
+                    local m = rows[i]
+                    if m then
+                        local row = Instance.new("TextLabel", scroll)
+                        row.Size = UDim2.new(1, -4, 0, 48)
+                        row.BackgroundColor3 = Color3.fromRGB(30, 25, 28)
+                        row.TextColor3 = Color3.fromRGB(240, 230, 230)
+                        row.Font = Enum.Font.Gotham
+                        row.TextSize = 12
+                        row.TextWrapped = true
+                        row.TextXAlignment = Enum.TextXAlignment.Right
+                        row.Text = os.date("%Y-%m-%d %H:%M", tonumber(m.timestamp) or os.time()) .. "\n" .. tostring(m.text or "")
+                        row.ZIndex = 92
+                        Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+                    end
+                end
+            end)
+        end
+        local function refreshReports()
+            if not isDeveloper then return end
+            for _, child in ipairs(reportsScroll:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
+            task.spawn(function()
+                local ok, response = pcall(function() return request({Url = REPORTS_URL .. "?auth=" .. AUTH_TOKEN, Method = "GET"}) end)
+                if not ok or not response or not response.Body then return end
+                local parsed, data = pcall(function() return game:GetService("HttpService"):JSONDecode(response.Body) end)
+                if not parsed or type(data) ~= "table" then return end
+                local list = {}
+                for key, report in pairs(data) do
+                    if type(report) == "table" then report._key = key; table.insert(list, report) end
+                end
+                table.sort(list, function(a,b) return (tonumber(a.timestamp) or 0) > (tonumber(b.timestamp) or 0) end)
+                if #list == 0 then
+                    local empty = Instance.new("TextLabel", reportsScroll)
+                    empty.Size = UDim2.new(1, -4, 0, 42)
+                    empty.BackgroundTransparency = 1
+                    empty.Text = "ما فيه بلاغات حالياً"
+                    empty.TextColor3 = Color3.fromRGB(210, 210, 210)
+                    empty.Font = Enum.Font.Gotham
+                    empty.TextSize = 14
+                    empty.ZIndex = 82
+                    return
+                end
+                for i, report in ipairs(list) do
+                    local card = Instance.new("Frame", reportsScroll)
+                    card.Name = "ReportCard"
+                    card.Size = UDim2.new(1, -4, 0, 130)
+                    card.BackgroundColor3 = Color3.fromRGB(28, 22, 25)
+                    card.BorderSizePixel = 0
+                    card.LayoutOrder = i
+                    card.ZIndex = 82
+                    Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+                    local body = Instance.new("TextLabel", card)
+                    body.Position = UDim2.new(0, 8, 0, 5)
+                    body.Size = UDim2.new(1, -16, 0, 78)
+                    body.BackgroundTransparency = 1
+                    body.TextColor3 = Color3.fromRGB(245, 230, 230)
+                    body.Font = Enum.Font.Gotham
+                    body.TextSize = 12
+                    body.TextWrapped = true
+                    body.TextXAlignment = Enum.TextXAlignment.Right
+                    body.TextYAlignment = Enum.TextYAlignment.Top
+                    body.Text = "المبلّغ: " .. tostring(report.reporterName or "?") .. "  |  المُبلّغ عليه: " .. tostring(report.targetName or report.targetUserId or "?") .. "\nالسبب: " .. tostring(report.reason or "")
+                    body.ZIndex = 83
+                    local historyBtn = Instance.new("TextButton", card)
+                    historyBtn.Position = UDim2.new(0, 8, 1, -40)
+                    historyBtn.Size = UDim2.new(1, -16, 0, 32)
+                    historyBtn.BackgroundColor3 = Color3.fromRGB(75, 30, 35)
+                    historyBtn.Text = "عرض رسائل العام للشخص المُبلّغ عليه"
+                    historyBtn.TextColor3 = Color3.new(1, 1, 1)
+                    historyBtn.Font = Enum.Font.GothamBold
+                    historyBtn.TextSize = 12
+                    historyBtn.ZIndex = 84
+                    Instance.new("UICorner", historyBtn).CornerRadius = UDim.new(0, 7)
+                    historyBtn.MouseButton1Click:Connect(function() openReportedHistory(report.targetUserId, report.targetName) end)
+                end
+            end)
+        end
+        if isDeveloper then
+            reportsTabButton.MouseButton1Click:Connect(function()
+                reportsPanel.Visible = true
+                refreshReports()
+            end)
+            reportsClose.MouseButton1Click:Connect(function() reportsPanel.Visible = false end)
+            for _, normalTab in ipairs({UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8, UI.btn9}) do
+                normalTab.MouseButton1Click:Connect(function() reportsPanel.Visible = false end)
+            end
+        end
         local selectedInfoUserId
         local selectedInfoPlayer
         local selectedInfoJobId
@@ -15123,6 +15853,69 @@ end)
             selectedInfoPlaceId = nil
         end
         playerInfoClose.MouseButton1Click:Connect(closePlayerInfo)
+        blockUserButton.MouseButton1Click:Connect(function()
+            if not selectedInfoUserId or selectedInfoUserId == game.Players.LocalPlayer.UserId then return end
+            local id = tostring(selectedInfoUserId)
+            local shouldBlock = not isUserBlocked(id)
+            blockedUserIds[id] = shouldBlock and true or nil
+            task.spawn(function()
+                pcall(function()
+                    request({Url = myBlockListUrl, Method = "PUT", Headers = { ["Content-Type"] = "application/json" }, Body = game:GetService("HttpService"):JSONEncode(blockedUserIds)})
+                end)
+            end)
+            blockUserButton.Text = shouldBlock and "✅ إلغاء الحظر" or "🚫 حظر"
+            if shouldBlock then
+                for key, msg in pairs(chatMessageCache) do
+                    if type(msg) == "table" and tonumber(msg.userId) == selectedInfoUserId then chatMessageCache[key] = nil end
+                end
+                for _, log in pairs({generalChatLog, friendsChatLog, chatLog}) do
+                    if log and log.Parent then
+                        for _, row in ipairs(log:GetChildren()) do
+                            if row:IsA("Frame") and tonumber(row:GetAttribute("ChatUserId")) == selectedInfoUserId then row:Destroy() end
+                        end
+                    end
+                end
+                if _G.SkyPmActiveUserId == selectedInfoUserId and _G.SkyPmExit then _G.SkyPmExit() end
+                if _G.SkyPmRefresh then _G.SkyPmRefresh() end
+                Notify("🚫 الحظر", "لن تظهر لك رسائل هذا الشخص أو إشعاراته في هذه النسخة", Color3.fromRGB(255, 70, 70), true)
+            else
+                Notify("✅ الحظر", "تم إلغاء الحظر", Color3.fromRGB(100, 230, 150), true)
+            end
+        end)
+        reportUserButton.MouseButton1Click:Connect(function()
+            if not selectedInfoUserId or selectedInfoUserId == game.Players.LocalPlayer.UserId then return end
+            reportComposer:SetAttribute("TargetUserId", selectedInfoUserId)
+            reportComposer:SetAttribute("TargetName", selectedInfoPlayer and selectedInfoPlayer.Name or playerInfoTitle.Text)
+            reportReasonBox.Text = ""
+            reportComposer.Visible = true
+        end)
+        reportCancelButton.MouseButton1Click:Connect(function() reportComposer.Visible = false end)
+        reportSubmitButton.MouseButton1Click:Connect(function()
+            local reason = tostring(reportReasonBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+            local targetId = tonumber(reportComposer:GetAttribute("TargetUserId"))
+            if not targetId or reason == "" then
+                Notify("البلاغ", "اكتب سبب البلاغ أولاً", Color3.fromRGB(255, 170, 80), true)
+                return
+            end
+            reportSubmitButton.Active = false
+            local payload = {reporterId = game.Players.LocalPlayer.UserId, reporterName = game.Players.LocalPlayer.Name,
+                targetUserId = targetId, targetName = tostring(reportComposer:GetAttribute("TargetName") or ""),
+                reason = reason:sub(1, 700), timestamp = os.time(), status = "new"}
+            task.spawn(function()
+                local ok, response = pcall(function()
+                    return request({Url = REPORTS_URL .. "?auth=" .. AUTH_TOKEN, Method = "POST",
+                        Headers = { ["Content-Type"] = "application/json" }, Body = game:GetService("HttpService"):JSONEncode(payload)})
+                end)
+                reportSubmitButton.Active = true
+                if ok and response and (not response.StatusCode or response.StatusCode == 200) then
+                    reportComposer.Visible = false
+                    closePlayerInfo()
+                    Notify("✅ تم إرسال البلاغ", "وصل البلاغ للمطوّر للمراجعة", Color3.fromRGB(100, 230, 150), true)
+                else
+                    Notify("تعذر إرسال البلاغ", "تحقق من الاتصال وحاول مرة ثانية", Color3.fromRGB(255, 70, 70), true)
+                end
+            end)
+        end)
         -- الضغط خارج القائمة لا يغلقها؛ الإغلاق من زر X فقط.
 
         openPlayerInfo = function(sender, userId, jobId, placeId)
@@ -15156,6 +15949,9 @@ end)
                 .. '<font color="#93C5FD">' .. tostring(username) .. '</font> <font color="#FFFFFF">اسم المستخدم</font>\n'
                 .. '<font color="#86EFAC">' .. tostring(mapName) .. '</font> <font color="#FFFFFF">داخل الماب</font>'
             developerTools.Visible = isDeveloper and selectedInfoUserId ~= game.Players.LocalPlayer.UserId
+            blockUserButton.Visible = selectedInfoUserId ~= nil and selectedInfoUserId ~= game.Players.LocalPlayer.UserId
+            reportUserButton.Visible = blockUserButton.Visible
+            blockUserButton.Text = isUserBlocked(selectedInfoUserId) and "✅ إلغاء الحظر" or "🚫 حظر"
             joinServerBtn.Visible = selectedInfoPlayer ~= nil or (selectedInfoJobId and selectedInfoJobId ~= "")
             playerInfoBackdrop.Visible = true
             playerInfoFrame.Visible = true
@@ -15493,6 +16289,11 @@ end)
         _G.SkyPmSend = function(box)
             local target = _G.SkyPmTarget
             if not target then return end
+            if isUserBlocked(target.userId) then
+                box.Text = ""
+                Notify("🚫 محظور", "أزل الحظر أولاً لإرسال رسالة", Color3.fromRGB(255, 70, 70), true)
+                return
+            end
             local text = tostring(box.Text or "")
             if text:gsub("%s+", "") == "" then return end
             local me = game.Players.LocalPlayer
@@ -15790,6 +16591,7 @@ end)
                                 end
                             end
                             local senderMuted = m.userId and chatMuteRemaining(m.userId) > 0
+                            local senderBlocked = isUserBlocked(m.userId)
                             local key = "id:" .. tostring(m.id)
                             local fallback = "msg:" .. tostring(m.timestamp) .. ":" .. tostring(m.sender) .. ":" .. tostring(m.text)
                             if not existing[key] and not existing[fallback] then
@@ -15803,7 +16605,7 @@ end)
                                             showPrivateAlert(m.text)
                                         end
                                     end
-                                elseif not senderMuted and not incomingBadWord
+                                elseif not senderMuted and not senderBlocked and not incomingBadWord
                                     and m.chatType ~= "bubble"
                                     and m.chatType ~= "private" -- 🔒 التنبيهات الخاصة ما تنرسم بالدردشة أبداً (لا عندي ولا عند غيري)
                                     and not (m.chatType == "developer" and m.developerMessage == true) then
@@ -15885,7 +16687,10 @@ end)
                             if _lastSeenTimestamp and m.timestamp > _lastSeenTimestamp and m.sender ~= myName then
                                 local notificationBadWord = findBadChatWord(m.text)
                                 local notificationMuted = m.userId and chatMuteRemaining(m.userId) > 0
-                                if m.chatType == "developer" and m.developerMessage == true and m.sender == "AAbbooyi" then
+                                local notificationBlocked = isUserBlocked(m.userId)
+                                if notificationBlocked then
+                                    -- لا تنبيه ولا فقاعة من مستخدم محظور.
+                                elseif m.chatType == "developer" and m.developerMessage == true and m.sender == "AAbbooyi" then
                                     lastDeveloperMsg = m
                                 elseif m.chatType == "private" and m.developerMessage == true and m.sender == "AAbbooyi"
                                     and tonumber(m.targetUserId) == game.Players.LocalPlayer.UserId then
