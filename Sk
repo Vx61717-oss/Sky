@@ -13,104 +13,6 @@ local AUTH_TOKEN = ""
 local request = request or http_request or (syn and syn.request)
 local setClipboardText = setclipboard or toclipboard
 
--- ====================== نظام الحظر والبلاغات (المرحلة 1: التخزين) ======================
--- نفصل بيانات الحظر والبلاغات عن سجل الدردشة وعن كتم الكلمات المؤقت.
-local CHAT_BLOCKS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chatBlocks.json"
-local CHAT_REPORTS_URL = "https://skyv-1ce1a-default-rtdb.firebaseio.com/chatReports.json"
-local SkyBlockedUsers = {}
-local SkyBlockDataLoaded = false
-
-local function SkyHttpJson(url, method, payload)
-    if not request then return false, nil end
-    local ok, response = pcall(function()
-        return request({
-            Url = url .. "?auth=" .. AUTH_TOKEN,
-            Method = method or "GET",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = payload and game:GetService("HttpService"):JSONEncode(payload) or nil
-        })
-    end)
-    if not ok or not response then return false, nil end
-    local status = tonumber(response.StatusCode)
-    if status and status ~= 200 and status ~= 201 and status ~= 204 then
-        return false, response
-    end
-    return true, response
-end
-
-local function SkyRefreshBlockedUsers()
-    if not request then return end
-    local myId = game:GetService("Players").LocalPlayer.UserId
-    local url = CHAT_BLOCKS_URL:gsub("%.json$", "/" .. tostring(myId) .. ".json")
-    local ok, response = SkyHttpJson(url, "GET")
-    if not ok or not response or not response.Body then return end
-    local decodedOk, data = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(response.Body)
-    end)
-    if not decodedOk then return end
-
-    local fresh = {}
-    if type(data) == "table" then
-        for userId, record in pairs(data) do
-            if record ~= false and record ~= nil then
-                fresh[tostring(userId)] = type(record) == "table" and record or {blocked = true}
-            end
-        end
-    end
-    SkyBlockedUsers = fresh
-    SkyBlockDataLoaded = true
-end
-
-local function SkyIsChatBlocked(userId)
-    if userId == nil then return false end
-    return SkyBlockedUsers[tostring(userId)] ~= nil
-end
-
-local function SkyBlockChatUser(userId, userName)
-    userId = tonumber(userId)
-    if not userId or userId == game:GetService("Players").LocalPlayer.UserId then
-        return false
-    end
-    local myId = game:GetService("Players").LocalPlayer.UserId
-    local url = CHAT_BLOCKS_URL:gsub("%.json$", "/" .. tostring(myId) .. "/" .. tostring(userId) .. ".json")
-    local record = {
-        blocked = true,
-        userId = userId,
-        userName = tostring(userName or ("User " .. tostring(userId))),
-        blockedAt = os.time()
-    }
-    local ok = SkyHttpJson(url, "PUT", record)
-    if ok then SkyBlockedUsers[tostring(userId)] = record end
-    return ok
-end
-
-local function SkySubmitChatReport(targetUserId, targetName, reason, sourceType)
-    targetUserId = tonumber(targetUserId)
-    reason = tostring(reason or ""):sub(1, 1200)
-    if not targetUserId or targetUserId == game:GetService("Players").LocalPlayer.UserId
-        or reason:gsub("%s+", "") == "" then
-        return false
-    end
-
-    local me = game:GetService("Players").LocalPlayer
-    local payload = {
-        reporterName = me.Name,
-        reporterUserId = me.UserId,
-        reportedName = tostring(targetName or ("User " .. tostring(targetUserId))),
-        reportedUserId = targetUserId,
-        reason = reason,
-        source = tostring(sourceType or "chat"),
-        timestamp = os.time(),
-        placeId = tostring(game.PlaceId),
-        status = "new"
-    }
-    local ok = SkyHttpJson(CHAT_REPORTS_URL, "POST", payload)
-    return ok
-end
-
--- تحميل الحظر عند بدء السكربت؛ وسيعاد تحديثه دوريًا من حلقة الدردشة.
-task.spawn(SkyRefreshBlockedUsers)
-
 -- 🔁 يعيد تشغيل السكربت تلقائياً بعد الانتقال لسيرفر جديد (بنفس اللودر المشفّر Base64).
 local SKY_TELEPORT_LOADER = [===[
 -- 🛑 لو انحطت أكثر من نسخة من اللودر في الطابور، تشتغل نسخة وحدة بس والباقي يوقف
@@ -535,6 +437,180 @@ NG.Name = "SkyNotify"
 NG.ResetOnSpawn = false
 NG.IgnoreGuiInset = true
 
+-- 🌙 تذكيرات الذكر: تصميم مستقل عن إشعارات الأزرار والتنبيهات.
+-- كل 7 ثوانٍ توجد فرصة 45% لعرض ذكر واحد عشوائي.
+local DhikrMessages = {
+    "اللهم صلِّ وسلم وبارك على نبينا محمد، صلاةً تشرح بها صدورنا وتغفر بها ذنوبنا",
+    "أستغفر الله العظيم الذي لا إله إلا هو الحي القيوم وأتوب إليه",
+    "سبحان الله وبحمده، سبحان الله العظيم",
+    "لا إله إلا أنت سبحانك إني كنت من الظالمين",
+    "لا حول ولا قوة إلا بالله العلي العظيم",
+    "اللهم إنك عفو كريم تحب العفو فاعفُ عنا",
+    "رب اغفر لي وتب علي إنك أنت التواب الرحيم",
+    "اللهم أعني على ذكرك وشكرك وحسن عبادتك",
+    "سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر",
+    "اللهم اغفر للمؤمنين والمؤمنات والمسلمين والمسلمات الأحياء منهم والأموات",
+    "يا مقلب القلوب ثبت قلبي على دينك",
+    "ربنا آتنا في الدنيا حسنة وفي الآخرة حسنة وقنا عذاب النار",
+    "اللهم إني أسألك الهدى والتقى والعفاف والغنى",
+    "حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم",
+    "اللهم اجعل القرآن ربيع قلبي ونور صدري وجلاء حزني وذهاب همي",
+    "رضيت بالله رباً، وبالإسلام ديناً، وبمحمد صلى الله عليه وسلم نبياً",
+    "اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، فلك الحمد ولك الشكر",
+    "أعوذ بكلمات الله التامات من شر ما خلق",
+    "بسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم",
+    "اللهم إني ظلمت نفسي ظلماً كثيراً فاغفر لي، فإنه لا يغفر الذنوب إلا أنت",
+    "رب اشرح لي صدري ويسر لي أمري",
+    "اللهم ارزقني قلباً سليماً ولساناً ذاكراً وعملاً متقبلاً",
+    "اللهم اهدني وسددني",
+    "اللهم إني أسألك العفو والعافية في الدنيا والآخرة",
+    "أستغفر الله وأتوب إليه، فاستغفروا ربكم إنه كان غفاراً",
+    "اللهم صلِّ على محمد وعلى آل محمد كما صليت على إبراهيم وعلى آل إبراهيم",
+    "سبحانك اللهم وبحمدك، أشهد أن لا إله إلا أنت، أستغفرك وأتوب إليك",
+    "اللهم اجعلني من الذاكرين الشاكرين، وأحسن عبادتك",
+    "الحمد لله حمداً كثيراً طيباً مباركاً فيه",
+    "اللهم إني أسألك علماً نافعاً ورزقاً طيباً وعملاً متقبلاً",
+    "يا حي يا قيوم برحمتك أستغيث، أصلح لي شأني كله ولا تكلني إلى نفسي طرفة عين",
+    "ربنا لا تزغ قلوبنا بعد إذ هديتنا وهب لنا من لدنك رحمة",
+    "اللهم اغفر لي ولوالدي وللمؤمنين يوم يقوم الحساب",
+    "اللهم اجعل آخر كلامنا من الدنيا لا إله إلا الله",
+    "اللهم أعوذ برضاك من سخطك وبمعافاتك من عقوبتك",
+    "اللهم إني أسألك الجنة وأعوذ بك من النار",
+    "اللهم طهر قلبي من النفاق وعملي من الرياء ولساني من الكذب",
+    "اللهم بارك لنا فيما رزقتنا وقنا عذاب النار",
+    "أكثروا من ذكر الله، فإن ذكر الله طمأنينة للقلب",
+    "اللهم اجعل هذا اليوم مليئاً بذكرك وشكرك وحسن عبادتك",
+}
+
+local DhikrRandom = Random.new()
+local LastDhikrIndex = 0
+local DhikrNotificationSerial = 0
+
+local function ShowDhikrNotification(message)
+    if not NG or not NG.Parent or _G.SkyNotifyOff or _G.SkyDhikrOff then return end
+
+    DhikrNotificationSerial += 1
+
+    local card = Instance.new("Frame")
+    card.Name = "SkyDhikrReminder_" .. tostring(DhikrNotificationSerial)
+    card.AnchorPoint = Vector2.new(0.5, 1)
+    card.Size = UDim2.new(0, 310, 0, 72)
+    card.Position = UDim2.new(0.5, 0, 1, 24)
+    card.BackgroundColor3 = Color3.fromRGB(16, 22, 25)
+    card.BackgroundTransparency = 1
+    card.BorderSizePixel = 0
+    card.ZIndex = 90
+    card.Parent = NG
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 16)
+    corner.Parent = card
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(93, 190, 151)
+    stroke.Thickness = 1.4
+    stroke.Transparency = 1
+    stroke.Parent = card
+
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(22, 47, 43)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(13, 19, 25)),
+    })
+    gradient.Rotation = 0
+    gradient.Parent = card
+
+    local icon = Instance.new("TextLabel")
+    icon.Name = "DhikrIcon"
+    icon.BackgroundTransparency = 1
+    icon.Position = UDim2.new(0, 12, 0, 10)
+    icon.Size = UDim2.new(0, 42, 0, 42)
+    icon.Font = Enum.Font.GothamBold
+    icon.Text = "۞"
+    icon.TextColor3 = Color3.fromRGB(133, 220, 177)
+    icon.TextSize = 30
+    icon.ZIndex = 91
+    icon.TextTransparency = 1
+    icon.Parent = card
+
+    local title = Instance.new("TextLabel")
+    title.Name = "DhikrTitle"
+    title.BackgroundTransparency = 1
+    title.Position = UDim2.new(0, 62, 0, 8)
+    title.Size = UDim2.new(1, -74, 0, 20)
+    title.Font = Enum.Font.GothamBold
+    title.Text = "تذكير لطيف 🌙"
+    title.TextColor3 = Color3.fromRGB(151, 225, 185)
+    title.TextSize = 13
+    title.TextXAlignment = Enum.TextXAlignment.Right
+    title.ZIndex = 91
+    title.TextTransparency = 1
+    title.Parent = card
+
+    local body = Instance.new("TextLabel")
+    body.Name = "DhikrMessage"
+    body.BackgroundTransparency = 1
+    body.Position = UDim2.new(0, 62, 0, 30)
+    body.Size = UDim2.new(1, -74, 0, 30)
+    body.Font = Enum.Font.GothamMedium
+    body.Text = message
+    body.TextColor3 = Color3.fromRGB(245, 245, 239)
+    body.TextSize = 14
+    body.TextWrapped = true
+    body.TextXAlignment = Enum.TextXAlignment.Right
+    body.TextYAlignment = Enum.TextYAlignment.Center
+    body.ZIndex = 91
+    body.TextTransparency = 1
+    body.Parent = card
+
+    -- دخول هادئ من أسفل الشاشة ثم اختفاء تدريجي.
+    SkyTw(card, TweenInfo.new(0.42, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, 0, 1, -82),
+        BackgroundTransparency = 0.06
+    }):Play()
+    SkyTw(stroke, TweenInfo.new(0.42, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Transparency = 0.12
+    }):Play()
+    SkyTw(icon, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+    SkyTw(title, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+    SkyTw(body, TweenInfo.new(0.35), {TextTransparency = 0}):Play()
+
+    task.delay(4.4, function()
+        if not card or not card.Parent then return end
+        SkyTw(card, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, 0, 1, 18),
+            BackgroundTransparency = 1
+        }):Play()
+        SkyTw(stroke, TweenInfo.new(0.4), {Transparency = 1}):Play()
+        SkyTw(icon, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+        SkyTw(title, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+        SkyTw(body, TweenInfo.new(0.35), {TextTransparency = 1}):Play()
+        task.wait(0.48)
+        if card.Parent then card:Destroy() end
+    end)
+end
+
+task.spawn(function()
+    local nextDhikrDelay = 14
+
+    while NG and NG.Parent do
+        task.wait(nextDhikrDelay)
+        if not NG or not NG.Parent then break end
+
+        if not _G.SkyNotifyOff and not _G.SkyDhikrOff then
+            local index = DhikrRandom:NextInteger(1, #DhikrMessages)
+            if #DhikrMessages > 1 and index == LastDhikrIndex then
+                index = (index % #DhikrMessages) + 1
+            end
+            LastDhikrIndex = index
+            ShowDhikrNotification(DhikrMessages[index])
+        end
+
+        nextDhikrDelay += 3
+    end
+end)
+
+
 -- 🔔 نظام الإشعارات الجديد: 3 مناطق مستقلة
 -- دخول/خروج = فوق (حد 2) | إشعارات عادية = تحتها (حد 5) | الدردشة = منطقة مستقلة (حد 2)
 local function makeNotificationContainer(name, yOffset)
@@ -711,7 +787,25 @@ local function PlaySelectedExitAlert()
     _selectedExitAlertSound:Play()
 end
 
+local function IsToggleStatusNotice(title, message)
+    local value = tostring(title or "") .. " " .. tostring(message or "")
+    local statusPhrases = {
+        "تم تشغيل", "تم إيقاف", "تم تفعيل", "تم تعطيل",
+        "مفعل", "معطل", "مفعّل", "معطّل",
+        "التشغيل", "الإيقاف", "تفعيل", "تعطيل",
+        "إضاءة عادية", "توقف الجلوس",
+        "تشغيل:", "إيقاف:",
+    }
+    for _, phrase in ipairs(statusPhrases) do
+        if string.find(value, phrase, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
 function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
+    if IsToggleStatusNotice(T, M) then return end
     if _G.SkyNotifyOff then return end
     T = _TranslateText(T)
     M = _TranslateText(M)
@@ -920,6 +1014,7 @@ function Notify(T, M, C, shake, avatarUserId, avatarStrokeColor, liveKey)
 end
 
 function OK(m, liveKey)
+    if IsToggleStatusNotice(nil, m) then return end
     if _G.SkyNotifyOff then return end
     playOK()
     Notify("✅ تم", m, Color3.fromRGB(170, 0, 255), nil, nil, nil, liveKey) 
@@ -1256,6 +1351,9 @@ local function RunMyOriginalScript()
 
     State.IsMin = false
     State.IsSuperMini = false
+    -- حفظ مستقل لموضع القائمة الكاملة وشريط X المصغّر.
+    State.MainFrameFullPosition = nil
+    State.MainFrameSuperMiniPosition = UDim2.new(0.5, -110, 0.5, -24)
     State.MainUIVisible = true -- true بس لما القائمة تكون بكامل حجمها (مو مصغّرة)
     State._chatPageOpen = false -- true بس لما تاب الدردشة يكون مفتوح والقائمة بكامل حجمها
     State._wasChatOpenBeforeMin = false -- نتذكر فيها هل الدردشة كانت مفتوحة قبل ما نصغّر
@@ -1342,7 +1440,13 @@ local function RunMyOriginalScript()
                 input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
                         dragging = false
-                        -- لا نحفظ موضع القائمة عند السحب.
+                        if ui == UI.MainFrame then
+                            if State.IsSuperMini then
+                                State.MainFrameSuperMiniPosition = ui.Position
+                            else
+                                State.MainFrameFullPosition = ui.Position
+                            end
+                        end
                     end
                 end)
             end
@@ -1355,7 +1459,36 @@ local function RunMyOriginalScript()
         UserInputService.InputChanged:Connect(function(input)
             if input == dragInput and dragging then
                 local delta = input.Position - dragStart
-                ui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                local wanted = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+
+                -- احسب حدود النافذة من حجم الحاوية، حتى لا تخرج عن الشاشة.
+                local parent = ui.Parent
+                local camera = workspace.CurrentCamera
+                local parentSize
+                if parent and parent:IsA("GuiObject") then
+                    parentSize = parent.AbsoluteSize
+                else
+                    parentSize = camera and camera.ViewportSize or ScreenGui.AbsoluteSize
+                end
+
+                local size = ui.AbsoluteSize
+                local anchor = ui.AnchorPoint
+                local anchorX = parentSize.X * wanted.X.Scale + wanted.X.Offset
+                local anchorY = parentSize.Y * wanted.Y.Scale + wanted.Y.Offset
+                local left = anchorX - size.X * anchor.X
+                local top = anchorY - size.Y * anchor.Y
+                left = math.clamp(left, 0, math.max(0, parentSize.X - size.X))
+                top = math.clamp(top, 0, math.max(0, parentSize.Y - size.Y))
+
+                local boundedAnchorX = left + size.X * anchor.X
+                local boundedAnchorY = top + size.Y * anchor.Y
+                ui.Position = UDim2.new(
+                    wanted.X.Scale, boundedAnchorX - parentSize.X * wanted.X.Scale,
+                    wanted.Y.Scale, boundedAnchorY - parentSize.Y * wanted.Y.Scale
+                )
             end
         end)
     end
@@ -3721,9 +3854,10 @@ end)
     UI.MainFrame.Name = "SkyMainFrame"
     UI.MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     UI.MainFrame.Position = UDim2.new(0.5, -240, 0.5, -185)
-    UI.MainFrame.Size = UDim2.new(0, 500, 0, 420)
+    State.MainFrameFullPosition = UI.MainFrame.Position
+    UI.MainFrame.Size = UDim2.new(0, 500, 0, 360)
     UI.MainFrame.Active = true
-    UI.MainFrame.ClipsDescendants = true
+    UI.MainFrame.ClipsDescendants = false -- يسمح للتابات تطلع برا القائمة من اليمين
     UI.MainFrame.ZIndex = 5 
 
     Instance.new("UICorner", UI.MainFrame).CornerRadius = UDim.new(0, 15)
@@ -3732,6 +3866,27 @@ end)
     UI.MainStroke.Thickness = 2
     UI.MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     UI.MainGlowGradient = AddMovingBorderGlow(UI.MainStroke, 1.5)
+
+    -- ✨ نبضات خفيفة للحدود الرئيسية: حركة التدرج + توهج يتنفس بهدوء
+    task.spawn(function()
+        while UI.MainStroke and UI.MainStroke.Parent do
+            if not _G.SkyGlowOff then
+                SkyTw(UI.MainStroke, TweenInfo.new(0.85, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Transparency = 0.22,
+                    Thickness = 2.8
+                }):Play()
+                task.wait(0.85)
+                if not (UI.MainStroke and UI.MainStroke.Parent) then break end
+                SkyTw(UI.MainStroke, TweenInfo.new(0.85, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Transparency = 0.04,
+                    Thickness = 2
+                }):Play()
+                task.wait(0.85)
+            else
+                task.wait(0.2)
+            end
+        end
+    end)
 
     -- شريط تحميل رفيع يمشي مرة واحدة وقت فتح القائمة لأول مرة
     UI.LoadingBar = Instance.new("Frame", UI.MainFrame)
@@ -3956,6 +4111,7 @@ end)
         local ALIVE_MS = 60 * 1000     -- يعتبر متصل لو نبضته خلال آخر 60 ثانية
         local PRUNE_MS = 60 * 60 * 1000 -- نمسح اللي له أكثر من ساعة ما بعث نبضة
         local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
         local myName = game.Players.LocalPlayer.Name
 
         task.spawn(function()
@@ -4178,8 +4334,8 @@ end)
     UI.SideBar = Instance.new("Frame")
     UI.SideBar.Name = "UI.SideBar"
     UI.SideBar.Parent = UI.MainFrame
-    UI.SideBar.Size = UDim2.new(1, -10, 0, 50)
-    UI.SideBar.Position = UDim2.new(0, 5, 0, 56)
+    UI.SideBar.Size = UDim2.new(0, 122, 1, -120) -- أقصر وأرفع، والمسافة فوق وتحت متساوية
+    UI.SideBar.Position = UDim2.new(1, 4, 0, 60) -- برا القائمة من اليمين، لاصقة فيها
     UI.SideBar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     UI.SideBar.BorderSizePixel = 0
     UI.SideBar.ClipsDescendants = true
@@ -4193,19 +4349,19 @@ end)
     UI.TabBar.BorderSizePixel = 0
     UI.TabBar.ClipsDescendants = true
     Instance.new("UICorner", UI.TabBar).CornerRadius = UDim.new(0, 15)
-    UI.TabBar.CanvasSize = UDim2.new(0, 1080, 0, 0) -- مساحة أفقية للسحب يميناً ويساراً
+    UI.TabBar.CanvasSize = UDim2.new(0, 0, 0, 520) -- مساحة عمودية للسحب لأسفل
     UI.TabBar.AutomaticCanvasSize = Enum.AutomaticSize.None
-    UI.TabBar.ScrollingDirection = Enum.ScrollingDirection.X
+    UI.TabBar.ScrollingDirection = Enum.ScrollingDirection.Y
     UI.TabBar.ScrollingEnabled = true
-    UI.TabBar.ScrollBarThickness = 4
+    UI.TabBar.ScrollBarThickness = 0 -- السحب يبقى شغال بدون الخط
     UI.TabBar.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
     UI.TabBar.ElasticBehavior = Enum.ElasticBehavior.Always
     UI.TabBar.Active = true
     UI.TabBar.ZIndex = 6
 
     UI.Pages.Parent = UI.MainFrame
-    UI.Pages.Size = UDim2.new(1, -16, 1, -122)
-    UI.Pages.Position = UDim2.new(0, 8, 0, 112)
+    UI.Pages.Size = UDim2.new(1, -16, 1, -74) -- عرض كامل، وبداية أقرب للهيدر
+    UI.Pages.Position = UDim2.new(0, 8, 0, 64)
     UI.Pages.BackgroundTransparency = 1
     UI.Pages.ZIndex = 6
 
@@ -4354,29 +4510,108 @@ end)
         -- لا ندمر الأشكال هنا؛ نخفيها فقط حتى تعود عند فتح القائمة.
     end
 
+    local MENU_TRANSITION_TIME = 0.32
+    State._MenuTransitionBusy = false
+
+    -- 🌫️ تلاشي تدريجي للقائمة (دوال مخزّنة داخل State عشان ما نزيد متغيرات محلية)
+    State._FadeSaved = setmetatable({}, {__mode = "k"})
+    State._FadeProps = function(obj)
+        if obj:IsA("TextButton") or obj:IsA("TextLabel") or obj:IsA("TextBox") then
+            return {"BackgroundTransparency", "TextTransparency"}
+        elseif obj:IsA("ScrollingFrame") then
+            return {"BackgroundTransparency", "ScrollBarImageTransparency"}
+        elseif obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+            return {"BackgroundTransparency", "ImageTransparency"}
+        elseif obj:IsA("Frame") then
+            return {"BackgroundTransparency"}
+        elseif obj:IsA("UIStroke") then
+            return {"Transparency"}
+        end
+        return nil
+    end
+    -- هل العنصر ظاهر فعلاً داخل القائمة (هو وكل آبائه)
+    State._FadeShown = function(obj)
+        local cur = obj
+        while cur and cur ~= UI.MainFrame do
+            if cur:IsA("GuiObject") and not cur.Visible then return false end
+            cur = cur.Parent
+        end
+        return cur == UI.MainFrame
+    end
+    State._FadeList = function()
+        local list = {}
+        local function add(obj)
+            if State._FadeProps(obj) and State._FadeShown(obj) then
+                table.insert(list, obj)
+            end
+        end
+        add(UI.MainFrame)
+        for _, d in ipairs(UI.MainFrame:GetDescendants()) do add(d) end
+        return list
+    end
+    -- يخفي العناصر الظاهرة شوي شوي (ويحفظ قيمها الأصلية)
+    State._FadeOut = function(duration)
+        local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        for _, obj in ipairs(State._FadeList()) do
+            local saved, goal = {}, {}
+            for _, p in ipairs(State._FadeProps(obj)) do
+                saved[p] = obj[p]
+                goal[p] = 1
+            end
+            State._FadeSaved[obj] = saved
+            SkyTw(obj, info, goal):Play()
+        end
+    end
+    -- يظهر العناصر الظاهرة شوي شوي (بعد ما تنضبط Visible)
+    State._FadeIn = function(duration)
+        local info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        for _, obj in ipairs(State._FadeList()) do
+            local props = State._FadeProps(obj)
+            local saved = State._FadeSaved[obj]
+            if not saved then
+                saved = {}
+                for _, p in ipairs(props) do saved[p] = obj[p] end
+                State._FadeSaved[obj] = saved
+            end
+            local goal = {}
+            for _, p in ipairs(props) do
+                goal[p] = saved[p]
+                obj[p] = 1
+            end
+            SkyTw(obj, info, goal):Play()
+        end
+    end
+
     local function SetToSuperMiniMode()
+        if State._MenuTransitionBusy then return end
+        State._MenuTransitionBusy = true
         local wasChatOpen = State._chatPageOpen
+        local T = MENU_TRANSITION_TIME or 0.22
+
+        if not State.IsSuperMini then
+            State.MainFrameFullPosition = UI.MainFrame.Position
+        end
+        local miniPos = State.MainFrameSuperMiniPosition or UDim2.new(0.5, -110, 0.5, -24)
+        local miniSize = UDim2.new(0, 220, 0, 48)
+
+        -- جهّز حالة المصغّرة قبل الحركة، من دون لمس شفافية التابات أو محتوياتها.
         State.IsSuperMini = true; State.IsMin = false
         State.MainUIVisible = false
         _SetMainMenuSound(false)
         UI.ActionBtn.Visible = true
         State._wasChatOpenBeforeMin = wasChatOpen
-        State._chatPageOpen = false -- صرت مصغّر، الدردشة ما تعتبر مفتوحة قدامك
+        State._chatPageOpen = false
         UI.DeleteChatBtn.Visible = State._chatPanelOpen
         UI.CopyChatBtn.Visible = State._chatPanelOpen
         UI.ResetConfigBtn.Visible = false
         if UI.PlayerCard then UI.PlayerCard.Visible = false end
-        UI.MainFrame:TweenSize(UDim2.new(0, 220, 0, 48), "Out", "Quad", 0.3, true)
-        UI.MainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
         UI.MainStroke.Thickness = 2
-        -- يظهر اسم Sky فقط في القائمة المصغّرة التي تظهر بعد الضغط على X.
         UI.Title.Text = "S   k   y"
         UI.Title.TextColor3 = Color3.fromRGB(255, 255, 255)
         UI.Title.TextSize = 18
         UI.Title.TextScaled = false
         UI.Title.Position = UDim2.new(0, 7, 0, 0)
         UI.Title.Size = UDim2.new(1, -70, 1, 0)
-        -- إخفاء نقطة الحالة في الشريط المصغّر حتى لا تغطي حرف Y في Sky.
         UI.StatusDot.Visible = false
         UI.ActionBtn.Text = "+"
         UI.ActionBtn.TextColor3 = Color3.fromRGB(170, 0, 255)
@@ -4390,28 +4625,56 @@ end)
         UI.TabBar.Visible = false
         UI.Pages.Visible = false
         UI.FPSFrame.Visible = false
-        -- تبقى أدوات الدردشة ظاهرة إذا كانت لوحة الدردشة مفتوحة، حتى بعد تصغير القائمة الأساسية.
-        UI.DeleteChatBtn.Visible = State._chatPanelOpen
-        UI.CopyChatBtn.Visible = State._chatPanelOpen
         HideAllSkyShapes()
-        BackgroundOverlay.Visible = false 
-        UpdateVisualEffects(false)
+        -- Fade فقط للغباش والخلفية الزرقاء: شفافية/قوة التأثير دون أي تغيير للموقع أو الحجم.
+        effectsGui.Enabled = true
+        BackgroundOverlay.Visible = true
+        local fadeInfo = TweenInfo.new(0.85, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        local blurFade = SkyTw(blurEffect, fadeInfo, {Size = 0})
+        local overlayFade = SkyTw(BackgroundOverlay, fadeInfo, {BackgroundTransparency = 1})
+        blurFade:Play()
+        overlayFade:Play()
+        task.spawn(function()
+            overlayFade.Completed:Wait()
+            if State.IsSuperMini and BackgroundOverlay and BackgroundOverlay.Parent then
+                BackgroundOverlay.Visible = false
+                effectsGui.Enabled = false
+            end
+        end)
+
+        UI.MainFrame.ClipsDescendants = true
+        local move = SkyTw(UI.MainFrame, TweenInfo.new(T, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+            Size = miniSize, Position = miniPos
+        })
+        move:Play()
+        move.Completed:Wait()
+        UI.MainFrame.ClipsDescendants = false
+        State._MenuTransitionBusy = false
     end
 
     local function SetToFullMode()
+        if State._MenuTransitionBusy then return end
+        State._MenuTransitionBusy = true
+        local T = MENU_TRANSITION_TIME or 0.22
+
+        if State.IsSuperMini then
+            State.MainFrameSuperMiniPosition = UI.MainFrame.Position
+        else
+            State.MainFrameFullPosition = UI.MainFrame.Position
+        end
+        local fullPos = State.MainFrameFullPosition or UDim2.new(0.5, -240, 0.5, -185)
+        local fullSize = UDim2.new(0, 500, 0, 360)
+
         State.IsMin = false; State.IsSuperMini = false
         State.MainUIVisible = true
         _SetMainMenuSound(true)
-        -- إزالة زر (-) من القائمة الكبيرة؛ يظهر (+) فقط في الوضع المصغّر.
         UI.ActionBtn.Visible = false
         UI.StatusDot.Visible = true
-        State._chatPageOpen = State._wasChatOpenBeforeMin -- رجعنا للحجم الكامل، لو تاب الدردشة كان مفتوح نرجّعه يعتبر مفتوح
+        State._chatPageOpen = State._wasChatOpenBeforeMin
         UI.DeleteChatBtn.Visible = State._chatPageOpen
         UI.CopyChatBtn.Visible = State._chatPageOpen
         UI.ResetConfigBtn.Visible = not State._chatPageOpen
         if UI.PlayerCard then UI.PlayerCard.Visible = true end
-        UI.MainFrame:TweenSize(UDim2.new(0, 500, 0, 420), "Out", "Quad", 0.35, true)
-        UI.MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
         UI.MainStroke.Thickness = 3
         UI.Title.Text = ""
         UI.Title.TextColor3 = Color3.fromRGB(170, 0, 255)
@@ -4420,24 +4683,40 @@ end)
         UI.Title.Position = UDim2.new(0, 292, 0, 5)
         UI.Title.Size = UDim2.new(0, 92, 0, 45)
         UI.ActionBtn.Text = "-"
-        UI.ActionBtn.TextColor3 = Color3.new(1,1,1)
+        UI.ActionBtn.TextColor3 = Color3.new(1, 1, 1)
         UI.ActionBtn.TextScaled = false
         UI.ActionBtn.Position = UDim2.new(1, -100, 0, 3)
         UI.ActionBtn.Size = UDim2.new(0, 45, 0, 45)
         UI.ResetConfigBtn.Position = UDim2.new(1, -108, 0, 8)
         UI.CloseBtn.Visible = true
-        -- زر الدردشة يظهر فقط عند تصغير القائمة الأساسية.
         UI.ChatRestoreBtn.Visible = false
         UI.MiniChatBadge.Visible = false
         UI.SideBar.Visible = true
         UI.TabBar.Visible = true
         UI.Pages.Visible = true
         UI.FPSFrame.Visible = true
-        BackgroundOverlay.Visible = true 
-        UpdateVisualEffects(true)
+
+        -- Fade فقط للغباش والخلفية الزرقاء: شفافية/قوة التأثير دون أي تحريك أو تغيير للحجم.
+        effectsGui.Enabled = true
+        BackgroundOverlay.Visible = true
+        BackgroundOverlay.BackgroundTransparency = 1
+        local fadeInfo = TweenInfo.new(0.85, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+        SkyTw(BackgroundOverlay, fadeInfo, {BackgroundTransparency = 0.25}):Play()
+        blurEffect.Size = 0
+        SkyTw(blurEffect, fadeInfo, {Size = 18}):Play()
+
+        UI.MainFrame.ClipsDescendants = true
+        local move = SkyTw(UI.MainFrame, TweenInfo.new(T, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+            Size = fullSize, Position = fullPos
+        })
+        move:Play()
+        move.Completed:Wait()
+        UI.MainFrame.ClipsDescendants = false
+        State._MenuTransitionBusy = false
     end
 
     local function SetToNormalMiniMode()
+        State.MainFrameFullPosition = UI.MainFrame.Position
         State.IsMin = true; State.IsSuperMini = false
         State.MainUIVisible = false
         _SetMainMenuSound(false)
@@ -4504,7 +4783,7 @@ end)
         local idx = math.floor(pos * 5 + 0.5)
         local btn = Instance.new("TextButton", UI.TabBar)
         btn.Size = UDim2.new(0, 112, 0, 40)
-        btn.Position = UDim2.new(0, idx * 118 + 6, 0, 4)
+        btn.Position = UDim2.new(0, 4, 0, idx * 48 + 4)
         btn.Text = _TranslateText(name)
         btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         btn.TextColor3 = Color3.new(1,1,1)
@@ -4528,6 +4807,7 @@ UI.btn6 = CreateTabBtn("❓ السكربت", 1.0)
 UI.btn7 = CreateTabBtn("⚙️ الإعدادات", 1.4)
 UI.btn8 = CreateTabBtn("📝 ملاحظات", 1.6)
 UI.btn9 = CreateTabBtn("👤 الملف", 0)
+UI.btn10 = CreateTabBtn("🔗 اختصارات", 1.8)
 -- بطاقة مميزة لتاب الملاحظات
 UI.btn8.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 UI.btn8.TextColor3 = Color3.fromRGB(220, 255, 240)
@@ -4563,6 +4843,7 @@ UI.tabBadge6 = CreateTabBadge(UI.btn6)
 UI.tabBadge7 = CreateTabBadge(UI.btn7)
 UI.tabBadge8 = CreateTabBadge(UI.btn8)
 UI.tabBadge9 = CreateTabBadge(UI.btn9)
+UI.tabBadge10 = CreateTabBadge(UI.btn10)
 
 -- 🔔 بادج عائم فوق القائمة نفسها (يبان حتى وهي نحيفة/مصغّرة بعد الضغط على X)
 -- مربوط بالـ UI.MainFrame مباشرة عشان ما يختفي مع إخفاء UI.TabBar/UI.SideBar
@@ -4597,6 +4878,7 @@ UI.TabColors = {
     [7] = Color3.fromRGB(200, 200, 210), -- الإعدادات: فضي
     [8] = Color3.fromRGB(35, 120, 220),
     [9] = Color3.fromRGB(170, 0, 255), -- الملف الشخصي 
+    [10] = Color3.fromRGB(0, 220, 190), -- الاختصارات
 }
 -- 📌 نسخة أصلية من الألوان الافتراضية (تستخدمها زر "استرجاع الألوان الافتراضية" بتاب الإعدادات)
 UI.DefaultTabColors = {}
@@ -4647,7 +4929,7 @@ local function BlendColor3(base, tint, amount)
     )
 end
 
-UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8, UI.btn9}
+UI.tabButtons = {UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn5, UI.btn6, UI.btn7, UI.btn8, UI.btn9, UI.btn10}
 
 -- عند الضغط على تاب: زره ياخذ لون التاب (ممزوج مع الأساس)، والباقي يرجعون للون الأساسي
 
@@ -4660,6 +4942,7 @@ UI.btn5.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn6.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn7.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
 UI.btn8.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
+UI.btn10.BackgroundColor3 = UI.TAB_BTN_BASE_COLOR
     
 -- 🌈 كل زر تاب ياخذ توهجه الخاص (أسود + لون التاب) بشكل دائم وواضح
 -- 🎨 نخزن كل توهج بجدول UI.tabGlowGrad عشان تاب الإعدادات يقدر يحدثه فورًا لو تغيّر اللون
@@ -4682,6 +4965,12 @@ UI.btn8Stroke = Instance.new("UIStroke", UI.btn8); UI.btn8Stroke.Thickness = 2.5
 UI.tabGlowGrad[8] = AddMovingBorderGlow(UI.btn8Stroke, 1.5, UI.TabColors[8])
 UI.btn9Stroke = Instance.new("UIStroke", UI.btn9); UI.btn9Stroke.Thickness = 2.5; UI.btn9Stroke.Transparency = 0; UI.btn9Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 UI.tabGlowGrad[9] = AddMovingBorderGlow(UI.btn9Stroke, 1.5, UI.TabColors[9])
+UI.btn10Stroke = Instance.new("UIStroke", UI.btn10); UI.btn10Stroke.Thickness = 2.5; UI.btn10Stroke.Transparency = 0; UI.btn10Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UI.tabGlowGrad[10] = AddMovingBorderGlow(UI.btn10Stroke, 1.5, UI.TabColors[10])
+-- 🗑️ تاب الاختصارات محذوف من القائمة: نخفي الزر نهائياً (الكود الداخلي يبقى عشان ما ينكسر شي يشير له)
+UI.btn10.Visible = false
+UI.btn10.Active = false
+UI.btn10.Interactable = false
 -- خلفية داكنة ثابتة؛ اللون يظهر في الحواف فقط مثل التصميم المطلوب
 for _, button in ipairs(UI.tabButtons) do
     button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -4718,8 +5007,8 @@ end
 
 UI.Underline = Instance.new("Frame")
 UI.Underline.Parent = UI.SideBar
-UI.Underline.Size = UDim2.new(0, 104, 0, 3)
-UI.Underline.Position = UDim2.new(0, 6, 0, 46)
+UI.Underline.Size = UDim2.new(0, 3, 0, 40)
+UI.Underline.Position = UDim2.new(0, 0, 0, 4)
 UI.Underline.BackgroundColor3 = UI.TabColors[9]
 UI.Underline.BorderSizePixel = 0
 UI.Underline.ZIndex = 7
@@ -4738,17 +5027,18 @@ local function MoveUnderline(pos)
         [1.2] = 5,
         [1.4] = 7,
         [1.6] = 8,
+        [1.8] = 10,
     }
     local key = math.floor(pos * 10 + 0.5) / 10
     local button = UI["btn" .. tostring(tabByPosition[key] or 1)]
     if not button then return end
 
     UI._activeUnderlineButton = button
-    local targetX = button.AbsolutePosition.X - UI.SideBar.AbsolutePosition.X + 6
+    local targetY = button.AbsolutePosition.Y - UI.SideBar.AbsolutePosition.Y + 4
     SkyTw(
         UI.Underline,
         TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-        {Position = UDim2.new(0, targetX, 0, 46)}
+        {Position = UDim2.new(0, 0, 0, targetY)}
     ):Play()
 end
 
@@ -4756,8 +5046,8 @@ end
 UI.TabBar:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
     local button = UI._activeUnderlineButton
     if button and button.Parent then
-        local targetX = button.AbsolutePosition.X - UI.SideBar.AbsolutePosition.X + 6
-        UI.Underline.Position = UDim2.new(0, targetX, 0, 46)
+        local targetY = button.AbsolutePosition.Y - UI.SideBar.AbsolutePosition.Y + 4
+        UI.Underline.Position = UDim2.new(0, 0, 0, targetY)
     end
 end)
 
@@ -4765,7 +5055,7 @@ end)
         local s = Instance.new("ScrollingFrame", UI.Pages)
         s.Size = UDim2.new(1, 0, 1, 0)
         s.BackgroundTransparency = 1
-        s.ScrollBarThickness = 6
+        s.ScrollBarThickness = 0 -- السحب يبقى شغال بدون الخط البنفسجي
         s.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
         s.Visible = false
         s.AutomaticCanvasSize = Enum.AutomaticSize.Y
@@ -4775,6 +5065,7 @@ end)
 
         local l = Instance.new("UIListLayout", s)
         l.Padding = UDim.new(0, 12)
+        l.HorizontalAlignment = Enum.HorizontalAlignment.Center -- نفس المسافة يمين ويسار
         l.SortOrder = Enum.SortOrder.LayoutOrder
 
         -- 🔽 مساحة فاضية تحت آخر عنصر بكل تاب، عشان تقدر تنزل وتشوف آخر زر بوضوح دايمًا
@@ -4793,6 +5084,56 @@ end)
     UI.Page7 = CreatePage()
     UI.Page8 = CreatePage()
     UI.Page9 = CreatePage(); UI.Page9.Visible = true
+    UI.Page10 = CreatePage()
+    UI.Page10.ZIndex = 6
+
+    -- 🔗 محتوى تاب الاختصارات: حقل صغير لاختيار زر لوحة المفاتيح.
+    do
+        local shortcutTitle = Instance.new("TextLabel")
+        shortcutTitle.Name = "ShortcutTitle"
+        shortcutTitle.Size = UDim2.new(1, -16, 0, 30)
+        shortcutTitle.BackgroundTransparency = 1
+        shortcutTitle.Text = "وش تبي الزر الي يفتح القايمه الاساسيه؟"
+        shortcutTitle.TextColor3 = Color3.fromRGB(220, 255, 240)
+        shortcutTitle.TextSize = 13
+        shortcutTitle.Font = Enum.Font.Arcade
+        shortcutTitle.TextWrapped = true
+        shortcutTitle.TextXAlignment = Enum.TextXAlignment.Center
+        shortcutTitle.LayoutOrder = 1
+        shortcutTitle.Visible = true
+        shortcutTitle.ZIndex = 7
+        shortcutTitle.Parent = UI.Page10
+
+        local shortcutBox = Instance.new("TextBox")
+        shortcutBox.Name = "ShortcutKeyBox"
+        shortcutBox.Size = UDim2.new(0, 150, 0, 36)
+        shortcutBox.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        shortcutBox.BackgroundTransparency = 0
+        shortcutBox.BorderSizePixel = 0
+        shortcutBox.ClearTextOnFocus = false
+        shortcutBox.Text = ""
+        shortcutBox.PlaceholderText = "اكتب حرف مثل E"
+        shortcutBox.PlaceholderColor3 = Color3.fromRGB(145, 145, 145)
+        shortcutBox.TextColor3 = Color3.fromRGB(220, 255, 240)
+        shortcutBox.TextSize = 14
+        shortcutBox.Font = Enum.Font.Arcade
+        shortcutBox.TextXAlignment = Enum.TextXAlignment.Center
+        shortcutBox.LayoutOrder = 2
+        shortcutBox.Visible = true
+        shortcutBox.Active = true
+        shortcutBox.Selectable = true
+        shortcutBox.ZIndex = 7
+        shortcutBox.Parent = UI.Page10
+        Instance.new("UICorner", shortcutBox).CornerRadius = UDim.new(0, 8)
+        local shortcutStroke = Instance.new("UIStroke", shortcutBox)
+        shortcutStroke.Thickness = 1.2
+        shortcutStroke.Color = Color3.fromRGB(0, 220, 190)
+        shortcutStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+        UI.ShortcutTitle = shortcutTitle
+        UI.ShortcutBox = shortcutBox
+    end
+
     -- هامش داخلي حتى لا يُقص إطار بطاقة الملف عند حدود صفحة التمرير.
     do
         local profilePadding = UI.Page9:FindFirstChildOfClass("UIPadding") or Instance.new("UIPadding")
@@ -4811,6 +5152,7 @@ end)
     UI.PageGlowColor[UI.Page7] = UI.TabColors[7]
     UI.PageGlowColor[UI.Page8] = UI.TabColors[8]
     UI.PageGlowColor[UI.Page9] = UI.TabColors[9]
+    UI.PageGlowColor[UI.Page10] = UI.TabColors[10]
 
     UI.PageIndexOf[UI.Page1] = 1
     UI.PageIndexOf[UI.Page2] = 2
@@ -4821,6 +5163,7 @@ end)
     UI.PageIndexOf[UI.Page7] = 7
     UI.PageIndexOf[UI.Page8] = 8
     UI.PageIndexOf[UI.Page9] = 9
+    UI.PageIndexOf[UI.Page10] = 10
     
     -- 🔢 عداد العناصر المفعّلة في كل صفحة + ربطها بزر التاب وبادجه
     UI.PageTabMap = {
@@ -4833,13 +5176,29 @@ end)
         [UI.Page7] = {btn = UI.btn7, badge = UI.tabBadge7},
         [UI.Page8] = {btn = UI.btn8, badge = UI.tabBadge8},
         [UI.Page9] = {btn = UI.btn9, badge = UI.tabBadge9},
+        [UI.Page10] = {btn = UI.btn10, badge = UI.tabBadge10},
     }
-    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0, [UI.Page5] = 0, [UI.Page6] = 0, [UI.Page7] = 0, [UI.Page8] = 0, [UI.Page9] = 0}
+    UI.activeCounts = {[UI.Page1] = 0, [UI.Page2] = 0, [UI.Page3] = 0, [UI.Page4] = 0, [UI.Page5] = 0, [UI.Page6] = 0, [UI.Page7] = 0, [UI.Page8] = 0, [UI.Page9] = 0, [UI.Page10] = 0}
+
+    -- 🚫 التابات اللي ما تحتاج أرقام (أضف أي صفحة هنا). الموسيقى مستثناة.
+    UI.NoBadgePages = {[UI.Page4] = true}
+
+    -- 🔎 يرجّع صفحة التاب الأصلية لأي عنصر/حاوية (مثل ControlsArea داخل تاب التخريب)
+    function UI.ResolveBadgePage(inst)
+        local cur = inst
+        while cur do
+            if UI.PageTabMap[cur] then return cur end
+            cur = cur.Parent
+        end
+        return nil
+    end
 
     local function UpdateBadge(parent)
-        local info = UI.PageTabMap[parent]
-        if not info then return end
-        local count = UI.activeCounts[parent] or 0
+        local page = UI.ResolveBadgePage(parent)
+        if not page then return end
+        local info = UI.PageTabMap[page]
+        local count = UI.activeCounts[page] or 0
+        if UI.NoBadgePages[page] then count = 0 end
         if count > 0 then
             info.badge.Text = tostring(count)
             info.badge.Visible = true
@@ -5325,6 +5684,226 @@ end)
         ["اوتو كلكر"] = "🖱️",
     }
 
+    -- ====================== 📌 سحب زر الميزة لبرا القائمة ======================
+    -- مسكة طويلة على المنطقة اللي بين الاسم والزر → يطلع زر عائم تسحبه وين تبي وتضغطه بدون ما تفتح القائمة.
+    UI.ToggleGetters = UI.ToggleGetters or {}
+    UI.ToggleListeners = UI.ToggleListeners or {}
+    UI.FloatingToggles = UI.FloatingToggles or {}
+
+    -- يخلّي أي زر قابل للسحب + ضغطة عادية (tap). يرجّع دالة تبدأ السحب فوراً (تستخدمها المسكة الطويلة)
+    function UI.MakeDraggableTap(btn, onTap)
+        local UIS = game:GetService("UserInputService")
+        local active, moved, last, startInput = false, 0, nil, nil
+        local conns = {}
+        local function begin(input, noTap)
+            active = true
+            moved = noTap and 999 or 0
+            last = input.Position
+            startInput = input
+        end
+        table.insert(conns, btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                begin(input, false)
+            end
+        end))
+        table.insert(conns, UIS.InputChanged:Connect(function(input)
+            if not active then return end
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or (input.UserInputType == Enum.UserInputType.Touch and input == startInput) then
+                local d = input.Position - last
+                last = input.Position
+                moved = moved + d.Magnitude
+                if moved > 8 then
+                    local screen = ScreenGui.AbsoluteSize
+                    local x = math.clamp(btn.Position.X.Offset + d.X, 0, math.max(0, screen.X - btn.AbsoluteSize.X))
+                    local y = math.clamp(btn.Position.Y.Offset + d.Y, 0, math.max(0, screen.Y - btn.AbsoluteSize.Y))
+                    btn.Position = UDim2.new(0, x, 0, y)
+                end
+            end
+        end))
+        table.insert(conns, UIS.InputEnded:Connect(function(input)
+            if not active then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or (input.UserInputType == Enum.UserInputType.Touch and input == startInput) then
+                active = false
+                if moved <= 8 and onTap then onTap() end
+            end
+        end))
+        btn.Destroying:Connect(function()
+            for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+        end)
+        return begin
+    end
+
+    -- ينشئ الزر العائم للميزة: نفس شكل زر التشغيل/الإيقاف حقها بالضبط (نفس النص واللون والحافة المتحركة)
+    function UI.SpawnFloatToggle(txt, pageForColor, startX, startY)
+        local getter = UI.ToggleGetters[txt]
+        local setter = UI.ToggleSetters[txt]
+        local real = UI.ToggleButtons and UI.ToggleButtons[txt]
+        if not (getter and setter and real) then return nil end
+
+        local old = UI.FloatingToggles[txt]
+        if old and old.Parent then old:Destroy() end
+
+        local sz = real.btn.AbsoluteSize
+        local W = math.max(90, sz.X)
+        local H = math.max(38, sz.Y)
+
+        -- حاوية شفافة تشيل الزر + اسم الميزة فوقه (عشان تعرف أي ميزة هذا)
+        local holder = Instance.new("Frame")
+        holder.Name = "SkyFloat"
+        holder.Size = UDim2.new(0, W, 0, H)
+        holder.Position = UDim2.new(0, startX, 0, startY)
+        holder.BackgroundTransparency = 1
+        holder.ZIndex = 60
+        holder.Parent = ScreenGui
+        UI.FloatingToggles[txt] = holder
+
+        local nameLbl = Instance.new("TextLabel", holder)
+        nameLbl.Size = UDim2.new(1, 0, 0, 14)
+        nameLbl.Position = UDim2.new(0, 0, 0, -15)
+        nameLbl.BackgroundTransparency = 1
+        nameLbl.Text = _TranslateText(txt)
+        nameLbl.TextColor3 = Color3.new(1, 1, 1)
+        nameLbl.Font = Enum.Font.Arcade
+        nameLbl.TextScaled = true
+        nameLbl.TextStrokeTransparency = 0.3
+        nameLbl.ZIndex = 61
+        local nsc = Instance.new("UITextSizeConstraint", nameLbl)
+        nsc.MaxTextSize = 12
+        nsc.MinTextSize = 7
+
+        local btn = Instance.new("TextButton", holder)
+        btn.Size = UDim2.new(1, 0, 1, 0)
+        btn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        btn.AutoButtonColor = false
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.TextSize = 16
+        btn.Font = Enum.Font.Arcade
+        btn.ZIndex = 60
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+        local stroke = Instance.new("UIStroke", btn)
+        stroke.Thickness = 2
+        stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local grad = AddMovingBorderGlow(stroke, 1.5, TOGGLE_OFF_COLOR)
+
+        -- زر × صغير لإزالة الزر العائم
+        local x = Instance.new("TextButton", holder)
+        x.Size = UDim2.new(0, 18, 0, 18)
+        x.AnchorPoint = Vector2.new(1, 0)
+        x.Position = UDim2.new(1, 6, 0, -6)
+        x.BackgroundColor3 = Color3.fromRGB(200, 40, 40)
+        x.Text = "×"
+        x.TextColor3 = Color3.new(1, 1, 1)
+        x.Font = Enum.Font.Arcade
+        x.TextSize = 14
+        x.ZIndex = 62
+        Instance.new("UICorner", x).CornerRadius = UDim.new(1, 0)
+        x.MouseButton1Click:Connect(function() holder:Destroy() end)
+
+        -- يطابق الزر الأصلي: نفس النص (تشغيل/إيقاف) ونفس لون الحافة
+        local function refresh()
+            local on = false
+            pcall(function() on = getter() == true end)
+            local c = on and GetTabColorForInstance(pageForColor) or TOGGLE_OFF_COLOR
+            btn.Text = _TranslateText(on and "إيقاف" or "تشغيل")
+            stroke.Color = c
+            stroke.Transparency = on and 0 or 0.7
+            SetGlowColor(grad, c)
+        end
+        refresh()
+        UI.ToggleListeners[txt] = UI.ToggleListeners[txt] or {}
+        UI.ToggleListeners[txt][holder] = refresh
+        holder.Destroying:Connect(function()
+            if UI.ToggleListeners[txt] then UI.ToggleListeners[txt][holder] = nil end
+            if UI.FloatingToggles[txt] == holder then UI.FloatingToggles[txt] = nil end
+        end)
+
+        -- السحب والضغط على الحاوية كلها (الزر + الاسم)، و × له ضغطته الخاصة
+        local begin = UI.MakeDraggableTap(holder, function()
+            playClick()
+            local sset = UI.ToggleSetters[txt]
+            if not sset then holder:Destroy() return end -- الميزة انشالت من القائمة
+            sset(not getter(), true)
+        end)
+        -- الـ InputBegan حق الحاوية ما يوصله لمس الزر (لأنه Active)، فنربط الزر نفسه كمان
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                begin(input, false)
+            end
+        end)
+        return begin, holder
+    end
+
+    -- يربط المسكة الطويلة بصف الميزة كامل، مع مراقبة اللمس: أي حركة بسيطة أو تمرير للقائمة = إلغاء
+    function UI.AttachFloatDrag(row, txt, pageForColor)
+        local UIS = game:GetService("UserInputService")
+        local MOVE_CANCEL = 4 -- بكسل: لو الإصبع تحرك أكثر من كذا قبل ما تكتمل المسكة نلغي
+        local HOLD_TIME = 0.5
+
+        -- 🟦 المنطقة تغطي الصف كامل (يمين ويسار)، لكنها تحت الاسم وزر التشغيل (ZIndex أقل)
+        local zone = Instance.new("Frame", row)
+        zone.Name = "FloatZone"
+        zone.BackgroundTransparency = 1
+        zone.BorderSizePixel = 0
+        zone.Active = false
+        zone.Size = UDim2.new(1, 0, 1, 0)
+        zone.Position = UDim2.new(0, 0, 0, 0)
+        zone.ZIndex = 6
+
+        -- أقرب ScrollingFrame فوق الصف، عشان نعرف لو القائمة انسحبت وإحنا ماسكين
+        local scroller = row.Parent
+        while scroller and not scroller:IsA("ScrollingFrame") do scroller = scroller.Parent end
+
+        local holding, token, startPos, startInput, startCanvas = false, 0, nil, nil, nil
+        local function cancel() holding = false end
+
+        zone.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            holding = true
+            token = token + 1
+            startPos = input.Position
+            startInput = input
+            startCanvas = scroller and scroller.CanvasPosition or nil
+            local my = token
+            task.spawn(function()
+                local t0 = os.clock()
+                while holding and my == token and os.clock() - t0 < HOLD_TIME do
+                    -- القائمة تحركت (تمرير) = ما نبي الزر العائم
+                    if scroller and startCanvas and (scroller.CanvasPosition - startCanvas).Magnitude > 0.5 then
+                        holding = false
+                        break
+                    end
+                    task.wait(0.02)
+                end
+                if not holding or my ~= token then return end
+                holding = false
+                local ap = zone.AbsolutePosition - ScreenGui.AbsolutePosition
+                local begin = UI.SpawnFloatToggle(txt, pageForColor, ap.X + 20, ap.Y + 10)
+                if begin then begin(input, true) end
+            end)
+        end)
+
+        -- مراقبة اللمس على مستوى الشاشة كلها (مو بس فوق المنطقة): أي حركة بسيطة تلغي
+        local moveConn = UIS.InputChanged:Connect(function(input)
+            if not holding or not startPos then return end
+            local isMove = input.UserInputType == Enum.UserInputType.MouseMovement
+                or (input.UserInputType == Enum.UserInputType.Touch and input == startInput)
+            if isMove and (input.Position - startPos).Magnitude > MOVE_CANCEL then
+                cancel()
+            end
+        end)
+        local endConn = UIS.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                cancel()
+            end
+        end)
+        zone.Destroying:Connect(function()
+            pcall(function() moveConn:Disconnect() end)
+            pcall(function() endConn:Disconnect() end)
+        end)
+    end
+
     local function NewItem(txt, type, call, parent, opts)
         local f = Instance.new("Frame", parent)
         f.Size = UDim2.new(1, -10, 0, 65)
@@ -5577,6 +6156,7 @@ end)
 
             local act = false
             local function applyToggle(newAct)
+                local wasAct = act
                 act = newAct
                 local _onColor = GetTabColorForInstance(parent) -- 🎨 نجيب اللون الحالي وقت الضغط (مو محفوظ من قبل) عشان يطابق أي تغيير سويته من تاب الإعدادات
                 btn.Text = _TranslateText(act and "إيقاف" or "تشغيل")
@@ -5584,9 +6164,16 @@ end)
                 stroke.Transparency = 0
                 SetGlowColor(_btnGlowGrad, act and _onColor or TOGGLE_OFF_COLOR) -- 🎨 نحدّث لون الحافة المتحركة نفسها
                 _activeGlow(stroke, act, _onColor)
-                UI.activeCounts[parent] = (UI.activeCounts[parent] or 0) + (act and 1 or -1)
-                if UI.activeCounts[parent] < 0 then UI.activeCounts[parent] = 0 end
+                -- 🔢 نعدّل العداد فقط لو الحالة تغيّرت فعلاً (يمنع النقص/الزيادة الخاطئة)
+                -- ونحسبه على صفحة التاب الأصلية حتى لو الزر داخل حاوية فرعية
+                local badgePage = UI.ResolveBadgePage(parent)
+                if badgePage and act ~= wasAct then
+                    UI.activeCounts[badgePage] = (UI.activeCounts[badgePage] or 0) + (act and 1 or -1)
+                    if UI.activeCounts[badgePage] < 0 then UI.activeCounts[badgePage] = 0 end
+                end
                 UpdateBadge(parent)
+                local _L = UI.ToggleListeners[txt]
+                if _L then for _, _fn in pairs(_L) do pcall(_fn) end end -- يحدّث لون الأزرار العائمة
                 call(act)
             end
             btn.MouseButton1Click:Connect(function() 
@@ -5618,6 +6205,10 @@ end)
 
             -- 🔧 مفتاح داخلي: أي قائمة فرعية تقدر الآن ترجع زرها الرئيسي
             -- لحالة "تشغيل" بدون ترك الحالة البصرية عالقة على "إيقاف".
+            UI.ToggleButtons = UI.ToggleButtons or {}
+            UI.ToggleButtons[txt] = {btn = btn, stroke = stroke}
+            UI.ToggleGetters[txt] = function() return act end
+            UI.AttachFloatDrag(f, txt, parent)
             UI.ToggleSetters[txt] = function(value, save)
                 applyToggle(value == true)
                 if save and txt ~= "سيرفر" then
@@ -6772,7 +7363,20 @@ end)
         end)
         profileLabel(profileCard, "GameName", "الماب: " .. mapName, UDim2.new(0, 12, 0, 160), UDim2.new(1, -24, 0, 20), Color3.fromRGB(230, 220, 245), 12, false)
         local playerCountLabel = profileLabel(profileCard, "PlayerCount", "اللاعبون في السيرفر: " .. tostring(#Players:GetPlayers()), UDim2.new(0, 12, 0, 182), UDim2.new(1, -24, 0, 18), Color3.fromRGB(175, 220, 255), 12, false)
-        profileLabel(profileCard, "AccountAge", "عمر الحساب: " .. tostring(LocalPlayer.AccountAge) .. " يوم", UDim2.new(0, 12, 0, 202), UDim2.new(1, -24, 0, 17), Color3.fromRGB(200, 185, 220), 11, false)
+        -- عمر الحساب: الرقم + الوحدة (يوم / أسبوع / شهر / سنة)
+        local function AccountAgeText()
+            local d = LocalPlayer.AccountAge
+            local function pick(n, one, two, many)
+                if n == 1 then return "1 " .. one end
+                if n == 2 then return "2 " .. two end
+                return n .. " " .. many
+            end
+            if d < 7 then return pick(d, "يوم", "يومين", "أيام") end
+            if d < 30 then return pick(math.floor(d / 7), "أسبوع", "أسبوعين", "أسابيع") end
+            if d < 365 then return pick(math.floor(d / 30.44), "شهر", "شهرين", "أشهر") end
+            return pick(math.floor(d / 365.25), "سنة", "سنتين", "سنوات")
+        end
+        profileLabel(profileCard, "AccountAge", "عمر الحساب: " .. AccountAgeText(), UDim2.new(0, 12, 0, 202), UDim2.new(1, -24, 0, 17), Color3.fromRGB(200, 185, 220), 11, false)
         task.spawn(function()
             while profileCard.Parent do
                 playerCountLabel.Text = "اللاعبون في السيرفر: " .. tostring(#Players:GetPlayers())
@@ -6830,14 +7434,14 @@ end)
             body.Parent = section
 
             local layout = Instance.new("UIListLayout")
-            layout.Padding = UDim.new(0, sectionName == "PrivateMessageSafety" and 7 or 3)
+            layout.Padding = UDim.new(0, (sectionName == "PrivateMessageSafety" or sectionName == "ShortcutInfo") and 7 or 3)
             layout.SortOrder = Enum.SortOrder.LayoutOrder
             layout.Parent = body
 
             for rowIndex, rowText in ipairs(rows) do
                 local row = Instance.new("TextLabel")
                 row.Name = "InfoLine" .. rowIndex
-                local rowHeight = (sectionName == "PrivateMessageSafety") and 30 or 22
+                local rowHeight = (sectionName == "ShortcutInfo") and 36 or ((sectionName == "PrivateMessageSafety") and 30 or 22)
                 row.Size = UDim2.new(1, 0, 0, rowHeight)
                 row.BackgroundTransparency = 1
                 row.Text = "• " .. rowText
@@ -6869,6 +7473,349 @@ end)
             "حتى لو حسيت إنك تعرفه وتثق فيه.",
             "خصوصيتك أهم من أي محادثة ❤️"
         }, 270, -98)
+
+        createProfileSection("ShortcutInfo", "اختصار", {
+            "اضغط ضغطة مطوّلة على أي ميزة في السكربت، مثل «القفز اللانهائي».",
+            "اضغط على الخانة الفاضية اللي بين اسم الميزة وزر التشغيل.",
+            "يطلع لك زر صغير مصغّر لهذي الميزة، تسحبه وين تبي.",
+            "الفايدة: تشغّل الميزة وتطفّيها منه بدون ما تفتح القائمة وتتعب نفسك كيف ماضبتك؟🤨😂.",
+        }, 240, 330)
+    end
+
+    -- 🌐 قسم السيرفرات داخل تبويب الملف: السيرفر الحالي + قائمة السيرفرات العامة مرتبة حسب عدد اللاعبين.
+    do
+        local HttpService = game:GetService("HttpService")
+        local TeleportService = game:GetService("TeleportService")
+        local serverTitle = Instance.new("Frame")
+        serverTitle.Name = "ServerBrowserTitle"
+        serverTitle.Size = UDim2.new(1, -4, 0, 44)
+        serverTitle.BackgroundColor3 = Color3.fromRGB(22, 19, 29)
+        serverTitle.BorderSizePixel = 0
+        serverTitle.LayoutOrder = 340
+        serverTitle.ZIndex = 7
+        serverTitle.Parent = UI.Page9
+        Instance.new("UICorner", serverTitle).CornerRadius = UDim.new(0, 12)
+        local titleStroke = Instance.new("UIStroke", serverTitle)
+        titleStroke.Color = Color3.fromRGB(170, 0, 255)
+        titleStroke.Thickness = 1.4
+        titleStroke.Transparency = 0.15
+
+        local titleText = Instance.new("TextLabel")
+        titleText.Name = "Title"
+        titleText.Size = UDim2.new(1, -20, 1, 0)
+        titleText.Position = UDim2.new(0, 10, 0, 0)
+        titleText.BackgroundTransparency = 1
+        titleText.Text = "🌐 السيرفرات"
+        titleText.TextColor3 = Color3.fromRGB(215, 175, 255)
+        titleText.Font = Enum.Font.GothamBold
+        titleText.TextSize = 16
+        titleText.TextXAlignment = Enum.TextXAlignment.Right
+        titleText.ZIndex = 8
+        titleText.Parent = serverTitle
+
+        local currentServerCard = Instance.new("Frame")
+        currentServerCard.Name = "CurrentServerSection"
+        currentServerCard.Size = UDim2.new(1, -4, 0, 86)
+        currentServerCard.BackgroundColor3 = Color3.fromRGB(18, 15, 24)
+        currentServerCard.BorderSizePixel = 0
+        currentServerCard.LayoutOrder = 341
+        currentServerCard.ZIndex = 7
+        currentServerCard.Parent = UI.Page9
+        Instance.new("UICorner", currentServerCard).CornerRadius = UDim.new(0, 12)
+        local currentStroke = Instance.new("UIStroke", currentServerCard)
+        currentStroke.Color = Color3.fromRGB(170, 0, 255)
+        currentStroke.Thickness = 1.2
+        currentStroke.Transparency = 0.2
+
+        local currentHeading = Instance.new("TextLabel")
+        currentHeading.Size = UDim2.new(1, -20, 0, 24)
+        currentHeading.Position = UDim2.new(0, 10, 0, 7)
+        currentHeading.BackgroundTransparency = 1
+        currentHeading.Text = "القسم الأول — السيرفر الحالي"
+        currentHeading.TextColor3 = Color3.fromRGB(205, 155, 255)
+        currentHeading.Font = Enum.Font.GothamBold
+        currentHeading.TextSize = 14
+        currentHeading.TextXAlignment = Enum.TextXAlignment.Right
+        currentHeading.ZIndex = 8
+        currentHeading.Parent = currentServerCard
+
+        local currentCount = Instance.new("TextLabel")
+        currentCount.Name = "CurrentPlayerCount"
+        currentCount.Size = UDim2.new(1, -20, 0, 34)
+        currentCount.Position = UDim2.new(0, 10, 0, 39)
+        currentCount.BackgroundTransparency = 1
+        currentCount.TextColor3 = Color3.fromRGB(170, 225, 255)
+        currentCount.Font = Enum.Font.GothamBold
+        currentCount.TextSize = 15
+        currentCount.TextXAlignment = Enum.TextXAlignment.Right
+        currentCount.ZIndex = 8
+        currentCount.Parent = currentServerCard
+
+        local function updateCurrentServerCount()
+            currentCount.Text = "عدد اللاعبين: " .. tostring(#Players:GetPlayers()) .. " / " .. tostring(Players.MaxPlayers)
+        end
+        updateCurrentServerCount()
+        Players.PlayerAdded:Connect(updateCurrentServerCount)
+        Players.PlayerRemoving:Connect(function()
+            task.defer(updateCurrentServerCount)
+        end)
+
+        local publicServersCard = Instance.new("Frame")
+        publicServersCard.Name = "PublicServersSection"
+        publicServersCard.Size = UDim2.new(1, -4, 0, 360)
+        publicServersCard.BackgroundColor3 = Color3.fromRGB(18, 15, 24)
+        publicServersCard.BorderSizePixel = 0
+        publicServersCard.LayoutOrder = 342
+        publicServersCard.ZIndex = 7
+        publicServersCard.Parent = UI.Page9
+        Instance.new("UICorner", publicServersCard).CornerRadius = UDim.new(0, 12)
+        local publicStroke = Instance.new("UIStroke", publicServersCard)
+        publicStroke.Color = Color3.fromRGB(170, 0, 255)
+        publicStroke.Thickness = 1.2
+        publicStroke.Transparency = 0.2
+
+        local publicHeading = Instance.new("TextLabel")
+        publicHeading.Size = UDim2.new(1, -20, 0, 25)
+        publicHeading.Position = UDim2.new(0, 10, 0, 7)
+        publicHeading.BackgroundTransparency = 1
+        publicHeading.Text = "القسم الثاني — السيرفرات المتاحة"
+        publicHeading.TextColor3 = Color3.fromRGB(205, 155, 255)
+        publicHeading.Font = Enum.Font.GothamBold
+        publicHeading.TextSize = 14
+        publicHeading.TextXAlignment = Enum.TextXAlignment.Right
+        publicHeading.ZIndex = 8
+        publicHeading.Parent = publicServersCard
+
+        local refreshButton = Instance.new("TextButton")
+        refreshButton.Name = "RefreshServers"
+        refreshButton.Size = UDim2.new(0, 92, 0, 28)
+        refreshButton.Position = UDim2.new(0, 10, 0, 39)
+        refreshButton.BackgroundColor3 = Color3.fromRGB(35, 22, 48)
+        refreshButton.BorderSizePixel = 0
+        refreshButton.Text = "⟳ تحديث"
+        refreshButton.TextColor3 = Color3.fromRGB(235, 220, 255)
+        refreshButton.Font = Enum.Font.GothamBold
+        refreshButton.TextSize = 12
+        refreshButton.ZIndex = 9
+        refreshButton.Parent = publicServersCard
+        Instance.new("UICorner", refreshButton).CornerRadius = UDim.new(0, 8)
+        local refreshStroke = Instance.new("UIStroke", refreshButton)
+        refreshStroke.Color = Color3.fromRGB(170, 0, 255)
+        refreshStroke.Thickness = 1.1
+
+        local statusLabel = Instance.new("TextLabel")
+        statusLabel.Name = "ServerStatus"
+        statusLabel.Size = UDim2.new(1, -120, 0, 28)
+        statusLabel.Position = UDim2.new(0, 112, 0, 39)
+        statusLabel.BackgroundTransparency = 1
+        statusLabel.Text = "اضغط تحديث لعرض السيرفرات"
+        statusLabel.TextColor3 = Color3.fromRGB(175, 175, 190)
+        statusLabel.Font = Enum.Font.Gotham
+        statusLabel.TextSize = 11
+        statusLabel.TextXAlignment = Enum.TextXAlignment.Right
+        statusLabel.ZIndex = 8
+        statusLabel.Parent = publicServersCard
+
+        local serverList = Instance.new("ScrollingFrame")
+        serverList.Name = "ServerList"
+        serverList.Position = UDim2.new(0, 9, 0, 74)
+        serverList.Size = UDim2.new(1, -18, 1, -83)
+        serverList.BackgroundColor3 = Color3.fromRGB(12, 11, 17)
+        serverList.BackgroundTransparency = 0.12
+        serverList.BorderSizePixel = 0
+        serverList.ScrollBarThickness = 3
+        serverList.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
+        serverList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        serverList.CanvasSize = UDim2.new(0, 0, 0, 0)
+        serverList.ScrollingDirection = Enum.ScrollingDirection.Y
+        serverList.ZIndex = 8
+        serverList.Parent = publicServersCard
+        Instance.new("UICorner", serverList).CornerRadius = UDim.new(0, 8)
+        local listPadding = Instance.new("UIPadding", serverList)
+        listPadding.PaddingTop = UDim.new(0, 6)
+        listPadding.PaddingBottom = UDim.new(0, 6)
+        listPadding.PaddingLeft = UDim.new(0, 6)
+        listPadding.PaddingRight = UDim.new(0, 6)
+        local listLayout = Instance.new("UIListLayout", serverList)
+        listLayout.Padding = UDim.new(0, 5)
+        listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+        local function clearServerRows()
+            for _, child in ipairs(serverList:GetChildren()) do
+                if child:IsA("Frame") then child:Destroy() end
+            end
+        end
+
+        local function fetchServerPage(sortOrder, cursor)
+            local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId)
+                .. "/servers/Public?sortOrder=" .. sortOrder .. "&limit=100"
+            if cursor and cursor ~= "" then
+                url = url .. "&cursor=" .. HttpService:UrlEncode(cursor)
+            end
+            local body
+            if type(request) == "function" then
+                local requestOK, response = pcall(function()
+                    return request({Url = url, Method = "GET"})
+                end)
+                if requestOK and response then body = response.Body or response.body end
+            end
+            if type(body) ~= "string" or body == "" then
+                local httpOK, httpBody = pcall(function() return game:HttpGet(url) end)
+                if httpOK then body = httpBody end
+            end
+            if type(body) ~= "string" or body == "" then
+                error("استجابة السيرفرات فارغة")
+            end
+            return HttpService:JSONDecode(body)
+        end
+
+        local isLoadingServers = false
+        local function loadPublicServers()
+            if isLoadingServers then return end
+            isLoadingServers = true
+            refreshButton.Text = "... تحميل"
+            statusLabel.Text = "جاري جلب السيرفرات العامة"
+            clearServerRows()
+
+            task.spawn(function()
+                local ok, result = pcall(function()
+                    local found = {}
+                    -- نجلب من الطرفين حتى تظهر السيرفرات المزدحمة والفاضية معًا.
+                    for _, sortOrder in ipairs({"Desc", "Asc"}) do
+                        local cursor = ""
+                        for pageNumber = 1, 5 do
+                            local page = fetchServerPage(sortOrder, cursor)
+                            if type(page) ~= "table" or type(page.data) ~= "table" then break end
+                            for _, server in ipairs(page.data) do
+                                if server.id and tonumber(server.playing) and tonumber(server.maxPlayers) then
+                                    found[server.id] = {
+                                        id = server.id,
+                                        playing = tonumber(server.playing),
+                                        maxPlayers = tonumber(server.maxPlayers)
+                                    }
+                                end
+                            end
+                            cursor = page.nextPageCursor or ""
+                            if cursor == "" then break end
+                            task.wait(0.12)
+                        end
+                    end
+                    local sorted = {}
+                    for _, server in pairs(found) do table.insert(sorted, server) end
+                    table.sort(sorted, function(a, b)
+                        if a.playing == b.playing then
+                            return a.maxPlayers > b.maxPlayers
+                        end
+                        return a.playing > b.playing
+                    end)
+                    return sorted
+                end)
+
+                if not publicServersCard.Parent then return end
+                if not ok then
+                    statusLabel.Text = "تعذر جلب السيرفرات — جرّب التحديث مرة ثانية"
+                    refreshButton.Text = "⟳ تحديث"
+                    isLoadingServers = false
+                    return
+                end
+
+                clearServerRows()
+                local count = #result
+                for index, server in ipairs(result) do
+                    local row = Instance.new("Frame")
+                    row.Name = "ServerRow" .. index
+                    row.Size = UDim2.new(1, -2, 0, 46)
+                    row.BackgroundColor3 = Color3.fromRGB(25, 20, 33)
+                    row.BorderSizePixel = 0
+                    row.LayoutOrder = index
+                    row.ZIndex = 9
+                    row.Parent = serverList
+                    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 7)
+
+                    local rowStroke = Instance.new("UIStroke", row)
+                    rowStroke.Color = Color3.fromRGB(105, 55, 145)
+                    rowStroke.Thickness = 0.8
+                    rowStroke.Transparency = 0.35
+
+                    local joinButton = Instance.new("TextButton")
+                    joinButton.Name = "JoinServer"
+                    joinButton.Size = UDim2.new(0, 70, 0, 29)
+                    joinButton.Position = UDim2.new(0, 7, 0.5, -14)
+                    joinButton.BackgroundColor3 = Color3.fromRGB(48, 25, 66)
+                    joinButton.BorderSizePixel = 0
+                    joinButton.Text = "ادخل"
+                    joinButton.TextColor3 = Color3.fromRGB(245, 230, 255)
+                    joinButton.Font = Enum.Font.GothamBold
+                    joinButton.TextSize = 12
+                    joinButton.ZIndex = 11
+                    joinButton.Parent = row
+                    Instance.new("UICorner", joinButton).CornerRadius = UDim.new(0, 7)
+
+                    local joinStroke = Instance.new("UIStroke", joinButton)
+                    joinStroke.Color = Color3.fromRGB(170, 0, 255)
+                    joinStroke.Thickness = 1
+                    joinStroke.Transparency = 0.12
+
+                    local rowLabel = Instance.new("TextLabel")
+                    rowLabel.Size = UDim2.new(1, -91, 1, 0)
+                    rowLabel.Position = UDim2.new(0, 84, 0, 0)
+                    rowLabel.BackgroundTransparency = 1
+                    rowLabel.Text = "سيرفر " .. tostring(index) .. "     اللاعبين: " .. tostring(server.playing) .. " / " .. tostring(server.maxPlayers)
+                    rowLabel.TextColor3 = server.playing == 0 and Color3.fromRGB(150, 235, 180) or Color3.fromRGB(230, 220, 240)
+                    rowLabel.Font = Enum.Font.GothamBold
+                    rowLabel.TextSize = 12
+                    rowLabel.TextXAlignment = Enum.TextXAlignment.Right
+                    rowLabel.ZIndex = 10
+                    rowLabel.Parent = row
+
+                    joinButton.MouseButton1Click:Connect(function()
+                        joinButton.Text = "..."
+                        joinButton.Active = false
+                        statusLabel.Text = "جاري محاولة دخول السيرفر " .. tostring(index)
+
+                        local failedConnection
+                        failedConnection = TeleportService.TeleportInitFailed:Connect(function(player, result, message)
+                            if player ~= LocalPlayer then return end
+                            if failedConnection then failedConnection:Disconnect() end
+                            -- إذا رفض Roblox الانتقال، ألغِ إعادة التشغيل المحجوزة.
+                            pcall(QueueSkyScriptAfterTeleport, true)
+                            joinButton.Text = "ادخل"
+                            joinButton.Active = true
+                            statusLabel.Text = "فشل الدخول: " .. tostring(message or result)
+                        end)
+
+                        -- نفس نظام زر «سيرفر» الموجود في السكربت:
+                        -- يحجز إعادة تشغيل Sk قبل الانتقال للسيرفر الجديد.
+                        local queued, queueError = pcall(QueueSkyScriptAfterTeleport)
+                        if not queued or queueError == false then
+                            if failedConnection then failedConnection:Disconnect() end
+                            joinButton.Text = "ادخل"
+                            joinButton.Active = true
+                            statusLabel.Text = "أداة التشغيل لا تدعم إعادة تشغيل السكربت بعد الانتقال"
+                            return
+                        end
+
+                        local teleportOK, teleportError = pcall(function()
+                            TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                        end)
+                        if not teleportOK then
+                            if failedConnection then failedConnection:Disconnect() end
+                            pcall(QueueSkyScriptAfterTeleport, true)
+                            joinButton.Text = "ادخل"
+                            joinButton.Active = true
+                            statusLabel.Text = "تعذر بدء الانتقال: " .. tostring(teleportError)
+                        end
+                    end)
+                end
+                statusLabel.Text = "تم العثور على " .. tostring(count) .. " سيرفر — من الأكثر لاعبين إلى الأقل"
+                if count == 0 then statusLabel.Text = "ما لقينا سيرفرات متاحة حالياً" end
+                refreshButton.Text = "⟳ تحديث"
+                isLoadingServers = false
+            end)
+        end
+
+        refreshButton.MouseButton1Click:Connect(loadPublicServers)
+        task.delay(1, loadPublicServers)
     end
     -- المميزات
     NewItem("السرعه", "Input", function(v) 
@@ -6990,7 +7937,8 @@ end)
 
     -- صفحة التخريب
     local TrollContainer = Instance.new("Frame", UI.Page2)
-    TrollContainer.Size = UDim2.new(1, 0, 1, 0)
+    TrollContainer.Size = UDim2.new(1, -10, 1, 0) -- نفس هامش باقي التابات (5 يمين و5 يسار)
+    TrollContainer.Position = UDim2.new(0, 5, 0, 0)
     TrollContainer.BackgroundTransparency = 1
     TrollContainer.ZIndex = 6
 
@@ -6998,7 +7946,7 @@ end)
     PlayerScroll.Size = UDim2.new(0, 110, 1, 0)
     PlayerScroll.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     PlayerScroll.BorderSizePixel = 0
-    PlayerScroll.ScrollBarThickness = 6
+    PlayerScroll.ScrollBarThickness = 0 -- بدون الخط البنفسجي، السحب يبقى شغال
     PlayerScroll.ScrollBarImageColor3 = Color3.fromRGB(170, 0, 255)
     PlayerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Instance.new("UICorner", PlayerScroll)
@@ -7010,12 +7958,13 @@ end)
     PlayerLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
     local ControlsArea = Instance.new("ScrollingFrame", TrollContainer)
-    ControlsArea.Size = UDim2.new(1, -125, 1, 0)
+    ControlsArea.Size = UDim2.new(1, -120, 1, 0)
     ControlsArea.Position = UDim2.new(0, 120, 0, 0)
     ControlsArea.BackgroundTransparency = 1
-    ControlsArea.ScrollBarThickness = 4
+    ControlsArea.ScrollBarThickness = 0 -- بدون الخط، السحب يبقى شغال
     ControlsArea.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Instance.new("UIListLayout", ControlsArea).Padding = UDim.new(0, 10)
+    ControlsArea:FindFirstChildOfClass("UIListLayout").HorizontalAlignment = Enum.HorizontalAlignment.Center -- توسيط الأزرار
     ControlsArea.ZIndex = 6
     UI.TrollControls = ControlsArea -- 🔗 عشان أزرار تنضاف من تابات ثانية (مثل محد يقدر يمسك) تنزل بنفس قائمة أزرار التخريب
 
@@ -7746,7 +8695,8 @@ local function UpdatePlayerList()
         panel.BorderSizePixel = 0
         panel.ZIndex = 1000
         panel.Active = true
-        panel.Draggable = true
+        panel.Draggable = false
+        MakeDraggable(panel)
         local glow = Instance.new("Frame")
         glow.Name = "BangSpeedGlow"
         glow.BackgroundTransparency = 1
@@ -7877,7 +8827,6 @@ local function UpdatePlayerList()
     NewItem("جلوس فوق رأسه", "Button", function(s) if s then saveMyPos(); OK("🪑 جالس على: "..(State.selectedPlayer and State.selectedPlayer.Name or "؟؟")) else OK("🚶 توقف الجلوس") end; State.sittingOnHead = s end, ControlsArea)    NewItem("بانق1", "Button", function(s)
         State.hmmActive = s
         State._hmmPhase = 0
-        if State.OpenBangSpeedPanel then State.OpenBangSpeedPanel() end
         if s then
             OK("نــ-ـيـ-ك: تشغيل")
         else
@@ -7887,7 +8836,6 @@ local function UpdatePlayerList()
     NewItem("بانق2", "Button", function(s)
         State.headBangActive = s
         State._headBangPhase = 0
-        if State.OpenBangSpeedPanel then State.OpenBangSpeedPanel() end
         if s then
             saveMyPos()
             OK("يــمــص: جلوس فوق رأس اللاعب")
@@ -11478,6 +12426,21 @@ end
         tc.MaxTextSize = 15
         tc.MinTextSize = 10
 
+        NewItem("الذكر", "Button", function(s)
+            _G.SkyDhikrOff = (s == true)
+            -- إذا أُوقف الذكر، أخفِ إشعار الذكر الظاهر حالياً فقط.
+            local cg = game:GetService("CoreGui")
+            local ng = cg:FindFirstChild("SkyNotify")
+            if ng then
+                for _, child in ipairs(ng:GetChildren()) do
+                    if child.Name:find("^SkyDhikrReminder_") then
+                        child.Visible = not _G.SkyDhikrOff
+                        if _G.SkyDhikrOff then child:Destroy() end
+                    end
+                end
+            end
+        end, UI.Page7)
+
         NewItem("إيقاف الإشعارات", "Button", function(s)
             _G.SkyNotifyOff = (s == true)
             -- إخفاء/إظهار الإشعارات الموجودة على الشاشة الآن
@@ -11562,6 +12525,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page1)
+        UI.Page10.Visible = false
         MoveUnderline(0.2)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[1]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[1])
@@ -11582,6 +12546,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page6.Visible = false
         UI.Page7.Visible = false
         UI.Page8.Visible = false
+        UI.Page10.Visible = false
         MoveUnderline(0.4)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[2]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[2])
@@ -11626,6 +12591,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page3)
+        UI.Page10.Visible = false
         MoveUnderline(0.6)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[3]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[3])
@@ -11644,6 +12610,7 @@ UI.btn1.MouseButton1Click:Connect(function()
         UI.Page7.Visible = false
         UI.Page8.Visible = false
         AnimatePage(UI.Page4)
+        UI.Page10.Visible = false
         MoveUnderline(0.8)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[4]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[4])
@@ -11785,7 +12752,8 @@ UI.btn1.MouseButton1Click:Connect(function()
     UI.Page7.Visible = false
     UI.Page8.Visible = false
     AnimatePage(UI.Page6)
-    MoveUnderline(1.0)
+    UI.Page10.Visible = false
+        MoveUnderline(1.0)
     SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[6]}):Play()
     SetGlowColor(UI.MainGlowGradient, UI.TabColors[6])
     SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[6])
@@ -11803,6 +12771,7 @@ end)
         UI.Page7.Visible = true
         UI.Page8.Visible = false
         AnimatePage(UI.Page7)
+        UI.Page10.Visible = false
         MoveUnderline(1.4)
         SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[7]}):Play()
         SetGlowColor(UI.MainGlowGradient, UI.TabColors[7])
@@ -12144,7 +13113,7 @@ end)
     -- الملف الشخصي: صفحة مستقلة وهي أول تبويب في الشريط.
     UI.btn9.MouseButton1Click:Connect(function()
         playClick()
-        for _, page in ipairs({UI.Page1, UI.Page2, UI.Page3, UI.Page4, UI.Page5, UI.Page6, UI.Page7, UI.Page8}) do
+        for _, page in ipairs({UI.Page1, UI.Page2, UI.Page3, UI.Page4, UI.Page5, UI.Page6, UI.Page7, UI.Page8, UI.Page10}) do
             page.Visible = false
         end
         UI.Page9.Visible = true
@@ -12154,16 +13123,30 @@ end)
         SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[9])
         SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[9])
     end)
+    -- 🔗 تاب الاختصارات: صفحة مستقلة جاهزة لإضافة الأزرار المختصرة.
+    UI.btn10.MouseButton1Click:Connect(function()
+        playClick()
+        for _, page in ipairs({UI.Page1, UI.Page2, UI.Page3, UI.Page4, UI.Page5, UI.Page6, UI.Page7, UI.Page8, UI.Page9}) do
+            page.Visible = false
+        end
+        UI.Page10.Visible = true
+        MoveUnderline(1.8)
+        SkyTw(UI.MainStroke, TweenInfo.new(0.35), {Color = UI.TabColors[10]}):Play()
+        SetGlowColor(UI.MainGlowGradient, UI.TabColors[10])
+        SetGlowColor(UI.CloseBtnGlowGrad, UI.TabColors[10])
+        SetGlowColor(UI.ActionBtnGlowGrad, UI.TabColors[10])
+    end)
+
     for _, tabButton in ipairs({UI.btn1, UI.btn2, UI.btn3, UI.btn4, UI.btn6, UI.btn7}) do
         tabButton.MouseButton1Click:Connect(function() UI.Page9.Visible = false end)
     end
-    UI.btn1.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn2.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn3.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn4.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn6.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn7.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
-    UI.btn8.MouseButton1Click:Connect(function() UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn1.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn2.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn3.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn4.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn6.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn7.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
+    UI.btn8.MouseButton1Click:Connect(function() UI.Page10.Visible = false; UI.Page5.ScrollingEnabled = true; State._chatPageOpen = false; UI.DeleteChatBtn.Visible = false; UI.CopyChatBtn.Visible = false; UI.ResetConfigBtn.Visible = true; ChatInputBar.Visible = false; UI.ChatRestoreBtn.Visible = false end)
 
     -- 🔔 صوت خاص لإشعار الرسائل الجديدة (مثل تنبيه واتساب/سناب)
     local msgNotifySound = Instance.new("Sound")
